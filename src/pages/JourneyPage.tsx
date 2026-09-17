@@ -4397,10 +4397,6 @@ function KursStep({
   // Was tatsächlich als "meine Wahl" in Pitch/Anfrage einfließt: die aktive
   // Auswahl, falls getroffen — sonst die algorithmische Bestempfehlung.
   const selected = courses.find((c) => c.course_id === selectedCourseId) ?? top;
-  // Warum GENAU dieser Kurs zum gewählten Ziel passt (siehe goalFitReason) —
-  // null, wenn das für ihn unter den gezeigten Optionen nicht zutrifft, dann
-  // wird im Pitch unten auch nichts behauptet.
-  const fitReason = selected ? goalFitReason(careerGoal, selected, courses.slice(0, 3), courseCatalog) : null;
   // Beliebte Kurse unten anzeigen, aber keine Dopplung zu dem, was oben schon
   // individuell empfohlen wurde.
   // Neufassung (15.09., Rückmeldung "unten auch alle anderen Kurse mit
@@ -4941,14 +4937,8 @@ function KursStep({
           </div>
           {selected && (
             <PersonalizedPitch
-              role={role}
-              top={selected}
-              fullCourse={selectedFullCourse}
               gapSkillLabels={gapSkillLabels}
               coveredGapSkillLabels={selectedCoveredGapSkillLabels}
-              goalLabel={goalLabel}
-              bereichLabel={bereichLabel}
-              fitReason={fitReason}
             />
           )}
           {additionalCourseIds.size > 0 && (
@@ -5101,146 +5091,67 @@ function SkillCoverageMeter({
   );
 }
 
-/** Individueller Pitch: verbindet Ziel, erkannte Lernfelder und konkrete
- * Kursabdeckung zu einer klaren Begründung für genau diese Empfehlung. */
+/** Kompaktes Lernfeld-Panel unterhalb der Kurskarten: zeigt nur noch, was
+ * die vorher schon sichtbare course-hero-pitch-Karte (siehe course-hero-pitch
+ * weiter oben) NICHT abdeckt — die konkreten, benannten Lernfelder, an denen
+ * die Weiterbildung ansetzt bzw. die offen bleiben — plus eine kurze
+ * Kein-Druck-Zusicherung vor dem Kontakt-Schritt. Alles andere (Ziel-/
+ * Kurs-Karten, "Warum diese Empfehlung", die Kurzbeschreibung) stand bereits
+ * redundant in course-hero-pitch UND war hier über pitch-conversion-* fast
+ * ohne eigenes CSS (siehe journey.css) — daher bewusst entfernt statt nur
+ * nachträglich gestylt. */
 function PersonalizedPitch({
-  role,
-  top,
-  fullCourse,
   gapSkillLabels,
   coveredGapSkillLabels,
-  goalLabel,
-  bereichLabel,
-  fitReason,
 }: {
-  role: string;
-  top: CourseRecommendation;
-  fullCourse?: OrbitCourse;
   gapSkillLabels: string[];
   coveredGapSkillLabels: string[];
-  goalLabel?: string;
-  bereichLabel?: string | null;
-  fitReason?: string | null;
 }) {
-  const total = gapSkillLabels.length;
-  const covered = Math.min(coveredGapSkillLabels.length, total);
-  const uncovered = Math.max(0, total - covered);
-  const courseDescription = fullCourse?.description?.trim() || null;
-  const targetGroup = fullCourse?.target_group?.trim() || null;
   const visibleCovered = coveredGapSkillLabels.slice(0, 4);
   const visibleOpen = gapSkillLabels.filter((skill) => !coveredGapSkillLabels.includes(skill)).slice(0, 3);
   const extraCovered = Math.max(0, coveredGapSkillLabels.length - visibleCovered.length);
 
-  const goalText = goalLabel?.trim() || null;
-  const shortReason = fitReason?.trim() || null;
+  if (visibleCovered.length === 0 && visibleOpen.length === 0) {
+    return null;
+  }
 
   return (
-    <section className="pitch-hero pitch-hero-conversion" aria-label="Deine persönliche Empfehlung">
-      <div className="pitch-conversion-head">
-        <div className="pitch-conversion-kicker"><span>✦</span> DEINE PERSÖNLICHE EMPFEHLUNG</div>
-        <div className="pitch-conversion-context">
-          {goalText && <span>🎯 {goalText}</span>}
-          {bereichLabel && <span>{bereichLabel}</span>}
-        </div>
-        <h2>Warum wir dir genau diese Weiterbildung zeigen.</h2>
-        <p>
-          Wir haben dein Ziel, deine Auswertung und die hinterlegten Inhalte der Weiterbildung zusammengeführt.
-          So bekommst du nicht einfach eine Kursliste, sondern einen konkreten nächsten Schritt.
-        </p>
+    <section className="skill-focus-panel" aria-label="Deine Lernfelder mit dieser Weiterbildung">
+      <div className="skill-focus-kicker">
+        <span aria-hidden="true">✦</span> DEIN LERNWEG MIT DIESER WEITERBILDUNG
       </div>
-
-      <div className="pitch-conversion-grid">
-        <div className="pitch-conversion-card pitch-conversion-card-main">
-          <div className="pitch-conversion-label">DEIN ZIEL</div>
-          <div className="pitch-conversion-value">{role}</div>
-          {goalText && <div className="pitch-conversion-muted">{goalText}</div>}
-        </div>
-        <div className="pitch-conversion-card pitch-conversion-card-course">
-          <div className="pitch-conversion-label">EMPFOHLENE WEITERBILDUNG</div>
-          <div className="pitch-conversion-course-name">{top.course_name}</div>
-          <div className="pitch-conversion-course-meta">
-            {fullCourse?.provider || top.provider}
-            {top.duration_weeks ? ` · ${top.duration_weeks} Wochen` : ""}
+      <div className="skill-focus-groups">
+        {visibleCovered.length > 0 && (
+          <div>
+            <div className="skill-focus-label">DARAN ARBEITEST DU MIT DER WEITERBILDUNG</div>
+            <div className="skill-focus-chip-row">
+              {visibleCovered.map((skill) => (
+                <span className="skill-focus-chip is-covered" key={skill}>✓ {skill}</span>
+              ))}
+              {extraCovered > 0 && <span className="skill-focus-chip is-more">+{extraCovered} weitere</span>}
+            </div>
           </div>
-        </div>
-      </div>
-
-      <div className="pitch-conversion-fit">
-        <div className="pitch-conversion-fit-copy">
-          <div className="pitch-conversion-label">DEIN LERNWEG</div>
-          <h3>
-            {covered > 0
-              ? `${covered} ${covered === 1 ? "Lernfeld" : "Lernfelder"} aus deiner Auswertung sind hier direkt im Fokus.`
-              : `Diese Weiterbildung knüpft an deine Zielrolle an.`}
-          </h3>
-          <p>
-            {covered > 0
-              ? uncovered > 0
-                ? `Du arbeitest damit gezielt an den Bereichen, die dir für ${role} noch fehlen. Weitere Lernfelder kannst du später separat angehen.`
-                : `Damit greift die Weiterbildung alle in deiner Auswertung erkannten offenen Lernfelder auf.`
-              : `Für diesen Kurs wurde keine direkte Abdeckung eines offenen Lernfelds festgestellt. Die Empfehlung basiert auf dem hinterlegten Bezug zu deiner Zielrolle.`}
-          </p>
-        </div>
-        {total > 0 && (
-          <div className="pitch-conversion-meter-card">
-            <div className="pitch-conversion-count"><strong>{covered}</strong><span>von {total}</span></div>
-            <div className="pitch-conversion-segments" aria-label={`${covered} von ${total} offenen Lernfeldern im Fokus`}>
-              {Array.from({ length: total }, (_, index) => (
-                <span key={index} className={index < covered ? "filled" : ""} />
+        )}
+        {visibleOpen.length > 0 && (
+          <div>
+            <div className="skill-focus-label skill-focus-label-open">NOCH OFFEN</div>
+            <div className="skill-focus-chip-row">
+              {visibleOpen.map((skill) => (
+                <span className="skill-focus-chip is-open" key={skill}>○ {skill}</span>
               ))}
             </div>
-            <div className="pitch-conversion-meter-label">offene Lernfelder im Fokus</div>
           </div>
         )}
       </div>
-
-      {(visibleCovered.length > 0 || visibleOpen.length > 0) && (
-        <div className="pitch-conversion-skills">
-          {visibleCovered.length > 0 && (
-            <div>
-              <div className="pitch-conversion-label">DARAN ARBEITEST DU MIT DER WEITERBILDUNG</div>
-              <div className="pitch-conversion-chip-row">
-                {visibleCovered.map((skill) => <span className="pitch-skill-chip covered" key={skill}>✓ {skill}</span>)}
-                {extraCovered > 0 && <span className="pitch-skill-chip more">+{extraCovered} weitere</span>}
-              </div>
-            </div>
-          )}
-          {visibleOpen.length > 0 && (
-            <div>
-              <div className="pitch-conversion-label pitch-conversion-label-open">NOCH OFFEN</div>
-              <div className="pitch-conversion-chip-row">
-                {visibleOpen.map((skill) => <span className="pitch-skill-chip open" key={skill}>○ {skill}</span>)}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="pitch-conversion-why">
-        <div className="pitch-conversion-why-icon">✓</div>
-        <div>
-          <div className="pitch-conversion-label">WARUM DIESE EMPFEHLUNG?</div>
-          <p>
-            {shortReason || `Die Weiterbildung verbindet dein Ziel „${role}“ mit den Lernfeldern, die in deiner Auswertung noch offen sind.`}
-          </p>
-        </div>
-      </div>
-
-      {(courseDescription || targetGroup) && (
-        <details className="pitch-conversion-details">
-          <summary>Mehr über die Weiterbildung erfahren</summary>
-          <div className="pitch-conversion-details-body">
-            {courseDescription && <p>{courseDescription}</p>}
-            {targetGroup && <p><b>Für wen:</b> {targetGroup}</p>}
-          </div>
-        </details>
-      )}
-
-      <div className="pitch-conversion-next">
-        <div className="pitch-conversion-next-icon">→</div>
+      <div className="skill-focus-next">
+        <div className="skill-focus-next-icon" aria-hidden="true">→</div>
         <div>
           <strong>Du musst dich jetzt noch nicht endgültig entscheiden.</strong>
-          <p>Wenn sich die Empfehlung für dich richtig anhört, kannst du im nächsten Schritt unverbindlich Kontakt aufnehmen. Dein Bildungsträger kann deine Auswertung direkt einordnen und mit dir die nächsten Schritte besprechen.</p>
+          <p>
+            Wenn sich die Empfehlung für dich richtig anhört, kannst du im nächsten Schritt unverbindlich
+            Kontakt aufnehmen. Dein Bildungsträger kann deine Auswertung direkt einordnen und mit dir die
+            nächsten Schritte besprechen.
+          </p>
         </div>
       </div>
     </section>

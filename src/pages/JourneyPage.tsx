@@ -1801,12 +1801,11 @@ async function runDemoAnalysis() {
     setGapResult(result);
     setCurrent(stepIndex("gap"));
     setTestId(null);
-    // Im Fragebogen-Pfad geht es nach der letzten Antwort direkt weiter zu den
-    // Kursempfehlungen. Das Gap-Ergebnis wird als Override übergeben, damit
-    // goToKurs nicht auf den noch nicht aktualisierten React-State wartet.
-    window.setTimeout(() => {
-      void goToKurs(result, synthetic);
-    }, 240);
+    // Nutzer landet jetzt wie im Lebenslauf-Pfad auf dem Gap-Schritt und
+    // klickt selbst auf "Kursempfehlung ansehen →" (siehe ActionsRow in
+    // GapStep, onForward={goToKurs}) — vorher sprang der Fragebogen-Pfad
+    // hier automatisch nach 240ms weiter, wodurch der Gap-Schritt nur kurz
+    // aufblitzte, statt sichtbar/lesbar zu sein (Rückmeldung 17.09.).
     // Der Fragebogen-Pfad hat keine eigene KI-Tiefenanalyse (siehe Kommentar
     // an buildQuizGapResult) - eine evtl. noch von einer vorherigen
     // Freitext-Analyse (selbe Sitzung, zurück + Methode gewechselt) übrig
@@ -2554,6 +2553,47 @@ function JourneyStepHeading({ step, kicker, title, description, className = "" }
   );
 }
 
+/** Match-Ring für den Gap-Schritt (ARCS: Attention) — zeigt den bereits
+ * berechneten gapResult.match_percentage (siehe buildQuizGapResult/
+ * runGapAnalysis) erstmals überhaupt visuell an, statt ihn nur intern
+ * mitzuführen. Reine Anzeige, keine eigene Berechnung/erfundene Zahl.
+ * Nutzt dieselben .ring-box/.ring-value-Klassen, die schon in journey.css
+ * für einen früheren Ring-Stand vorbereitet waren (siehe Kommentar an
+ * .gap-method-note), nur der Kreis selbst ist hier inline gestylt. */
+function MatchRing({ percent, size = 96 }: { percent: number; size?: number }) {
+  const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
+  const stroke = 9;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - safePercent / 100);
+  return (
+    <div className="ring-box" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--border-soft)" strokeWidth={stroke} />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="url(#dydMatchRingGradient)"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(.4,0,.2,1)" }}
+        />
+        <defs>
+          <linearGradient id="dydMatchRingGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="var(--dyd-mint)" />
+            <stop offset="100%" stopColor="var(--dyd-blue)" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <div className="ring-value">{safePercent}%</div>
+    </div>
+  );
+}
+
 /** Einstieg: Nicht mit "Traumposition" starten, sondern den Nutzer dort abholen,
  * wo er bei Weiterbildung typischerweise steht: klares Ziel vs. Richtung suchen. */
 function IntroStep({ onKnowsRole, onUnsure }: { onKnowsRole: () => void; onUnsure: () => void }) {
@@ -3269,7 +3309,7 @@ function CvMethod({
   );
 }
 function FragebogenMethod({
-  setMethod, roleSkills, loadingRoleSkills, roleSkillsError, checkedSkills, toggleSkill, onSubmitQuiz, skillsBusy, skillsError,
+  setMethod, targetRoleName, roleSkills, loadingRoleSkills, roleSkillsError, checkedSkills, toggleSkill, onSubmitQuiz, skillsBusy, skillsError,
 }: SkillsMethodStepProps) {
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, "yes" | "no">>({});
@@ -3358,30 +3398,12 @@ function FragebogenMethod({
         ← Andere Methode wählen
       </button>
 
-      <div style={{ marginBottom: "18px" }}>
-        <div
-          style={{
-            fontSize: "13px",
-            fontWeight: 700,
-            letterSpacing: ".04em",
-            textTransform: "uppercase",
-            opacity: 0.68,
-            marginBottom: "7px",
-          }}
-        >
-          Skill-Check
-        </div>
-        <div
-          className="field-label"
-          style={{ fontSize: "clamp(24px, 4vw, 34px)", lineHeight: 1.12, marginBottom: "8px" }}
-        >
-          Was bringst du bereits mit?
-        </div>
-        <div className="hint">
-          Wir prüfen nur die wichtigsten Skills für <b>dein gewähltes Ziel</b> — maximal 8 kurze Fragen.
-          Danach geht es automatisch weiter.
-        </div>
-      </div>
+      <JourneyStepHeading
+        step="06"
+        kicker="DEIN PROFIL"
+        title="Was bringst du bereits mit?"
+        description={`Wir zeigen dir die ${questionSkills.length} wichtigsten Skills für ${targetRoleName || "deine Zielrolle"} — du hakst ab, was du schon einsetzt. Danach siehst du direkt dein Ergebnis.`}
+      />
 
       <div
         style={{
@@ -3774,6 +3796,7 @@ function GapStep({
         className="journey-step-heading-gap"
       />
       <div className="gap-summary" style={{ alignItems: "stretch" }}>
+        <MatchRing percent={gapResult.match_percentage} />
         <div
           style={{
             minWidth: "118px",
@@ -4652,6 +4675,14 @@ function KursStep({
             // erfundene/verzerrende Zahl zeigen). Stattdessen ehrliche,
             // trotzdem einladende Formulierung ohne jede Prozentangabe.
             const isGenericFallback = Boolean(course.is_role_fallback) && (course.covers_role_count ?? 0) === 0;
+            // Analog zu isGenericFallback (siehe Kommentar oben): auch ein
+            // Kurs OHNE Rollen-Fallback kann covers_gap_count === 0 haben
+            // (z.B. eine featured/soon-starting-Karte, die primär aus
+            // anderen Gründen gezeigt wird). Ohne diese Prüfung stand hier
+            // eine nackte "0 von N"-Zahl — demotivierend und, weil der Kurs
+            // ja aus einem echten Grund empfohlen wird, auch irreführend
+            // (Rückmeldung 17.09.: "0 von 128 Skills werden vermittelt").
+            const showsZeroGapDirectly = !course.is_role_fallback && (course.covers_gap_count ?? 0) === 0;
             return (
               <div
                 key={course.course_id}
@@ -4705,7 +4736,7 @@ function KursStep({
                       bei isGenericFallback bewusst ohne Zahl, nur das Label
                       "Empfehlung", statt eine erfundene 0% zu zeigen. */}
                   <div className="course-hero-coverage" aria-label="Skill-Abdeckung dieser Weiterbildung">
-                    {isGenericFallback ? (
+                    {isGenericFallback || showsZeroGapDirectly ? (
                       <span className="course-hero-recommendation-badge">Empfehlung</span>
                     ) : course.is_role_fallback ? (
                       <>
@@ -4723,7 +4754,7 @@ function KursStep({
                 <div className="course-hero-name">{course.course_name}</div>
                 <div className="course-hero-meta">
                   {course.provider} · {course.duration_weeks} Wochen
-                  {!isGenericFallback && (
+                  {!isGenericFallback && !showsZeroGapDirectly && (
                     <>
                       {" · "}
                       {course.is_role_fallback
@@ -4732,7 +4763,7 @@ function KursStep({
                     </>
                   )}
                 </div>
-                {!isGenericFallback && (
+                {!isGenericFallback && !showsZeroGapDirectly && (
                   <div className="course-coverage-summary">
                     <div className="course-coverage-head">
                       <span>Skill-Abdeckung dieser Weiterbildung</span>
@@ -4752,6 +4783,17 @@ function KursStep({
                   <div className="hint" style={{ marginTop: "2px" }}>
                     Kein Kurs in unserem Katalog trifft aktuell direkt deine Zielrolle — das hier ist unsere
                     beliebteste Empfehlung, schau sie dir trotzdem an.
+                  </div>
+                )}
+                {showsZeroGapDirectly && (
+                  <div className="course-coverage-summary course-coverage-summary--indirect">
+                    <div className="course-coverage-head">
+                      <span>Passung zu deinem Ziel</span>
+                    </div>
+                    <div className="course-coverage-copy">
+                      Dieser Kurs trifft keine deiner aktuell offenen Lernfelder direkt, baut aber relevantes
+                      Fachwissen für <b>{targetRoleName || "deine Zielrolle"}</b> auf.
+                    </div>
                   </div>
                 )}
                 {/* Bugfix (15.09., Rückmeldung "es sind nicht die Startdaten

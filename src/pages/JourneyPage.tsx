@@ -1889,7 +1889,13 @@ async function runDemoAnalysis() {
           targetRoleName ??
           targetRoleId,
         match_percentage: effectiveGapResult?.match_percentage ?? 0,
-        gap_skill_count: effectiveGapResult?.gap_skills.length ?? 0,
+        // Fix (17.09.): fehlendes zweites "?." — effectiveGapResult war hier
+        // zwar bereits optional verkettet, .gap_skills selbst aber nicht,
+        // wodurch genau die Art von Crash passierte, vor der der Kommentar
+        // "Harte Runtime-Absicherung" oben eigentlich schützen sollte
+        // ("Cannot read properties of undefined (reading 'length')",
+        // ausgelöst über den Kursempfehlung-Button im Gap-Schritt).
+        gap_skill_count: effectiveGapResult?.gap_skills?.length ?? 0,
         recommended_courses: matchedCourses,
       };
 

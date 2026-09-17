@@ -636,6 +636,38 @@ const FUNDING_OPTIONS: { key: string; label: string }[] = [
   { key: "gefoerdert", label: "Ja, wichtig" },
   { key: "egal", label: "Egal" },
 ];
+/** Einkategorisierung (Version 28, 17.09., "danach gefragt werden ob man
+ *  schon weiss was man machen will, Zertifikat, Seminar, Weiterbildung,
+ *  Studium") — die Keys entsprechen 1:1 CourseCategory in orbit.ts (siehe
+ *  dort), damit kein separates Mapping gepflegt werden muss. "sonstiges"
+ *  bekommt hier bewusst KEINE eigene Auswahl-Option (zu unspezifisch fuer
+ *  eine bewusste Personen-Entscheidung) — "weiss-noch-nicht" ist analog zu
+ *  "egal"/"offen" oben eine ausdrueckliche "keine Praeferenz"-Antwort. Die
+ *  tatsaechlich ANGEZEIGTEN Optionen werden zusaetzlich in JourneyPage
+ *  (categoryOptionsInPortfolio) auf das reduziert, was im Kurskatalog des
+ *  Tenants ueberhaupt vorkommt — siehe Kommentar dort ("Bei der Auswahl
+ *  soll ... nur das zur Auswahl stehen, was auch im Kurskatalog so angelegt
+ *  wurde, wenn es gar nicht ausgewaehlt wurde, dann soll der Button auch
+ *  nicht sichtbar sein"). */
+const CATEGORY_OPTIONS: { key: string; label: string }[] = [
+  { key: "zertifikat", label: "Zertifikat" },
+  { key: "seminar", label: "Seminar" },
+  { key: "weiterbildung", label: "Weiterbildung" },
+  { key: "studium", label: "Studium" },
+  { key: "weiss-noch-nicht", label: "Weiß noch nicht" },
+];
+/** Gewünschte Kursdauer (Version 28, 17.09., "die Dauer soll auch abgefragt
+ *  werden") — bewusst grobe Buckets statt Wochenzahl-Eingabe, gleiches
+ *  Prinzip wie START_OPTIONS oben. "lang" hat KEINE Obergrenze (siehe
+ *  DURATION_PREFERENCE_MAX_WEEKS in courseMatcher.ts) und wird beim
+ *  Matching wie "keine Praeferenz" behandelt — wer bewusst "lang" waehlt,
+ *  fuer den ist Zeit kein Ausschlusskriterium, nur ein zu kurzer Kurs waere
+ *  nie ein "Widerspruch". */
+const DURATION_OPTIONS: { key: string; label: string }[] = [
+  { key: "kurz", label: "Kurz (bis ca. 8 Wochen)" },
+  { key: "mittel", label: "Mittel (bis ca. 6 Monate)" },
+  { key: "lang", label: "Lang (auch länger)" },
+];
 /** Labels für die KURS-eigenen location_mode/employment_mode-Werte (orbit.ts:
  * LocationMode/EmploymentMode) — bewusst eigene Maps statt
  * START_OPTIONS/EMPLOYMENT_OPTIONS/LOCATION_OPTIONS oben: unterschiedlicher
@@ -1267,6 +1299,14 @@ async function runDemoAnalysis() {
   // ist eine ausdrueckliche "keine Praeferenz"-Antwort, unterscheidet sich
   // von einfachem Uebergehen der Frage (null).
   const [fundingPreference, setFundingPreference] = useState<string | null>(null);
+  // Einkategorisierung (Zertifikat/Seminar/Weiterbildung/Studium) und
+  // gewünschte Dauer, Version 28/17.09. ("danach gefragt werden ob man
+  // schon weiss was man machen will ... und die Dauer soll auch abgefragt
+  // werden"), ebenfalls im "Präferenzen"-Schritt abgefragt, gleiches Muster
+  // wie oben: null = übersprungen, "weiss-noch-nicht"/"lang" = ausdrückliche
+  // "keine Präferenz"-Antwort (siehe CATEGORY_OPTIONS/DURATION_OPTIONS).
+  const [categoryPreference, setCategoryPreference] = useState<string | null>(null);
+  const [desiredDuration, setDesiredDuration] = useState<string | null>(null);
   // Test-Tracking (Version 14): merkt sich die id des zuletzt geloggten
   // Skill-Checks, damit wir ihr im Kurs-Schritt die Empfehlung nachtragen
   // können. Rein statistisch fürs Bildungsträger-Dashboard — schlägt das
@@ -1296,6 +1336,26 @@ async function runDemoAnalysis() {
     [coveredBereiche]
   );
   const bereicheInPortfolio: BereichOption[] = useMemo(() => listBereiche(rolesInPortfolio), [rolesInPortfolio]);
+  // Einkategorisierung-Optionen, gefiltert auf das, was im Kurskatalog des
+  // Tenants tatsächlich vorkommt (17.09., "Bei der Auswahl soll ... nur das
+  // zur Auswahl stehen, was auch im Kurskatalog so angelegt wurde, wenn es
+  // gar nicht ausgewählt wurde, dann soll der Button auch nicht sichtbar
+  // sein") — exaktes Vorbild: bereicheInPortfolio oben (aus allCourses via
+  // getCoveredBereiche). "weiss-noch-nicht" bleibt IMMER sichtbar (ist keine
+  // Katalog-Kategorie, sondern die "keine Präferenz"-Antwort selbst — die
+  // muss unabhängig vom Katalog wählbar bleiben, sonst gäbe es u.U. gar
+  // keine Option mehr, falls der Katalog leer ist).
+  const coveredCourseCategories = useMemo(() => {
+    const keys = new Set<string>();
+    for (const c of allCourses) {
+      if (c.course_category) keys.add(c.course_category);
+    }
+    return keys;
+  }, [allCourses]);
+  const categoryOptionsInPortfolio = useMemo(
+    () => CATEGORY_OPTIONS.filter((o) => o.key === "weiss-noch-nicht" || coveredCourseCategories.has(o.key)),
+    [coveredCourseCategories]
+  );
   // Bereich-Label der aktuell aktiven Zielrolle (15.09., fuer den
   // kombinierten Ziel+Bereich-Pitch in KursStep/buildCoursePitch) —
   // funktioniert fuer BEIDE Faelle: die synthetische Bereichs-Rolle
@@ -1953,6 +2013,8 @@ async function runDemoAnalysis() {
             workLocation,
             desiredStart,
             fundingPreference,
+            categoryPreference,
+            desiredDuration,
             roles: effectiveRoles,
           }
         );
@@ -2423,6 +2485,11 @@ async function runDemoAnalysis() {
                     onSelectStart={setDesiredStart}
                     fundingPreference={fundingPreference}
                     onSelectFunding={setFundingPreference}
+                    categoryPreference={categoryPreference}
+                    onSelectCategory={setCategoryPreference}
+                    categoryOptions={categoryOptionsInPortfolio}
+                    desiredDuration={desiredDuration}
+                    onSelectDuration={setDesiredDuration}
                     onForward={continuePreferences}
                     onBack={() => setCurrent(stepIndex("ziel"))}
                   />
@@ -2536,6 +2603,8 @@ async function runDemoAnalysis() {
                     workLocation={workLocation}
                     desiredStart={desiredStart}
                     fundingPreference={fundingPreference}
+                    categoryPreference={categoryPreference}
+                    desiredDuration={desiredDuration}
                     goalLabel={GOAL_OPTIONS.find((g) => g.key === careerGoal)?.label}
                     leadName={leadName}
                     setLeadName={setLeadName}
@@ -4254,6 +4323,11 @@ function PraeferenzenStep({
   onSelectStart,
   fundingPreference,
   onSelectFunding,
+  categoryPreference,
+  onSelectCategory,
+  categoryOptions,
+  desiredDuration,
+  onSelectDuration,
   onForward,
   onBack,
 }: {
@@ -4265,6 +4339,14 @@ function PraeferenzenStep({
   onSelectStart: (key: string | null) => void;
   fundingPreference: string | null;
   onSelectFunding: (key: string | null) => void;
+  categoryPreference: string | null;
+  onSelectCategory: (key: string | null) => void;
+  /** Auf den Kurskatalog des Tenants gefiltert (categoryOptionsInPortfolio
+   *  in JourneyPage, 17.09.) — Kategorien ohne einen einzigen Kurs im
+   *  Katalog erscheinen hier gar nicht erst als Button. */
+  categoryOptions: { key: string; label: string }[];
+  desiredDuration: string | null;
+  onSelectDuration: (key: string | null) => void;
   onForward: () => void;
   onBack: () => void;
 }) {
@@ -4308,6 +4390,24 @@ function PraeferenzenStep({
         selected={fundingPreference}
         onSelect={onSelectFunding}
       />
+      {categoryOptions.length > 0 && (
+        <OptionCard
+          icon="📚"
+          title="Weißt du schon, was es sein soll?"
+          sub="Optional — Zertifikat, Seminar, Weiterbildung oder Studium. Wir zeigen dir dann bevorzugt passende Kurse dieser Art."
+          options={categoryOptions}
+          selected={categoryPreference}
+          onSelect={onSelectCategory}
+        />
+      )}
+      <OptionCard
+        icon="⏱️"
+        title="Wie viel Zeit möchtest du investieren?"
+        sub="Optional — hilft deinem Bildungsträger, dir Kurse mit passender Dauer vorzuschlagen."
+        options={DURATION_OPTIONS}
+        selected={desiredDuration}
+        onSelect={onSelectDuration}
+      />
       <ActionsRow onBack={onBack} forwardLabel="Weiter →" onForward={onForward} />
     </div>
   );
@@ -4347,6 +4447,8 @@ function KursStep({
   workLocation,
   desiredStart,
   fundingPreference,
+  categoryPreference,
+  desiredDuration,
   goalLabel,
   leadName,
   setLeadName,
@@ -4420,6 +4522,11 @@ function KursStep({
    *  workLocation/desiredStart oben: fließt in die Präferenzen-Zusammenfassung
    *  und den Passgenauigkeits-Hinweis je Kurskarte ein. */
   fundingPreference: string | null;
+  /** Einkategorisierung/gewünschte Dauer aus dem "Präferenzen"-Schritt
+   *  (Version 28/17.09., siehe CATEGORY_OPTIONS/DURATION_OPTIONS/
+   *  PraeferenzenStep) — gleiches Muster wie die vier Felder oben. */
+  categoryPreference: string | null;
+  desiredDuration: string | null;
   /** Label des im Ziel-Schritt gewählten Beweggrunds (siehe GOAL_OPTIONS),
    * fließt in den personalisierten Pitch ein — undefined, wenn übersprungen. */
   goalLabel?: string;
@@ -4547,6 +4654,8 @@ function KursStep({
     workLocation && LOCATION_OPTIONS.find((o) => o.key === workLocation)?.label,
     desiredStart && START_OPTIONS.find((o) => o.key === desiredStart)?.label,
     fundingPreference && FUNDING_OPTIONS.find((o) => o.key === fundingPreference)?.label,
+    categoryPreference && CATEGORY_OPTIONS.find((o) => o.key === categoryPreference)?.label,
+    desiredDuration && DURATION_OPTIONS.find((o) => o.key === desiredDuration)?.label,
   ].filter((part): part is string => Boolean(part));
   // Eine Karte, wiederverwendet für beide "weitere Kurse"-Gruppen unten
   // (soonStartingCourses/bannerCourses) — exakt dieselbe Darstellung wie
@@ -4766,7 +4875,15 @@ function KursStep({
             // nicht weiss (siehe describePreferenceMismatches in
             // courseMatcher.ts).
             const mismatches = fullCourse
-              ? describePreferenceMismatches(fullCourse, employmentType, workLocation, desiredStart, fundingPreference)
+              ? describePreferenceMismatches(
+                  fullCourse,
+                  employmentType,
+                  workLocation,
+                  desiredStart,
+                  fundingPreference,
+                  categoryPreference,
+                  desiredDuration
+                )
               : [];
             // Individueller, inhaltlich verankerter Pitch für GENAU diese
             // Karte (Version 29) — siehe buildCoursePitch oben.

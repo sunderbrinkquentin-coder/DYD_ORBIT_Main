@@ -3813,3 +3813,273 @@ input.big-input:focus {
 @media (max-width: 620px) {
   .skill-focus-panel { padding: 15px 16px; border-radius: 16px; }
 }
+
+
+/* ================================================================
+   Kurs-Karussell (KursStep) — Rückmeldung 17.09.: "die anderen Kurse
+   sollen rotieren und dort präsent präsentiert werden". Ersetzt die
+   beiden vorherigen, statischen .popular-course-grid-Listen ("Startet
+   bald"/"Weitere Top-Kurse"), die bisher ganz unten NACH dem
+   kompletten Kontaktformular standen (siehe .popular-courses weiter
+   oben, jetzt nicht mehr referenziert). Jetzt direkt nach der
+   Hauptempfehlung, automatisch rotierend (siehe useEffect mit
+   setInterval in KursStep) — Pause bei Hover/Fokus, kein Auto-Advance
+   bei prefers-reduced-motion. Nutzt weiterhin dieselbe .popular-course-
+   card-Optik (siehe oben), nur eine statt vieler gleichzeitig sichtbar. */
+.course-carousel {
+  margin-top: 16px;
+  padding: 18px 19px 20px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid rgba(10, 25, 47, 0.07);
+  box-shadow: 0 8px 22px rgba(10, 25, 47, 0.05);
+}
+.course-carousel-heading {
+  margin-bottom: 14px;
+}
+.course-carousel-heading .field-label {
+  margin-bottom: 3px;
+}
+.course-carousel-heading p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.course-carousel-viewport {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+.course-carousel-track {
+  flex: 1 1 auto;
+  min-width: 0;
+  animation: fadeInUp 0.25s ease both;
+}
+.course-carousel-nav {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border-soft);
+  background: #fff;
+  color: var(--dyd-navy);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.course-carousel-nav:hover {
+  background: var(--blue-bg);
+  border-color: var(--dyd-blue);
+  transform: translateY(-1px);
+}
+.course-carousel-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 13px;
+}
+.course-carousel-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  background: var(--border);
+  cursor: pointer;
+  transition: background 0.15s ease, width 0.15s ease;
+}
+.course-carousel-dot.active {
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  width: 18px;
+  border-radius: 999px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .course-carousel-track { animation: none; }
+}
+@media (max-width: 620px) {
+  .course-carousel { padding: 15px 14px 16px; }
+  .course-carousel-nav { width: 30px; height: 30px; font-size: 16px; }
+}
+
+/* ================================================================
+   LeadStep (Kontaktformular am Ende von KursStep) — Rückmeldung
+   17.09.: "bei deine ausgewählte Weiterbildung unten die Schrift und
+   die Ansicht nicht akzeptabel". Root Cause identisch zum Popup/Pitch-
+   Fund von vorhin: das JSX (lead-course-recap, lead-fields-grid,
+   lead-readiness-strip, lead-intent-heading, …) war schon vollständig
+   da, aber ohne jedes CSS — rendert dadurch als nackter, zusammen-
+   laufender Text statt als Formular. .cta-block/.btn-cta-primary/
+   .consent-row/.big-input/.email-trust-badge hatten dagegen schon CSS
+   (siehe weiter oben) und sind hier bewusst nicht angefasst.
+   ================================================================ */
+.lead-course-recap {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border-radius: 15px;
+  background: linear-gradient(135deg, rgba(143, 236, 180, 0.14), rgba(47, 143, 214, 0.07));
+  border: 1px solid rgba(47, 143, 214, 0.14);
+}
+.lead-course-recap-icon {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--dyd-mint), var(--dyd-blue));
+  color: var(--dyd-navy);
+  font-size: 15px;
+  font-weight: 900;
+}
+.lead-course-recap-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lead-course-recap-copy span {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dyd-blue-dark);
+}
+.lead-course-recap-copy strong {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 15.5px;
+  line-height: 1.3;
+  color: var(--dyd-navy);
+}
+.lead-course-recap-copy small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.lead-data-heading {
+  margin-bottom: 13px;
+}
+.lead-data-title {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 17px;
+  color: var(--dyd-navy);
+}
+.lead-data-subtitle {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.lead-fields-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.lead-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lead-field-full {
+  grid-column: 1 / -1;
+}
+.lead-field label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.optional-label,
+.required-label {
+  margin-left: 5px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+.optional-label {
+  background: var(--border-soft);
+  color: var(--text-muted);
+}
+.required-label {
+  background: var(--blue-bg);
+  color: var(--dyd-blue-dark);
+}
+@media (max-width: 560px) {
+  .lead-fields-grid { grid-template-columns: 1fr; }
+}
+
+.lead-readiness-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin: 14px 0;
+  padding: 10px 13px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid var(--border-soft);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.ready-ok,
+.ready-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 800;
+  flex: 0 0 auto;
+}
+.ready-ok {
+  background: var(--green-bg);
+  color: var(--green-text);
+}
+.ready-open {
+  background: var(--border);
+  color: var(--text-muted);
+}
+.ready-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+  margin: 0 3px;
+}
+.lead-readiness-strip strong {
+  color: var(--dyd-navy);
+  font-size: 11.5px;
+  flex: 1 1 auto;
+}
+@media (max-width: 480px) {
+  .ready-divider { display: none; }
+  .lead-readiness-strip strong { flex-basis: 100%; margin-top: 4px; }
+}
+
+.lead-intent-heading {
+  margin: 4px 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lead-intent-heading strong {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 15px;
+  color: var(--dyd-navy);
+}
+.lead-intent-heading span {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}

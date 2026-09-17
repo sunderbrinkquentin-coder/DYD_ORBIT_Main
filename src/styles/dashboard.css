@@ -3127,3 +3127,24 @@ button.course-skill-chip:disabled {
     transform: translateY(0) scale(1);
   }
 }
+
+/* ---------- Kurs-Pflichtfeld-Warnungen im Kurskatalog-Listing/-Formular
+   (Rückmeldung 17.09.: "so sieht das unprofessionell aus") — .hint.warn
+   ist ein INLINE-Grundstil (siehe weiter oben in dieser Datei); wenn sein
+   Text auf mehr als eine Zeile umbricht, bekommt jede Zeile bei einem
+   <span> ihre EIGENE Hintergrundfarbe/Radius/Padding (Browser-Standard-
+   verhalten für mehrzeilige Inline-Boxen) — dadurch wirkten die beiden
+   Warnungen im Kurskatalog wie zwei versetzte, abgerissene Wortfetzen statt
+   einer klaren Meldung. .course-field-warning macht daraus eine einzige,
+   durchgehende Box (siehe course-manage-card/course-form-actions in
+   DashboardPage.tsx, dort jetzt als <div> statt <span> gerendert). */
+.course-field-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 4px;
+  font-weight: 600;
+  line-height: 1.4;
+}

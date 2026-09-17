@@ -3713,107 +3713,6 @@ input.big-input:focus {
   .dyd-recommendation-modal { max-width: 100%; padding: 24px 20px 20px; border-radius: 20px 20px 0 0; }
 }
 
-/* ================================================================
-   Skill-Fokus Panel (KursStep) — ersetzt die vorherige, weitgehend
-   ungestylte PersonalizedPitch-Karte (siehe PersonalizedPitch in
-   JourneyPage.tsx). Die dort entfernten Ziel-/Kurs-Karten, das
-   Fortschritts-"0von N"-Meter, "Warum diese Empfehlung" und die
-   Kurzbeschreibung standen bereits redundant in .course-hero-pitch
-   (voll gestylt, siehe oben) — hier bleiben nur die konkreten,
-   benannten Lernfelder plus die Kein-Druck-Zusicherung übrig, die es
-   dort so nicht gab. */
-.skill-focus-panel {
-  margin-top: 16px;
-  padding: 18px 19px;
-  border-radius: 18px;
-  background: linear-gradient(145deg, #fbfdff, #f6fbfa);
-  border: 1px solid rgba(47, 143, 214, 0.10);
-}
-.skill-focus-kicker {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 13px;
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--dyd-blue-dark);
-}
-.skill-focus-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 13px;
-}
-.skill-focus-label {
-  margin-bottom: 7px;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-.skill-focus-label-open {
-  color: var(--dyd-blue-dark);
-}
-.skill-focus-chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-.skill-focus-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 11px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 700;
-  line-height: 1.3;
-}
-.skill-focus-chip.is-covered {
-  background: var(--green-bg);
-  color: var(--green-text);
-}
-.skill-focus-chip.is-open {
-  background: var(--blue-bg);
-  color: var(--dyd-blue-dark);
-}
-.skill-focus-chip.is-more {
-  background: var(--border-soft);
-  color: var(--text-secondary);
-}
-.skill-focus-next {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  margin-top: 15px;
-  padding: 12px 13px;
-  border-radius: 13px;
-  background: #fff;
-  border: 1px solid var(--border-soft);
-}
-.skill-focus-next-icon {
-  color: var(--dyd-blue-dark);
-  font-size: 16px;
-  line-height: 1.2;
-}
-.skill-focus-next strong {
-  display: block;
-  margin-bottom: 3px;
-  font-size: 12.5px;
-  color: var(--dyd-navy);
-}
-.skill-focus-next p {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--text-secondary);
-}
-@media (max-width: 620px) {
-  .skill-focus-panel { padding: 15px 16px; border-radius: 16px; }
-}
-
 
 /* ================================================================
    Kurs-Karussell (KursStep) — Rückmeldung 17.09.: "die anderen Kurse
@@ -4082,4 +3981,184 @@ input.big-input:focus {
 .lead-intent-heading span {
   font-size: 11.5px;
   color: var(--text-muted);
+}
+
+
+/* ================================================================
+   Rückmeldung 17.09.: "die Kachel mit dem Pitch finde ich zu wenig
+   präsent" + "die Rahmendaten müssen klar vorhanden sein bei den
+   Kursen". Überschreibt gezielt nur die zu stark komprimierenden
+   Primary-/Alternative-Regeln aus dem minifizierten "DYD V12"-Block
+   weiter oben (spätere Regel gewinnt bei gleicher Spezifität, siehe
+   .course-hero.course-hero-primary/-alternative dort) — die Basis-
+   .course-hero-pitch/-fact-Regeln selbst (weiter oben in dieser Datei)
+   bleiben unangetastet.
+   ================================================================ */
+.course-hero.course-hero-primary .course-hero-pitch {
+  margin-top: 14px;
+  padding: 16px 17px;
+  border-radius: 15px;
+  border: 1px solid rgba(47, 143, 214, 0.18);
+  border-left: 3px solid var(--dyd-blue);
+  background: linear-gradient(135deg, rgba(143, 236, 180, 0.16), rgba(47, 143, 214, 0.07));
+  box-shadow: 0 6px 16px rgba(47, 143, 214, 0.08);
+}
+.course-hero.course-hero-primary .course-hero-pitch-headline {
+  font-size: 13px;
+}
+.course-hero.course-hero-primary .course-hero-pitch-text {
+  font-size: 13.5px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--dyd-navy);
+}
+.course-hero.course-hero-primary .course-hero-pitch-quote {
+  font-size: 12px;
+}
+.course-hero.course-hero-primary .course-hero-facts {
+  gap: 7px;
+  margin-top: 10px;
+}
+.course-hero.course-hero-primary .course-hero-fact {
+  font-size: 12px;
+  padding: 5px 12px;
+  font-weight: 800;
+  border-color: rgba(47, 143, 214, 0.18);
+}
+/* Preis/Dauer/Förderfähigkeit gehören zu den Rahmendaten, nach denen aktiv
+   gesucht wird — bisher auf den kompakteren Alternativ-Karten komplett
+   ausgeblendet (siehe .course-hero-alternative-Regel oben, "display:none"),
+   das betraf faelschlich auch die Fakten-Pillen, nicht nur die persönliche
+   Tiefenanalyse. Coverage-Summary/Pitch/Prozent-Badge bleiben dort bewusst
+   weiterhin ausgeblendet (kompakte Optik), nur die Fakten kommen zurück. */
+.course-hero.course-hero-alternative .course-hero-facts {
+  display: flex;
+  margin-top: 8px;
+}
+.course-hero.course-hero-alternative .course-hero-fact {
+  font-size: 10.5px;
+  padding: 3px 9px;
+}
+
+/* ================================================================
+   Kurskarten-Reveal ("Das bringt dir dieser Kurs konkret") — Rückmeldung
+   17.09.: "es muss dann kommen welche Skills man mit der Weiterbildung
+   erlernt und dass man damit näher an seinem Ziel ist". Erscheint direkt
+   an der jeweils ausgewählten Kurskarte (siehe course-hero-reveal in
+   KursStep, JourneyPage.tsx) — ersetzt das vormalige, von der Karte
+   losgelöste .skill-focus-panel (jetzt entfernt, JSX + CSS). Bewusst als
+   eigene weiße Karte mit farbigem Rahmen/Schatten statt nochmal einem
+   Verlaufshintergrund wie .course-hero-pitch direkt darüber — sonst zwei
+   sehr ähnliche Farbflächen direkt übereinander. */
+.course-hero-reveal {
+  margin-top: 14px;
+  padding: 15px 16px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid rgba(47, 143, 214, 0.2);
+  box-shadow: 0 8px 20px rgba(47, 143, 214, 0.1);
+  animation: fadeInUp 0.25s ease both;
+  cursor: default;
+}
+.course-hero-reveal-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.course-hero-reveal-icon {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--dyd-mint), var(--dyd-blue));
+  color: var(--dyd-navy);
+  font-size: 11px;
+  font-weight: 900;
+}
+.course-hero-reveal-head strong {
+  font-size: 13.5px;
+  color: var(--dyd-navy);
+}
+.course-hero-reveal-skills {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.course-hero-reveal-label {
+  margin-bottom: 6px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.course-hero-reveal-label-open {
+  color: var(--dyd-blue-dark);
+}
+.course-hero-reveal-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.course-hero-reveal-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.course-hero-reveal-chip.is-covered {
+  background: var(--green-bg);
+  color: var(--green-text);
+}
+.course-hero-reveal-chip.is-open {
+  background: var(--blue-bg);
+  color: var(--dyd-blue-dark);
+}
+.course-hero-reveal-chip.is-more {
+  background: var(--border-soft);
+  color: var(--text-secondary);
+}
+.course-hero-reveal-progress {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(143, 236, 180, 0.14), rgba(47, 143, 214, 0.08));
+}
+.course-hero-reveal-progress-icon {
+  font-size: 16px;
+  line-height: 1.2;
+}
+.course-hero-reveal-progress strong {
+  display: block;
+  font-size: 12.5px;
+  color: var(--dyd-navy);
+  margin-bottom: 2px;
+}
+.course-hero-reveal-progress p {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.course-hero-reveal-next {
+  margin-top: 12px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+@media (prefers-reduced-motion: reduce) {
+  .course-hero-reveal { animation: none; }
+}
+@media (max-width: 620px) {
+  .course-hero.course-hero-primary .course-hero-pitch { padding: 14px 15px; }
+  .course-hero-reveal { padding: 13px 14px; }
 }

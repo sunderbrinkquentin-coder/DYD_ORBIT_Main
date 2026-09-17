@@ -2175,6 +2175,37 @@ async function runDemoAnalysis() {
    *  beraten werden wollen. Technisch weiterhin EIN einziger Lead-Datensatz
    *  (siehe consultation_requested/desired_start unten), kein neues
    *  Backend-Feld nötig. */
+  /** Backend-Workaround (17.09., Rückmeldung: "POST .../orbit/leads 404 ...
+   *  Unbekannte target_role_id 'bereich:wirtschaft:knowhow'. Siehe GET
+   *  /api/v1/target-roles."): Das Lead-Backend validiert target_role_id
+   *  strikt gegen seinen eigenen Rollenkatalog und lehnt die synthetische
+   *  "bereich:..."-Pseudo-Rolle (entsteht im Bereichs-Kurzweg ohne konkrete
+   *  Zielrolle, siehe buildBereichRole() in gapAnalysis.ts) komplett mit 404
+   *  ab — OBWOHL journey_snapshot.target_role_name unten bereits die echte,
+   *  für den Bildungsträger gedachte Bezeichnung mitschickt. Betrifft NUR
+   *  diesen Bereichs-Flow; eine echte ROLES_CATALOG-Rolle akzeptiert das
+   *  Backend anstandslos.
+   *
+   *  Der eigentlich saubere Fix gehört ins Backend (target_role_id mit
+   *  "bereich:"-Präfix tolerieren bzw. auf journey_snapshot.target_role_name
+   *  zurückfallen, statt die ganze Anfrage abzulehnen) — das liegt außerhalb
+   *  dieses Frontend-Repos. Bis dahin ersetzen wir hier NUR die rein
+   *  technische Fremdschlüssel-ID durch eine der echten Rollen, aus denen
+   *  sich die Bereichs-Rolle zusammensetzt (buildBereichRole vereinigt
+   *  mehrere echte ROLES_CATALOG-Rollen desselben bereich_key zu einer
+   *  Pseudo-Rolle) — keine erfundene Rolle, sondern eine der Rollen, die
+   *  ohnehin in die Skill-Gewichtung eingeflossen sind. journey_snapshot.
+   *  target_role_name bleibt unverändert die korrekte, breitere
+   *  Bereichs-Bezeichnung; nur die ID für den Datensatz wird ersetzt. Ohne
+   *  Treffer (sollte praktisch nie vorkommen) bleibt targetRoleId
+   *  unverändert — dann bricht der Request wie bisher mit derselben
+   *  Backend-Fehlermeldung ab, statt eine falsche ID zu raten. */
+  function resolveLeadTargetRoleId(rawTargetRoleId: string, roles: CatalogRole[]): string {
+    if (!rawTargetRoleId.startsWith("bereich:")) return rawTargetRoleId;
+    const bereichKeys = rawTargetRoleId.slice("bereich:".length).split(":")[0].split(",");
+    const realRole = roles.find((r) => !r.role_id.startsWith("bereich:") && bereichKeys.includes(r.bereich_key));
+    return realRole?.role_id ?? rawTargetRoleId;
+  }
   async function submitLead(intent: "start" | "info" | "consultation") {
     const consultationRequested = intent === "consultation";
     // "Kurs direkt buchen" ist eine qualifizierte Startanfrage. Wir nutzen
@@ -2205,7 +2236,7 @@ async function runDemoAnalysis() {
     try {
       const created = await createLead(baseUrl, apiKey, {
         text,
-        target_role_id: targetRoleId,
+        target_role_id: resolveLeadTargetRoleId(targetRoleId, effectiveRoles),
         lead_name: leadName.trim() || null,
         contact_email: trimmedEmail,
         // Telefonnummer (Version 27, siehe leadPhone oben), optional.
@@ -2312,7 +2343,7 @@ async function runDemoAnalysis() {
     try {
       await createLead(baseUrl, apiKey, {
         text,
-        target_role_id: targetRoleId,
+        target_role_id: resolveLeadTargetRoleId(targetRoleId, effectiveRoles),
         lead_name: leadName.trim() || null,
         contact_email: trimmedEmail,
         career_goal: careerGoal,
@@ -5700,6 +5731,24 @@ function LeadStep({
         <span className="ready-divider" />
         <strong>{emailValid && consent ? "Bereit für deinen nächsten Schritt" : "Noch 1–2 Angaben fehlen"}</strong>
       </div>
+      {/* Rückmeldung 17.09. ("unten beim Feld alle Weiterbildungen etc.
+          sehen, die ich auch angefragt habe"): additionalCourseNames kam
+          bisher zwar als Prop hier an, wurde aber im eigentlichen Formular
+          nirgends angezeigt — nur ganz am Ende, NACH dem Absenden, im
+          FinalScreen unten ("sowie zu X, Y"). Wer vorher noch mal
+          nachschauen wollte, WELCHE zusätzlich per "Auch anfragen"-Checkbox
+          markierten Kurse gleich mit abgeschickt werden, hatte dazu keine
+          Möglichkeit. Jetzt direkt vor den CTA-Buttons sichtbar — derselbe
+          Wortlaut wie im FinalScreen, damit beide Stellen konsistent
+          bleiben. */}
+      {additionalCourseNames && additionalCourseNames.length > 0 && (
+        <div className="lead-additional-courses">
+          <span aria-hidden="true">＋</span>
+          <span>
+            Du fragst außerdem an: <strong>{additionalCourseNames.join(", ")}</strong>
+          </span>
+        </div>
+      )}
       {/* Rückmeldung 17.09. ("Zusätzlich sollen die Möglichkeiten Kurs
           direkt buchen, Anfragen für mehr Informationen oder persönliches
           Beratungsgespräch unten haben"): drei statt zwei gleichwertige

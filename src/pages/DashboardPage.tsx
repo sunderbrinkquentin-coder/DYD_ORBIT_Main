@@ -39,6 +39,7 @@ import {
   setLeadLinkedCourses,
   skillLevelDetectBaseUrl,
   upsertCourse,
+  type CourseCategory,
   type CourseSkillEntry,
   type CourseUrlExtractResponse,
   type DepthAnalysisResponse,
@@ -297,6 +298,18 @@ interface CourseFormState {
   qualificationType: QualificationType | "";
   dqrLevel: string;
   targetGroup: string;
+  /**
+   * Direktbuchungslink (Version 37, 17.09. — siehe ausführlichen Kommentar an
+   * booking_url/OrbitCourse in orbit.ts). ANDERS als die übrigen Preis-/
+   * Förder-Felder oben ein echtes PFLICHTFELD (siehe Validierung in
+   * handleSaveCourse) — dieselbe Systematik wie bereichKeys: ohne echten
+   * Link kann die Journey den "Kurs direkt buchen"-Button nicht ehrlich
+   * anbieten.
+   */
+  bookingUrl: string;
+  /** Grobe Einkategorisierung (Version 37, siehe course_category in
+   *  orbit.ts) — optional, "" = noch nicht kategorisiert. */
+  courseCategory: CourseCategory | "";
 }
 /** Fördermöglichkeiten (siehe FundingType/funding_types in orbit.ts) — ein
  *  Kurs kann mehrere gleichzeitig erfüllen, deshalb Checkbox-Mehrfachauswahl
@@ -313,6 +326,16 @@ const QUALIFICATION_TYPE_OPTIONS: { key: QualificationType; label: string }[] = 
   { key: "lehrgangszertifikat", label: "Lehrgangszertifikat (ab 50 UE)" },
   { key: "ihk_pruefung", label: "IHK-Prüfung" },
   { key: "sonstiger_abschluss", label: "Sonstiger Abschluss" },
+];
+/** Grobe Einkategorisierung (Version 37, 17.09. — Rückmeldung
+ *  "Einkategorisierung in Zertifikate, Weiterbildung, Studium etc."), siehe
+ *  ausführlichen Kommentar an course_category/OrbitCourse in orbit.ts. */
+const COURSE_CATEGORY_OPTIONS: { key: CourseCategory; label: string }[] = [
+  { key: "zertifikat", label: "Zertifikat" },
+  { key: "weiterbildung", label: "Weiterbildung" },
+  { key: "studium", label: "Studium" },
+  { key: "seminar", label: "Seminar" },
+  { key: "sonstiges", label: "Sonstiges" },
 ];
 /** Vorschläge für den freien Banner-Text im Quick-Picker auf der Kurskachel
  *  (siehe "Dein Kurskatalog") — reiner Textbaustein, kein zusätzlicher
@@ -380,6 +403,8 @@ const DEFAULT_COURSE_FORM: CourseFormState = {
   qualificationType: "",
   dqrLevel: "",
   targetGroup: "",
+  bookingUrl: "",
+  courseCategory: "",
 };
 /** Mindestlänge, ab der eine Kursbeschreibung überhaupt an die automatische
  *  Skill-Erkennung geschickt wird — bei ein paar Wörtern liefert das
@@ -418,6 +443,8 @@ const EXAMPLE_COURSE_FORM: CourseFormState = {
   qualificationType: "",
   dqrLevel: "",
   targetGroup: "",
+  bookingUrl: "https://muster-akademie.de/anmeldung/excel-grundlagen",
+  courseCategory: "weiterbildung",
 };
 /** Beispiel-CSV-Inhalt für den "Kurse per CSV importieren"-Schritt des
  *  Rundgangs — dieselbe Struktur wie downloadImportTemplate() oben, aber mit
@@ -1527,6 +1554,26 @@ export function DashboardPage({
       setCourseFormStatus({ msg: "Bitte einen Bereich auswählen — ohne Bereich kann der Kurs in der Journey nicht zugeordnet werden.", kind: "err" });
       return;
     }
+    // Buchungslink ist seit 17.09. echtes Pflichtfeld (Rückmeldung "bei
+    // direkt starten soll der Link vom Kurs hinterlegt sein ... das muss
+    // dann im Dashboard auch ein Pflichtfeld sein") — dieselbe Systematik wie
+    // die bereichKeys-Prüfung oben. Ohne echten Link kann die Journey den
+    // "Kurs direkt buchen"-Button für diesen Kurs nicht ehrlich anbieten.
+    const trimmedBookingUrl = courseForm.bookingUrl.trim();
+    if (!trimmedBookingUrl) {
+      setCourseFormStatus({
+        msg: "Bitte einen Buchungslink hinterlegen — er führt Interessent:innen beim direkten Buchen auf eure Anmeldeseite.",
+        kind: "err",
+      });
+      return;
+    }
+    if (!/^https?:\/\//i.test(trimmedBookingUrl)) {
+      setCourseFormStatus({
+        msg: "Der Buchungslink muss eine vollständige Web-Adresse sein (beginnend mit http:// oder https://).",
+        kind: "err",
+      });
+      return;
+    }
     setSavingCourse(true);
     setCourseFormStatus({ msg: editingCourseId ? "Aktualisiere Kurs…" : "Speichere Kurs…", kind: "" });
     try {
@@ -1606,6 +1653,11 @@ export function DashboardPage({
         qualification_type: courseForm.qualificationType || null,
         dqr_level: courseForm.dqrLevel.trim() === "" ? null : Math.max(1, Math.min(8, Math.round(Number(courseForm.dqrLevel)))),
         target_group: courseForm.targetGroup.trim() || null,
+        // Direktbuchungslink — Pflichtfeld (siehe Validierung oben), siehe
+        // ausführlichen Kommentar an booking_url/OrbitCourse in orbit.ts.
+        booking_url: trimmedBookingUrl,
+        // Einkategorisierung — optional, siehe course_category in orbit.ts.
+        course_category: courseForm.courseCategory || null,
       });
       setCourses((prev) => {
         const exists = prev.some((c) => c.course_id === saved.course_id);
@@ -2962,6 +3014,11 @@ export function DashboardPage({
       qualificationType: course.qualification_type ?? "",
       dqrLevel: course.dqr_level != null ? String(course.dqr_level) : "",
       targetGroup: course.target_group ?? "",
+      // Leer = Kurs stammt von vor diesem Feature (Pflichtfeld seit 17.09.) —
+      // die Buchungslink-Validierung beim Speichern zwingt dann zur
+      // Nachpflege, genau wie bei bereichKeys oben.
+      bookingUrl: course.booking_url ?? "",
+      courseCategory: course.course_category ?? "",
     });
     setCourseSkillUris(new Set(course.covered_skill_uris));
     // Erfahrungslevel aus covered_skills übernehmen, falls das Backend sie
@@ -4178,6 +4235,53 @@ export function DashboardPage({
                         </div>
                       )}
                     </div>
+                    {/* Rückmeldung 17.09. ("Zusätzlich will ich im Dashboard eine
+                        Einkategorisierung in Zertifikate, Weiterbildung, Studium etc.
+                        ... bei direkt starten soll der Link vom Kurs hinterlegt sein
+                        ... das muss dann im Dashboard auch ein Pflichtfeld sein"):
+                        Einkategorisierung optional, Buchungslink echtes Pflichtfeld
+                        (siehe Validierung in handleAddCourse). */}
+                    <div className="row2" style={{ marginTop: 8 }}>
+                      <div className="lf-field">
+                        <label>Einkategorisierung (optional)</label>
+                        <select
+                          value={courseForm.courseCategory}
+                          onChange={(e) =>
+                            setCourseForm((f) => ({ ...f, courseCategory: e.target.value as CourseCategory | "" }))
+                          }
+                        >
+                          <option value="">— nicht kategorisiert —</option>
+                          {COURSE_CATEGORY_OPTIONS.map((o) => (
+                            <option key={o.key} value={o.key}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="hint">
+                          Grobe Einordnung für deinen Katalog — unabhängig von der Abschlussart oben, die nur das
+                          IHK-Schema abbildet.
+                        </div>
+                      </div>
+                      <div className="lf-field">
+                        <label>Buchungslink * (Pflichtfeld — führt direkt zur Anmeldeseite dieses Kurses)</label>
+                        <input
+                          type="url"
+                          placeholder="https://…/anmeldung/dein-kurs"
+                          required
+                          value={courseForm.bookingUrl}
+                          onChange={(e) => setCourseForm((f) => ({ ...f, bookingUrl: e.target.value }))}
+                        />
+                        <div className="hint">
+                          Interessent:innen landen beim "Kurs direkt buchen"-Button in der Journey direkt auf dieser
+                          Seite — im Idealfall verlinkst du direkt aufs Anmeldeformular.
+                        </div>
+                        {!courseForm.bookingUrl.trim() && (
+                          <div className="hint warn">
+                            Ohne Buchungslink bietet die Journey für diesen Kurs keinen "Kurs direkt buchen"-Button an.
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     <div className="lf-field">
                       <label>Zielgruppe / Voraussetzungen (optional)</label>
                       <textarea
@@ -4710,7 +4814,8 @@ export function DashboardPage({
                           !courseForm.courseId.trim() ||
                           !courseForm.courseName.trim() ||
                           !courseForm.provider.trim() ||
-                          courseForm.bereichKeys.length === 0
+                          courseForm.bereichKeys.length === 0 ||
+                          !courseForm.bookingUrl.trim()
                         }
                       >
                         {savingCourse ? "Speichere…" : editingCourseId ? "Änderungen speichern →" : "Kurs speichern →"}
@@ -5392,6 +5497,21 @@ export function DashboardPage({
                                     <span className="hint warn">⚠ Kein Bereich zugeordnet — in Journey unsichtbar</span>
                                   );
                                 })()}
+                              </div>
+                              {/* Buchungslink (17.09., Pflichtfeld) — genau dasselbe Muster wie
+                                 die Bereich-Warnung direkt darüber: Altkurse von vor diesem
+                                 Feature auf einen Blick als nachpflegebedürftig erkennbar, statt
+                                 nur beim Öffnen des Bearbeiten-Formulars aufzufallen. */}
+                              <div className="course-manage-meta">
+                                {c.booking_url ? (
+                                  <>
+                                    🔗 Buchungslink hinterlegt
+                                    {c.course_category &&
+                                      ` · ${COURSE_CATEGORY_OPTIONS.find((o) => o.key === c.course_category)?.label ?? c.course_category}`}
+                                  </>
+                                ) : (
+                                  <span className="hint warn">⚠ Kein Buchungslink — "Kurs direkt buchen" bleibt in der Journey aus</span>
+                                )}
                               </div>
                               {/* Version 25: macht die neuen Pflichtfelder auch im Kurskatalog-
                                  Listing sichtbar, nicht nur im Bearbeiten-Formular — sonst lässt

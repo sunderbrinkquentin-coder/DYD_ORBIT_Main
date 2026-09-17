@@ -1375,6 +1375,13 @@ async function runDemoAnalysis() {
   // leadEmail selbst schon vorher, aus demselben Grund: ein zusätzliches
   // Pflichtfeld hier würde nur die Abbruchrate erhöhen.
   const [leadPhone, setLeadPhone] = useState("");
+  // Freitext-Anliegen (Rückmeldung 17.09., "es soll da auch ein kleines
+  // Freitextfeld geben in dem man schon konkrete Anliegen schildern kann") —
+  // optional wie leadPhone, damit die Person schon beim Absenden konkret
+  // werden kann (z.B. "Ich habe schon Excel-Grundkenntnisse" oder
+  // "Kann ich das Modul auch abends machen?"), statt das erst im
+  // Beratungsgespräch nachzuholen.
+  const [leadMessage, setLeadMessage] = useState("");
   const [consent, setConsent] = useState(false);
   // DSGVO-Nachweis (Version 28): ISO-Zeitstempel, WANN die Person im CV-
   // Schritt (CvMethod) der Verarbeitung durch die KI zugestimmt hat — anders
@@ -1669,6 +1676,31 @@ async function runDemoAnalysis() {
       else next.add(courseId);
       return next;
     });
+  }
+  /** Rückmeldung 17.09. ("wenn ich einen Kurs oben auswähle, dann darf der
+   *  nicht weggehen, wenn ich auf den anderen klicke"): selectedCourseId ist
+   *  ein EINZELNER Wert — bisher ersetzte ein Klick auf eine andere Karte den
+   *  bisherigen Favoriten schlicht (setSelectedCourseId direkt als
+   *  onSelectCourse), ohne ihn irgendwo festzuhalten. War er nicht zusätzlich
+   *  per "Auch anfragen"-Haken markiert, verschwand er dadurch komplett aus
+   *  der Anfrage — obwohl die Person ihn zuvor bewusst ausgewählt hatte.
+   *  Jetzt: der bisherige Favorit wandert beim Wechsel automatisch in
+   *  additionalCourseIds (dieselbe Menge wie "Auch anfragen"), statt verloren
+   *  zu gehen — er bleibt Teil der Anfrage, nur nicht mehr der neue
+   *  Hauptfavorit. Ein erneuter Wechsel zurück fügt ihn kein zweites Mal
+   *  hinzu (Set), und solange er der aktuelle Hauptfavorit ist, blendet der
+   *  bestehende ".filter((id) => id !== selectedCourseId)" (siehe
+   *  additionalCourseNames/extraCourseIds) ihn ohnehin aus der "zusätzlich"-
+   *  Liste aus. */
+  function handleSelectCourse(courseId: string) {
+    if (selectedCourseId && selectedCourseId !== courseId) {
+      setAdditionalCourseIds((prev) => {
+        const next = new Set(prev);
+        next.add(selectedCourseId);
+        return next;
+      });
+    }
+    setSelectedCourseId(courseId);
   }
   /** KI-Tiefenanalyse (Version 19): NACH dem schnellen Fuzzy-Gap-Ergebnis
    * aufgerufen, nie davor/anstelle. Bewusst fire-and-forget wie createTest
@@ -2241,6 +2273,10 @@ async function runDemoAnalysis() {
         contact_email: trimmedEmail,
         // Telefonnummer (Version 27, siehe leadPhone oben), optional.
         contact_phone: leadPhone.trim() || null,
+        // Freitext-Anliegen (Version 38, 17.09., siehe leadMessage oben) —
+        // optional, damit der Bildungsträger schon vor dem ersten Kontakt
+        // weiß, worum es der Person konkret geht.
+        message: leadMessage.trim() || null,
         // Zusätzliche Qualifizierungsmerkmale (Version 15): welchen Kurs die
         // Person aktiv gewählt hat und wann sie starten möchte. Bewusst als
         // optionale Zusatzfelder verschickt — ein Backend, das sie noch nicht
@@ -2627,7 +2663,7 @@ async function runDemoAnalysis() {
                     // entfernt. Auswahl wirkt jetzt wieder ausschließlich lokal
                     // an der Karte selbst (siehe course-hero-reveal in
                     // KursStep) statt die Seite zu bewegen.
-                    onSelectCourse={setSelectedCourseId}
+                    onSelectCourse={handleSelectCourse}
                     additionalCourseIds={additionalCourseIds}
                     onToggleAdditional={toggleAdditionalCourse}
                     employmentType={employmentType}
@@ -2643,6 +2679,8 @@ async function runDemoAnalysis() {
                     setLeadEmail={setLeadEmail}
                     leadPhone={leadPhone}
                     setLeadPhone={setLeadPhone}
+                    leadMessage={leadMessage}
+                    setLeadMessage={setLeadMessage}
                     consent={consent}
                     setConsent={setConsent}
                     leadBusy={leadBusy}
@@ -4487,6 +4525,8 @@ function KursStep({
   setLeadEmail,
   leadPhone,
   setLeadPhone,
+  leadMessage,
+  setLeadMessage,
   consent,
   setConsent,
   leadBusy,
@@ -4567,6 +4607,8 @@ function KursStep({
   setLeadEmail: (v: string) => void;
   leadPhone: string;
   setLeadPhone: (v: string) => void;
+  leadMessage: string;
+  setLeadMessage: (v: string) => void;
   consent: boolean;
   setConsent: (v: boolean) => void;
   leadBusy: boolean;
@@ -5420,6 +5462,8 @@ function KursStep({
           setLeadEmail={setLeadEmail}
           leadPhone={leadPhone}
           setLeadPhone={setLeadPhone}
+          leadMessage={leadMessage}
+          setLeadMessage={setLeadMessage}
           consent={consent}
           setConsent={setConsent}
           busy={leadBusy}
@@ -5428,6 +5472,7 @@ function KursStep({
           onBack={onBack}
           targetRoleName={targetRoleName}
           courseName={selected?.course_name}
+          courseDescription={selected ? courseById(selected.course_id)?.description ?? null : null}
           additionalCourseNames={additionalCourseNames}
           projectedMatch={
             selected && courseResult
@@ -5492,6 +5537,8 @@ function LeadStep({
   setLeadEmail,
   leadPhone,
   setLeadPhone,
+  leadMessage,
+  setLeadMessage,
   consent,
   setConsent,
   busy,
@@ -5500,6 +5547,7 @@ function LeadStep({
   onBack,
   targetRoleName,
   courseName,
+  courseDescription,
   additionalCourseNames,
   projectedMatch,
   desiredStartLabel,
@@ -5518,6 +5566,11 @@ function LeadStep({
    *  vorher schon. */
   leadPhone: string;
   setLeadPhone: (v: string) => void;
+  /** Freitext-Anliegen (Version 38, 17.09., "es soll da auch ein kleines
+   *  Freitextfeld geben in dem man schon konkrete Anliegen schildern kann") —
+   *  optional wie leadPhone. */
+  leadMessage: string;
+  setLeadMessage: (v: string) => void;
   consent: boolean;
   setConsent: (v: boolean) => void;
   busy: boolean;
@@ -5534,6 +5587,14 @@ function LeadStep({
   onBack: () => void;
   targetRoleName: string | null;
   courseName?: string;
+  /** Beschreibung des aktuell gewählten Kurses (Version 38, 17.09., "Ich will
+   *  die Beschreibung beim Kurs sehen") — dieselbe volle Kursakte wie
+   *  bookingUrl unten (courseById() in KursStep), da CourseRecommendation
+   *  selbst kein description-Feld führt. null/undefined, wenn der
+   *  Bildungsträger für diesen Kurs keine Beschreibung gepflegt hat — dann
+   *  zeigt LeadStep konsequent gar keinen Beschreibungs-Block, statt einen zu
+   *  erfinden (gleiches Prinzip wie überall sonst in diesem Projekt). */
+  courseDescription?: string | null;
   /** Weitere per "Auch anfragen"-Checkbox markierte Kurse (Version 19, siehe
    * additionalCourseNames in JourneyPage) — werden mit demselben
    * Kontaktformular als eigene, zusätzliche Leads angelegt (siehe
@@ -5568,6 +5629,14 @@ function LeadStep({
   bookingUrl?: string | null;
 }) {
   const emailValid = leadEmail.trim().length > 0 && EMAIL_RE.test(leadEmail.trim());
+  // Kursbeschreibung in der Recap-Karte (Version 38, 17.09.) — gleiches
+  // Ein-/Ausklapp-Muster wie an den Kurskarten selbst (popular-course-desc-
+  // block/course-hero-reveal-desc), nur lokal hier statt in KursStep, weil
+  // die Recap-Karte ein eigenständiger Block ist.
+  const recapDescTrimmed = courseDescription?.trim() || null;
+  const [recapDescExpanded, setRecapDescExpanded] = useState(false);
+  const recapDescPreview = recapDescTrimmed ? truncateAtWord(recapDescTrimmed, 160) : null;
+  const recapDescCanExpand = Boolean(recapDescTrimmed && recapDescPreview && recapDescTrimmed.length > recapDescPreview.length);
   // Rein praesentationsbezogen (welcher der drei Buttons gerade den
   // Lade-Spinner zeigen soll, waehrend busy=true) — muss NICHT an
   // JourneyPage gehoben werden, siehe onSubmit-Kommentar oben.
@@ -5632,9 +5701,38 @@ function LeadStep({
       <div className="lead-course-recap">
         <div className="lead-course-recap-icon" aria-hidden="true">✓</div>
         <div className="lead-course-recap-copy">
-          <span>DEINE AUSGEWÄHLTE WEITERBILDUNG</span>
+          {/* Rückmeldung 17.09. ("hier oben sollen dann alle Kurse stehen,
+              die man anfragt"): additionalCourseNames stand bisher nur ganz
+              unten (kurz vor den CTA-Buttons bzw. erst im FinalScreen nach
+              dem Absenden) — jetzt direkt hier in der Recap-Karte, zusammen
+              mit dem Hauptkurs, damit auf einen Blick klar ist, WAS
+              insgesamt angefragt wird. */}
+          <span>{additionalCourseNames && additionalCourseNames.length > 0 ? "DEINE ANGEFRAGTEN WEITERBILDUNGEN" : "DEINE AUSGEWÄHLTE WEITERBILDUNG"}</span>
           <strong>{courseName || "Deine Empfehlung"}</strong>
           {targetRoleName && <small>Dein Ziel: {targetRoleName}</small>}
+          {/* Kursbeschreibung (Version 38, 17.09., "Ich will die Beschreibung
+              beim Kurs sehen") — nur sichtbar, wenn der Bildungsträger für
+              DIESEN Kurs tatsächlich eine Beschreibung hinterlegt hat, sonst
+              bleibt der Block schlicht weg (keine erfundenen Fakten). */}
+          {recapDescTrimmed && (
+            <div className="lead-course-recap-desc">
+              {recapDescExpanded ? recapDescTrimmed : recapDescPreview}
+              {recapDescCanExpand && (
+                <button
+                  type="button"
+                  className="course-hero-more"
+                  onClick={() => setRecapDescExpanded((v) => !v)}
+                >
+                  {recapDescExpanded ? "▴ Weniger anzeigen" : "▾ Mehr erfahren"}
+                </button>
+              )}
+            </div>
+          )}
+          {additionalCourseNames && additionalCourseNames.length > 0 && (
+            <div className="lead-course-recap-extra">
+              ＋ außerdem angefragt: <b>{additionalCourseNames.join(", ")}</b>
+            </div>
+          )}
         </div>
       </div>
 
@@ -5686,6 +5784,22 @@ function LeadStep({
             onChange={(e) => setLeadPhone(e.target.value)}
           />
         </div>
+        {/* Rückmeldung 17.09. ("es soll da auch ein kleines Freitextfeld
+            geben in dem man schon konkrete Anliegen schildern kann") —
+            optional, wandert 1:1 in message (siehe LeadCreateRequest in
+            orbit.ts) und erscheint im Dashboard im Lead-Detail. */}
+        <div className="lead-field lead-field-full">
+          <label htmlFor="leadMessage">Dein Anliegen <span className="optional-label">optional</span></label>
+          <textarea
+            id="leadMessage"
+            className="big-input lead-message-input"
+            placeholder="z. B. Vorkenntnisse, Terminwünsche oder konkrete Fragen zum Kurs …"
+            aria-label="Dein Anliegen (optional)"
+            rows={3}
+            value={leadMessage}
+            onChange={(e) => setLeadMessage(e.target.value)}
+          />
+        </div>
       </div>
 
       <div className="email-trust-badge">
@@ -5731,24 +5845,13 @@ function LeadStep({
         <span className="ready-divider" />
         <strong>{emailValid && consent ? "Bereit für deinen nächsten Schritt" : "Noch 1–2 Angaben fehlen"}</strong>
       </div>
-      {/* Rückmeldung 17.09. ("unten beim Feld alle Weiterbildungen etc.
-          sehen, die ich auch angefragt habe"): additionalCourseNames kam
-          bisher zwar als Prop hier an, wurde aber im eigentlichen Formular
-          nirgends angezeigt — nur ganz am Ende, NACH dem Absenden, im
-          FinalScreen unten ("sowie zu X, Y"). Wer vorher noch mal
-          nachschauen wollte, WELCHE zusätzlich per "Auch anfragen"-Checkbox
-          markierten Kurse gleich mit abgeschickt werden, hatte dazu keine
-          Möglichkeit. Jetzt direkt vor den CTA-Buttons sichtbar — derselbe
-          Wortlaut wie im FinalScreen, damit beide Stellen konsistent
-          bleiben. */}
-      {additionalCourseNames && additionalCourseNames.length > 0 && (
-        <div className="lead-additional-courses">
-          <span aria-hidden="true">＋</span>
-          <span>
-            Du fragst außerdem an: <strong>{additionalCourseNames.join(", ")}</strong>
-          </span>
-        </div>
-      )}
+      {/* Rückmeldung 17.09. ("hier oben sollen dann alle Kurse stehen, die
+          man anfragt"): der "Du fragst außerdem an: ..."-Hinweis stand hier
+          bis eben direkt vor den CTA-Buttons (siehe Vorgänger-Kommentar in
+          der Diff-Historie) — jetzt stattdessen weiter oben in der
+          lead-course-recap-Karte selbst, zusammen mit Kursname und
+          -beschreibung, damit auf einen Blick alles an einer Stelle steht,
+          statt über die Karte verteilt zu sein. */}
       {/* Rückmeldung 17.09. ("Zusätzlich sollen die Möglichkeiten Kurs
           direkt buchen, Anfragen für mehr Informationen oder persönliches
           Beratungsgespräch unten haben"): drei statt zwei gleichwertige

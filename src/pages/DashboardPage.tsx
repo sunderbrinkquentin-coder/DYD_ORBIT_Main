@@ -4811,27 +4811,54 @@ export function DashboardPage({
                       )}
                       {levelRefineError && <div className="hint warn">{levelRefineError}</div>}
                     </div>
-                    <div className="course-form-actions">
-                      <button
-                        className="btn-primary"
-                        onClick={handleAddCourse}
-                        disabled={
-                          savingCourse ||
-                          !courseForm.courseId.trim() ||
-                          !courseForm.courseName.trim() ||
-                          !courseForm.provider.trim() ||
-                          courseForm.bereichKeys.length === 0 ||
-                          !courseForm.bookingUrl.trim()
-                        }
-                      >
-                        {savingCourse ? "Speichere…" : editingCourseId ? "Änderungen speichern →" : "Kurs speichern →"}
-                      </button>
-                      {editingCourseId && (
-                        <button type="button" className="btn-ghost" onClick={resetCourseForm} disabled={savingCourse}>
-                          Abbrechen
-                        </button>
-                      )}
-                    </div>
+                    {/* Rückmeldung 17.09.: "man muss es immer speichern können, wenn man
+                       was ändert" — Bereich/Buchungslink sind seit dem 15./17.09. echte
+                       Pflichtfelder, aber NUR für NEU angelegte Kurse sinnvoll zu
+                       erzwingen. Bei einem Kurs von VOR diesem Feature (editingCourseId
+                       gesetzt) blockierte das bisher jede noch so kleine Änderung
+                       (z.B. Preis korrigieren), solange diese beiden Felder nicht ZUSÄTZLICH
+                       nachgepflegt wurden — obwohl das mit der eigentlichen Änderung nichts
+                       zu tun hat. Für einen bestehenden Kurs bleibt der Speichern-Button
+                       deshalb nur noch wegen der drei Basis-Felder (ID/Name/Anbieter)
+                       gesperrt; Bereich/Buchungslink bleiben als Hinweis sichtbar (siehe
+                       missingRecommendedFields unten), blockieren aber nicht mehr. */}
+                    {(() => {
+                      const missingRecommendedFields = [
+                        courseForm.bereichKeys.length === 0 ? "einen Bereich" : null,
+                        !courseForm.bookingUrl.trim() ? "einen Buchungslink" : null,
+                      ].filter((v): v is string => v !== null);
+                      const isNewCourse = !editingCourseId;
+                      return (
+                        <>
+                          <div className="course-form-actions">
+                            <button
+                              className="btn-primary"
+                              onClick={handleAddCourse}
+                              disabled={
+                                savingCourse ||
+                                !courseForm.courseId.trim() ||
+                                !courseForm.courseName.trim() ||
+                                !courseForm.provider.trim() ||
+                                (isNewCourse && missingRecommendedFields.length > 0)
+                              }
+                            >
+                              {savingCourse ? "Speichere…" : editingCourseId ? "Änderungen speichern →" : "Kurs speichern →"}
+                            </button>
+                            {editingCourseId && (
+                              <button type="button" className="btn-ghost" onClick={resetCourseForm} disabled={savingCourse}>
+                                Abbrechen
+                              </button>
+                            )}
+                          </div>
+                          {!isNewCourse && missingRecommendedFields.length > 0 && (
+                            <div className="hint warn course-field-warning">
+                              ⚠ Noch {missingRecommendedFields.join(" und ")} nachtragen, damit dieser Kurs in der Journey
+                              vollständig funktioniert — deine Änderungen kannst du trotzdem jetzt schon speichern.
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                     {courseFormStatus.msg && (
                       <div className={`form-status ${courseFormStatus.kind}`} aria-live="polite">
                         {courseFormStatus.msg}
@@ -5500,7 +5527,15 @@ export function DashboardPage({
                                   return labels.length ? (
                                     labels.join(" · ")
                                   ) : (
-                                    <span className="hint warn">⚠ Kein Bereich zugeordnet — in Journey unsichtbar</span>
+                                    // War hier ein <span>: bei zwei- statt einzeiligem Text bekommt
+                                    // ein INLINE-Element mit Hintergrund/Padding/Radius pro Zeile eine
+                                    // eigene, versetzte "Box" (klassischer CSS-Effekt bei mehrzeiligem
+                                    // Inline-Hintergrund) — sah wie zwei abgerissene Wortfetzen statt
+                                    // einer klaren Warnung aus (Rückmeldung 17.09.: "so sieht das
+                                    // unprofessionell aus"). Als <div> (wie überall sonst im Kurs-
+                                    // formular, siehe grep `hint warn`) bildet Hintergrund+Radius EINE
+                                    // durchgehende Box, auch wenn der Text umbricht.
+                                    <div className="hint warn course-field-warning">⚠ Kein Bereich zugeordnet — in Journey unsichtbar</div>
                                   );
                                 })()}
                               </div>
@@ -5516,7 +5551,9 @@ export function DashboardPage({
                                       ` · ${COURSE_CATEGORY_OPTIONS.find((o) => o.key === c.course_category)?.label ?? c.course_category}`}
                                   </>
                                 ) : (
-                                  <span className="hint warn">⚠ Kein Buchungslink — "Kurs direkt buchen" bleibt in der Journey aus</span>
+                                  // Gleicher Fix wie bei der Bereich-Warnung direkt darüber — <div>
+                                  // statt <span>, siehe Kommentar dort.
+                                  <div className="hint warn course-field-warning">⚠ Kein Buchungslink — "Kurs direkt buchen" bleibt in der Journey aus</div>
                                 )}
                               </div>
                               {/* Version 25: macht die neuen Pflichtfelder auch im Kurskatalog-

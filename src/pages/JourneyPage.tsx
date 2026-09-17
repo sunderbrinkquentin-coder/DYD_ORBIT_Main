@@ -2207,36 +2207,115 @@ async function runDemoAnalysis() {
    *  beraten werden wollen. Technisch weiterhin EIN einziger Lead-Datensatz
    *  (siehe consultation_requested/desired_start unten), kein neues
    *  Backend-Feld nötig. */
-  /** Backend-Workaround (17.09., Rückmeldung: "POST .../orbit/leads 404 ...
-   *  Unbekannte target_role_id 'bereich:wirtschaft:knowhow'. Siehe GET
-   *  /api/v1/target-roles."): Das Lead-Backend validiert target_role_id
-   *  strikt gegen seinen eigenen Rollenkatalog und lehnt die synthetische
-   *  "bereich:..."-Pseudo-Rolle (entsteht im Bereichs-Kurzweg ohne konkrete
-   *  Zielrolle, siehe buildBereichRole() in gapAnalysis.ts) komplett mit 404
-   *  ab — OBWOHL journey_snapshot.target_role_name unten bereits die echte,
-   *  für den Bildungsträger gedachte Bezeichnung mitschickt. Betrifft NUR
-   *  diesen Bereichs-Flow; eine echte ROLES_CATALOG-Rolle akzeptiert das
-   *  Backend anstandslos.
+  /** Backend-Workaround, erstmals 17.09. (Rückmeldung: "POST .../orbit/leads
+   *  404 ... Unbekannte target_role_id 'bereich:wirtschaft:knowhow'. Siehe
+   *  GET /api/v1/target-roles.") — am selben Tag NOCH EINMAL erweitert, weil
+   *  derselbe 404 auch bei einer ganz gewöhnlichen ROLES_CATALOG-ID auftrat
+   *  ("Unbekannte target_role_id
+   *  'wirtschaft-fachwirt-buero-projektorganisation-ihk'"), obwohl das laut
+   *  der ursprünglichen Diagnose nicht hätte passieren dürfen.
    *
-   *  Der eigentlich saubere Fix gehört ins Backend (target_role_id mit
-   *  "bereich:"-Präfix tolerieren bzw. auf journey_snapshot.target_role_name
-   *  zurückfallen, statt die ganze Anfrage abzulehnen) — das liegt außerhalb
-   *  dieses Frontend-Repos. Bis dahin ersetzen wir hier NUR die rein
-   *  technische Fremdschlüssel-ID durch eine der echten Rollen, aus denen
-   *  sich die Bereichs-Rolle zusammensetzt (buildBereichRole vereinigt
-   *  mehrere echte ROLES_CATALOG-Rollen desselben bereich_key zu einer
-   *  Pseudo-Rolle) — keine erfundene Rolle, sondern eine der Rollen, die
-   *  ohnehin in die Skill-Gewichtung eingeflossen sind. journey_snapshot.
-   *  target_role_name bleibt unverändert die korrekte, breitere
-   *  Bereichs-Bezeichnung; nur die ID für den Datensatz wird ersetzt. Ohne
-   *  Treffer (sollte praktisch nie vorkommen) bleibt targetRoleId
-   *  unverändert — dann bricht der Request wie bisher mit derselben
-   *  Backend-Fehlermeldung ab, statt eine falsche ID zu raten. */
-  function resolveLeadTargetRoleId(rawTargetRoleId: string, roles: CatalogRole[]): string {
-    if (!rawTargetRoleId.startsWith("bereich:")) return rawTargetRoleId;
-    const bereichKeys = rawTargetRoleId.slice("bereich:".length).split(":")[0].split(",");
-    const realRole = roles.find((r) => !r.role_id.startsWith("bereich:") && bereichKeys.includes(r.bereich_key));
-    return realRole?.role_id ?? rawTargetRoleId;
+   *  Root Cause (jetzt vollständig verstanden): Es gibt zwei komplett
+   *  getrennte Rollen-Kataloge. ROLES_CATALOG (rolesCatalog.ts) ist der
+   *  große, statisch im Frontend eingebaute ESCO-Katalog, den die Journey
+   *  fürs client-seitige Skill-Gap-Matching benutzt. Der Rollen-Katalog, den
+   *  das Lead-Backend kennt (roles-State hier, geladen per fetchTargetRoles()
+   *  von GET /api/v1/target-roles), ist dagegen ein pro Tenant im Dashboard
+   *  SELBST angelegter, meist deutlich kleinerer Satz an Zielrollen. Eine
+   *  ROLES_CATALOG-Rolle ist dem Backend deshalb nur dann bekannt, wenn der
+   *  Bildungsträger im Dashboard zufällig eine Zielrolle MIT DERSELBEN ID
+   *  angelegt hat — das betrifft "bereich:..."-Pseudo-IDs praktisch nie und
+   *  ganz normale Rollen-IDs eben auch nicht zuverlässig, wie die zweite
+   *  Rückmeldung zeigt.
+   *
+   *  Der eigentlich saubere Fix (beide Kataloge zusammenführen, oder das
+   *  Backend "bereich:"/unbekannte IDs tolerieren lassen) gehört ins Backend
+   *  bzw. ins Dashboard-Zielrollen-Management — außerhalb dieses Frontend-
+   *  Repos. Bis dahin: robuster mehrstufiger Abgleich gegen den TATSÄCHLICHEN
+   *  Backend-Katalog (roles), bevor überhaupt gesendet wird —
+   *  1) ID direkt im Backend-Katalog bekannt → unverändert übernehmen,
+   *  2) sonst über den (normalisierten) Rollennamen eine exakt passende
+   *     Backend-Rolle suchen — hält die im Dashboard sichtbare Bezeichnung
+   *     korrekt, auch wenn intern eine andere ID verwendet wird,
+   *  3) beim Bereichs-Kurzweg zusätzlich über buildBereichRole()'s
+   *     zugrunde liegende ROLES_CATALOG-Rolle denselben Namensabgleich,
+   *  4) weicher Namensabgleich (gemeinsame, aussagekräftige Wörter) als
+   *     letzte inhaltliche Näherung,
+   *  5) ALLERLETZTER Ausweg, nur damit der Lead überhaupt gespeichert wird
+   *     statt komplett verloren zu gehen: die erste beim Backend bekannte
+   *     Rolle — in diesem Fall aber `nameConfirmed: false`, damit der Aufruf
+   *     das ehrlich im Freitext-Anliegen vermerkt (siehe submitLead unten),
+   *     statt dem Bildungsträger eine möglicherweise falsche Zielrolle ohne
+   *     jeden Hinweis anzuzeigen. Kein Backend-Katalog bekannt → Original-ID
+   *     unverändert lassen wie bisher (kein Rätselraten ins Leere). */
+  function normalizeRoleNameForMatch(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/\([^)]*\)/g, " ")
+      .replace(/[^a-zäöüß0-9]+/gi, " ")
+      .trim()
+      .replace(/\s+/g, " ");
+  }
+  function backendRoleNameOverlapScore(normalizedWanted: string, normalizedCandidate: string): number {
+    const wordsWanted = new Set(normalizedWanted.split(" ").filter((w) => w.length >= 4));
+    const wordsCandidate = new Set(normalizedCandidate.split(" ").filter((w) => w.length >= 4));
+    if (wordsWanted.size === 0 || wordsCandidate.size === 0) return 0;
+    let shared = 0;
+    wordsWanted.forEach((w) => {
+      if (wordsCandidate.has(w)) shared += 1;
+    });
+    return shared;
+  }
+  function resolveLeadTargetRoleId(
+    rawTargetRoleId: string,
+    rawTargetRoleName: string | null,
+    catalogRoles: CatalogRole[],
+    backendRoles: TargetRole[]
+  ): { id: string; nameConfirmed: boolean } {
+    // 1. ID direkt im Backend-Katalog bekannt — der Normalfall.
+    if (backendRoles.some((r) => r.role_id === rawTargetRoleId)) {
+      return { id: rawTargetRoleId, nameConfirmed: true };
+    }
+    const wantedName = rawTargetRoleName ? normalizeRoleNameForMatch(rawTargetRoleName) : "";
+    // 2. Exakter Namensabgleich gegen den Backend-Katalog.
+    if (wantedName) {
+      const exactByName = backendRoles.find((r) => normalizeRoleNameForMatch(r.role_name) === wantedName);
+      if (exactByName) return { id: exactByName.role_id, nameConfirmed: true };
+    }
+    // 3. Bereichs-Kurzweg: zugrunde liegende echte ROLES_CATALOG-Rolle
+    //    bestimmen (bisheriges Verhalten) und deren Namen erneut exakt gegen
+    //    den Backend-Katalog abgleichen.
+    if (rawTargetRoleId.startsWith("bereich:")) {
+      const bereichKeys = rawTargetRoleId.slice("bereich:".length).split(":")[0].split(",");
+      const realRole = catalogRoles.find((r) => !r.role_id.startsWith("bereich:") && bereichKeys.includes(r.bereich_key));
+      if (realRole) {
+        const realName = normalizeRoleNameForMatch(realRole.role_name);
+        const byRealName = backendRoles.find((r) => normalizeRoleNameForMatch(r.role_name) === realName);
+        if (byRealName) return { id: byRealName.role_id, nameConfirmed: true };
+      }
+    }
+    // 4. Weicher Namensabgleich (gemeinsame, aussagekräftige Wörter).
+    if (wantedName && backendRoles.length > 0) {
+      let best: TargetRole | null = null;
+      let bestScore = 0;
+      for (const r of backendRoles) {
+        const score = backendRoleNameOverlapScore(wantedName, normalizeRoleNameForMatch(r.role_name));
+        if (score > bestScore) {
+          bestScore = score;
+          best = r;
+        }
+      }
+      if (best) return { id: best.role_id, nameConfirmed: true };
+    }
+    // 5. Letzter Ausweg, siehe Erklärung oben — Lead retten statt verlieren,
+    //    aber ehrlich als nicht bestätigt markieren.
+    if (backendRoles.length > 0) {
+      console.warn(
+        `[JourneyPage] resolveLeadTargetRoleId: keine passende Backend-Zielrolle für "${rawTargetRoleName ?? rawTargetRoleId}" gefunden — verwende ersatzweise "${backendRoles[0].role_name}", Hinweis geht mit ins Freitext-Anliegen.`
+      );
+      return { id: backendRoles[0].role_id, nameConfirmed: false };
+    }
+    return { id: rawTargetRoleId, nameConfirmed: false };
   }
   async function submitLead(intent: "start" | "info" | "consultation") {
     const consultationRequested = intent === "consultation";
@@ -2266,17 +2345,33 @@ async function runDemoAnalysis() {
     setLeadBusy(true);
     setLeadError(null);
     try {
+      // Siehe ausführlichen Kommentar an resolveLeadTargetRoleId oben — bei
+      // nameConfirmed:false konnte die Zielrolle nicht sauber im
+      // Backend-Katalog wiedergefunden werden; damit das nicht wortlos
+      // untergeht, wird es dem Freitext-Anliegen vorangestellt (Version 38,
+      // 17.09.), statt dem Bildungsträger stillschweigend eine evtl. falsche
+      // Zielrolle anzuzeigen.
+      const resolvedTargetRole = resolveLeadTargetRoleId(targetRoleId, targetRoleName, effectiveRoles, roles);
+      const combinedMessage = [
+        !resolvedTargetRole.nameConfirmed && targetRoleName
+          ? `[Automatischer Hinweis: Zielrolle „${targetRoleName}“ konnte im System nicht eindeutig zugeordnet werden — bitte manuell prüfen.]`
+          : null,
+        leadMessage.trim() || null,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
       const created = await createLead(baseUrl, apiKey, {
         text,
-        target_role_id: resolveLeadTargetRoleId(targetRoleId, effectiveRoles),
+        target_role_id: resolvedTargetRole.id,
         lead_name: leadName.trim() || null,
         contact_email: trimmedEmail,
         // Telefonnummer (Version 27, siehe leadPhone oben), optional.
         contact_phone: leadPhone.trim() || null,
         // Freitext-Anliegen (Version 38, 17.09., siehe leadMessage oben) —
         // optional, damit der Bildungsträger schon vor dem ersten Kontakt
-        // weiß, worum es der Person konkret geht.
-        message: leadMessage.trim() || null,
+        // weiß, worum es der Person konkret geht. Siehe combinedMessage oben
+        // für den zusätzlichen Zielrollen-Hinweis bei nameConfirmed:false.
+        message: combinedMessage || null,
         // Zusätzliche Qualifizierungsmerkmale (Version 15): welchen Kurs die
         // Person aktiv gewählt hat und wann sie starten möchte. Bewusst als
         // optionale Zusatzfelder verschickt — ein Backend, das sie noch nicht
@@ -2377,9 +2472,17 @@ async function runDemoAnalysis() {
     setEarlyCaptureBusy(true);
     setEarlyCaptureError(null);
     try {
+      // Siehe resolveLeadTargetRoleId oben — hier gibt es kein Freitextfeld
+      // wie in submitLead(), daher landet ein nameConfirmed:false-Hinweis
+      // ersatzweise direkt im message-Feld (additiv, siehe orbit.ts).
+      const resolvedTargetRole = resolveLeadTargetRoleId(targetRoleId, targetRoleName, effectiveRoles, roles);
       await createLead(baseUrl, apiKey, {
         text,
-        target_role_id: resolveLeadTargetRoleId(targetRoleId, effectiveRoles),
+        target_role_id: resolvedTargetRole.id,
+        message:
+          !resolvedTargetRole.nameConfirmed && targetRoleName
+            ? `[Automatischer Hinweis: Zielrolle „${targetRoleName}“ konnte im System nicht eindeutig zugeordnet werden — bitte manuell prüfen.]`
+            : null,
         lead_name: leadName.trim() || null,
         contact_email: trimmedEmail,
         career_goal: careerGoal,

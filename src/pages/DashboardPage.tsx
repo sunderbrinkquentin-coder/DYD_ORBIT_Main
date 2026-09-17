@@ -793,6 +793,39 @@ function writeStoredDashboardConnection(baseUrl: string, apiKey: string) {
     // Storage blockiert/voll — Persistenz faellt still weg, Seite laeuft normal weiter.
   }
 }
+/**
+ * Selbst hochgeladenes Mandanten-Logo (Version 41, 17.09.) — bewusst nach
+ * demselben Muster wie readStoredDashboardConnection/writeStoredDashboardConnection
+ * oben: rein lokal im Browser gespeichert (als Data-URL), kein Server-Roundtrip
+ * noetig, ueberlebt Reloads auf demselben Geraet/Browser. Zweck: der
+ * Bildungstraeger kann sein eigenes Logo pflegen, ohne auf ein neues
+ * Deployment/einen tenantLogoUrl-Prop von DYD angewiesen zu sein (siehe
+ * effectiveLogoUrl weiter unten). Bewusst NICHT persistent auf dem Server
+ * gespeichert — dafuer braeuchte es eine neue Spalte/einen Storage-Bucket im
+ * Backend (dyd-skill-api), was ausserhalb dieses Frontend-Repos liegt; falls
+ * das Logo geraeteuebergreifend sichtbar sein oder auf der Endnutzer-Journey
+ * erscheinen soll, ist das ein separater, spaeterer Ausbauschritt.
+ */
+const DASHBOARD_LOGO_STORAGE_KEY = "dyd-orbit-dashboard-logo";
+function readStoredDashboardLogo(): string | null {
+  try {
+    return localStorage.getItem(DASHBOARD_LOGO_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+function writeStoredDashboardLogo(dataUrl: string | null) {
+  try {
+    if (dataUrl) {
+      localStorage.setItem(DASHBOARD_LOGO_STORAGE_KEY, dataUrl);
+    } else {
+      localStorage.removeItem(DASHBOARD_LOGO_STORAGE_KEY);
+    }
+  } catch {
+    // Storage blockiert/voll — Logo bleibt fuer diese Sitzung im State erhalten,
+    // geht aber beim naechsten Laden verloren. Kein Blocker fuers restliche UI.
+  }
+}
 interface DashboardPageProps {
   /** Name des Bildungsträger-Mandanten, wie er in der Sidebar angezeigt wird (Whitelabel-Tenant). */
   tenantName?: string;
@@ -841,6 +874,83 @@ export function DashboardPage({
     writeStoredDashboardConnection(baseUrl, apiKey);
   }, [baseUrl, apiKey]);
   const [showApiKey, setShowApiKey] = useState(false);
+  // ---------- Eigenes Mandanten-Logo (Version 41, 17.09.) ----------
+  // Ein selbst hochgeladenes Logo ueberschreibt den per Prop mitgegebenen
+  // tenantLogoUrl (effectiveLogoUrl weiter unten) — genau das ist der Zweck:
+  // der Bildungstraeger kann sein Logo selbst pflegen, ohne auf DYD warten
+  // zu muessen. Siehe readStoredDashboardLogo/writeStoredDashboardLogo oben
+  // fuer die (bewusst rein lokale) Persistenz.
+  const [customLogoDataUrl, setCustomLogoDataUrl] = useState<string | null>(() => readStoredDashboardLogo());
+  const [logoStatus, setLogoStatus] = useState<{ msg: string; kind: StatusKind }>({ msg: "", kind: "" });
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
+  const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB — reicht fuer ein Logo, haelt localStorage klein.
+  function handleLogoFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // erlaubt erneuten Upload derselben Datei nach einem Fehler
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setLogoStatus({ msg: "Bitte eine Bilddatei auswählen (PNG, JPG oder SVG).", kind: "err" });
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      setLogoStatus({ msg: "Die Datei ist zu groß (max. 2 MB) — bitte ein kleineres Logo hochladen.", kind: "err" });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : null;
+      if (!result) {
+        setLogoStatus({ msg: "Logo konnte nicht gelesen werden — bitte erneut versuchen.", kind: "err" });
+        return;
+      }
+      setCustomLogoDataUrl(result);
+      writeStoredDashboardLogo(result);
+      setLogoStatus({ msg: "✓ Logo gespeichert (nur in diesem Browser sichtbar).", kind: "ok" });
+    };
+    reader.onerror = () => setLogoStatus({ msg: "Logo konnte nicht gelesen werden — bitte erneut versuchen.", kind: "err" });
+    reader.readAsDataURL(file);
+  }
+  function handleRemoveLogo() {
+    setCustomLogoDataUrl(null);
+    writeStoredDashboardLogo(null);
+    setLogoStatus({ msg: "", kind: "" });
+  }
+  // Selbst hochgeladen hat Vorrang vor dem per Prop mitgegebenen Default.
+  const effectiveLogoUrl = customLogoDataUrl ?? tenantLogoUrl;
+  // ---------- Feedback/Ticket an DYD (Version 41, 17.09.) ----------
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackName, setFeedbackName] = useState("");
+  const [feedbackContact, setFeedbackContact] = useState("");
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackStatus, setFeedbackStatus] = useState<{ msg: string; kind: StatusKind }>({ msg: "", kind: "" });
+  const FEEDBACK_TARGET_EMAIL = "quentin@decideyourdream.de";
+  function resetFeedbackForm() {
+    setFeedbackName("");
+    setFeedbackContact("");
+    setFeedbackMessage("");
+    setFeedbackStatus({ msg: "", kind: "" });
+  }
+  // Bewusst KEIN echter Server-Versand (siehe Projekt-Prinzip "keine
+  // erfundenen Fakten") — ein mailto-Link oeffnet nur das Mail-Programm der
+  // Person mit vorausgefuellter Nachricht; sie muss dort noch selbst auf
+  // "Senden" klicken. Kein Backend/Account noetig, daher sofort einsatzbereit.
+  function handleSendFeedback() {
+    const name = feedbackName.trim();
+    const contact = feedbackContact.trim();
+    const message = feedbackMessage.trim();
+    if (!name || !contact || !message) {
+      setFeedbackStatus({ msg: "Bitte Name, Kontakt und Anliegen ausfüllen.", kind: "err" });
+      return;
+    }
+    const subject = `DYD ORBIT Feedback — ${tenantName}`;
+    const body = [`Name: ${name}`, `Kontakt: ${contact}`, `Mandant: ${tenantName}`, "", "Anliegen:", message].join("\n");
+    const mailtoUrl = `mailto:${FEEDBACK_TARGET_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailtoUrl;
+    setFeedbackStatus({
+      msg: `Deine Mail-App sollte sich jetzt mit einer vorausgefüllten Nachricht geöffnet haben — bitte dort auf „Senden" klicken. Falls sich nichts öffnet, schreib direkt an ${FEEDBACK_TARGET_EMAIL}.`,
+      kind: "ok",
+    });
+  }
   const [tab, setTab] = useState<Tab>("leads");
   const [tourOpen, setTourOpen] = useState(false);
   // Selector des gerade aktiven Tour-Schritts (siehe onStepChange an
@@ -3270,6 +3380,16 @@ export function DashboardPage({
       <button className="tour-trigger-btn" onClick={() => setTourOpen(true)} type="button">
         🎓 <span className="tour-trigger-label">Rundgang starten</span>
       </button>
+      <button
+        className="feedback-trigger-btn"
+        onClick={() => {
+          resetFeedbackForm();
+          setShowFeedbackModal(true);
+        }}
+        type="button"
+      >
+        ✉️ <span className="feedback-trigger-label">Feedback</span>
+      </button>
       <DashboardTour
         open={tourOpen}
         onClose={() => setTourOpen(false)}
@@ -3325,22 +3445,44 @@ export function DashboardPage({
             data-tour="tenant-block"
             title="Ingredient Branding: DYD sichtbar als Hauptmarke, Kunden-Branding als Mandanten-Slot daneben."
           >
-            <div className="tenant-logo-placeholder">
-              {tenantLogoUrl ? (
-                <img
-                  src={tenantLogoUrl}
-                  alt={`${tenantName} Logo`}
-                  style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "inherit" }}
-                />
-              ) : (
-                "?"
-              )}
+            <div className="tenant-logo-wrap">
+              <div className="tenant-logo-placeholder">
+                {effectiveLogoUrl ? (
+                  <img
+                    src={effectiveLogoUrl}
+                    alt={`${tenantName} Logo`}
+                    style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "inherit" }}
+                  />
+                ) : (
+                  "?"
+                )}
+              </div>
+              <button
+                type="button"
+                className="tenant-logo-edit-btn"
+                onClick={() => logoInputRef.current?.click()}
+                title={effectiveLogoUrl ? "Logo ändern" : "Eigenes Logo hochladen"}
+                aria-label={effectiveLogoUrl ? "Logo ändern" : "Eigenes Logo hochladen"}
+              >
+                ✎
+              </button>
+              <input ref={logoInputRef} type="file" accept="image/*" onChange={handleLogoFileChange} style={{ display: "none" }} />
             </div>
             <div>
               <div className="tenant-label">Angemeldet als</div>
               <div className="tenant-name">{tenantName}</div>
+              {customLogoDataUrl && (
+                <button type="button" className="tenant-logo-remove-btn" onClick={handleRemoveLogo}>
+                  Eigenes Logo entfernen
+                </button>
+              )}
             </div>
           </div>
+          {logoStatus.msg && (
+            <div className={logoStatus.kind === "err" ? "hint warn tenant-logo-status" : "hint tenant-logo-status"} role="status">
+              {logoStatus.msg}
+            </div>
+          )}
           <div className="orbit-letters">
             <div className="orbit-letter" title="Optimized">O</div>
             <div className="orbit-letter" title="Reskilling">R</div>
@@ -6317,6 +6459,61 @@ export function DashboardPage({
             </div>
           );
         })()}
+      {showFeedbackModal && (
+        <div className="lead-modal-overlay" onClick={() => setShowFeedbackModal(false)}>
+          <div
+            className="lead-modal feedback-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Feedback / Support"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button className="lead-modal-close" onClick={() => setShowFeedbackModal(false)} aria-label="Schließen">
+              ✕
+            </button>
+            <div className="lead-modal-header">
+              <div className="lead-modal-header-info">
+                <div className="lead-modal-name">✉️ Feedback / Support</div>
+                <div className="hint">
+                  Anliegen, Fehler oder Wünsche direkt an DYD melden — öffnet eine vorausgefüllte Mail an{" "}
+                  {FEEDBACK_TARGET_EMAIL}.
+                </div>
+              </div>
+            </div>
+            <div className="lf-field">
+              <label htmlFor="feedback-name">Name *</label>
+              <input id="feedback-name" value={feedbackName} onChange={(e) => setFeedbackName(e.target.value)} />
+            </div>
+            <div className="lf-field">
+              <label htmlFor="feedback-contact">Kontakt (E-Mail oder Telefon) *</label>
+              <input id="feedback-contact" value={feedbackContact} onChange={(e) => setFeedbackContact(e.target.value)} />
+            </div>
+            <div className="lf-field">
+              <label htmlFor="feedback-message">Anliegen *</label>
+              <textarea
+                id="feedback-message"
+                rows={4}
+                placeholder="Was können wir für dich tun?"
+                value={feedbackMessage}
+                onChange={(e) => setFeedbackMessage(e.target.value)}
+              />
+            </div>
+            {feedbackStatus.msg && (
+              <div className={feedbackStatus.kind === "err" ? "hint warn" : "hint"} role="status">
+                {feedbackStatus.msg}
+              </div>
+            )}
+            <div className="course-form-actions">
+              <button className="btn-primary" type="button" onClick={handleSendFeedback}>
+                Mail vorbereiten →
+              </button>
+              <button type="button" className="btn-ghost" onClick={() => setShowFeedbackModal(false)}>
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

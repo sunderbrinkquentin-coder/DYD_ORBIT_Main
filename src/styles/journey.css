@@ -4236,3 +4236,23 @@ input.big-input:focus {
 .info-optin .consultation-optin-title {
   color: var(--green-text);
 }
+
+/* ---------- Zusammenfassung "Du fragst außerdem an: ..." im LeadStep
+   (Rückmeldung 17.09., "unten beim Feld alle Weiterbildungen etc. sehen,
+   die ich auch angefragt habe") — direkt vor den CTA-Buttons, nur sichtbar
+   wenn additionalCourseNames tatsächlich etwas enthält. */
+.lead-additional-courses {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 4px 0 14px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.lead-additional-courses strong {
+  color: var(--dyd-navy);
+}

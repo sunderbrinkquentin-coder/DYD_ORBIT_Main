@@ -1175,6 +1175,26 @@ export function setLeadLinkedCourses(
   );
 }
 
+/**
+ * Antwort von GET /api/v1/tenant/me (Version 42, 17.09.) — der in Supabase
+ * (Tabelle api_keys) hinterlegte Mandanten-Name/-ID zum verwendeten API-Key.
+ * NEU, additiv: ein Backend, das diesen Endpunkt noch nicht kennt, liefert
+ * einfach 404 — fetchTenantInfo() schlägt dann fehl und DashboardPage.tsx
+ * fällt auf den per Prop mitgegebenen tenantName-Default zurück (siehe
+ * effectiveTenantName dort), kein Blocker fürs restliche Dashboard.
+ */
+export interface TenantInfoResponse {
+  tenant_id: string;
+  tenant_name: string;
+}
+
+/** Ruft GET /api/v1/tenant/me auf — Name/ID des Mandanten zum aktuellen API-Key. */
+export function fetchTenantInfo(apiBase: string, apiKey: string): Promise<TenantInfoResponse> {
+  return requestJson<TenantInfoResponse>(apiBase, apiKey, "/api/v1/tenant/me", {
+    method: "GET",
+  });
+}
+
 /** Ruft GET /api/v1/orbit/courses auf — listet den Kurskatalog des Tenants (inkl. is_featured). */
 export function fetchCourses(apiBase: string, apiKey: string): Promise<CourseListResponse> {
   return requestJson<CourseListResponse>(apiBase, apiKey, "/api/v1/orbit/courses", {

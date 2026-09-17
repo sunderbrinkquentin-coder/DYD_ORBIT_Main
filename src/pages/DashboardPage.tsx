@@ -307,6 +307,20 @@ interface CourseFormState {
    * anbieten.
    */
   bookingUrl: string;
+  /**
+   * Manuelle Bestätigung "kein Buchungslink vorhanden" (Version 39, 17.09.,
+   * Rückmeldung "es soll ein Pflichtfeld sein, aber man soll auch die
+   * Möglichkeit haben manuell zu sagen, dass keine vorhanden ist") — rein
+   * lokales Formular-Flag, keine eigene Backend-Spalte: setzt beim Speichern
+   * booking_url bewusst auf null statt einen leeren String zu erzwingen bzw.
+   * das Speichern zu blockieren (siehe handleAddCourse). Bleibt beim erneuten
+   * Öffnen eines gespeicherten Kurses zum Bearbeiten bewusst false, weil das
+   * Bearbeiten bestehender Kurse ohnehin nicht mehr an bookingUrl blockiert
+   * (siehe isNewCourse-Unterscheidung dort) — die Checkbox ist vor allem für
+   * NEUE Kurse gedacht, bei denen es schlicht keine Online-Buchungsseite gibt
+   * (z.B. nur telefonische Anmeldung).
+   */
+  noBookingUrl: boolean;
   /** Grobe Einkategorisierung (Version 37, siehe course_category in
    *  orbit.ts) — optional, "" = noch nicht kategorisiert. */
   courseCategory: CourseCategory | "";
@@ -404,6 +418,7 @@ const DEFAULT_COURSE_FORM: CourseFormState = {
   dqrLevel: "",
   targetGroup: "",
   bookingUrl: "",
+  noBookingUrl: false,
   courseCategory: "",
 };
 /** Mindestlänge, ab der eine Kursbeschreibung überhaupt an die automatische
@@ -444,6 +459,7 @@ const EXAMPLE_COURSE_FORM: CourseFormState = {
   dqrLevel: "",
   targetGroup: "",
   bookingUrl: "https://muster-akademie.de/anmeldung/excel-grundlagen",
+  noBookingUrl: false,
   courseCategory: "weiterbildung",
 };
 /** Beispiel-CSV-Inhalt für den "Kurse per CSV importieren"-Schritt des
@@ -1546,28 +1562,48 @@ export function DashboardPage({
     }
   }
   async function handleAddCourse() {
-    // Bereich ist seit 15.09. Pflichtfeld, seit 15.09. Mehrfachauswahl
-    // moeglich (siehe bereichKeys in CourseFormState) — Button ist zwar schon
-    // disabled, aber defensiv auch hier geprueft, falls handleAddCourse je
-    // programmatisch aufgerufen wird.
-    if (courseForm.bereichKeys.length === 0) {
+    // isNewCourse: dieselbe Unterscheidung wie an der disabled-Bedingung des
+    // "Kurs speichern"-Buttons (17.09.) — Bereich/Buchungslink sind nur beim
+    // NEUANLEGEN hart erzwungen. Bug bis eben: diese Funktion hier prüfte
+    // beide Felder bisher IMMER unconditional, unabhängig von editingCourseId
+    // — der Button liess sich für einen Altkurs zwar anklicken (siehe
+    // course-form-actions weiter unten), aber der Klick brach dann trotzdem
+    // hier mit genau der Fehlermeldung ab, die eigentlich nur für neue Kurse
+    // gelten sollte ("man muss es immer speichern können, wenn man was
+    // ändert" war dadurch noch nicht wirklich erfüllt). Jetzt an dieselbe
+    // isNewCourse-Bedingung gekoppelt wie der Button.
+    const isNewCourse = !editingCourseId;
+    // Bereich ist seit 15.09. Pflichtfeld für NEUE Kurse (siehe bereichKeys in
+    // CourseFormState) — Button ist zwar schon disabled, aber defensiv auch
+    // hier geprueft, falls handleAddCourse je programmatisch aufgerufen wird.
+    if (isNewCourse && courseForm.bereichKeys.length === 0) {
       setCourseFormStatus({ msg: "Bitte einen Bereich auswählen — ohne Bereich kann der Kurs in der Journey nicht zugeordnet werden.", kind: "err" });
       return;
     }
-    // Buchungslink ist seit 17.09. echtes Pflichtfeld (Rückmeldung "bei
-    // direkt starten soll der Link vom Kurs hinterlegt sein ... das muss
-    // dann im Dashboard auch ein Pflichtfeld sein") — dieselbe Systematik wie
-    // die bereichKeys-Prüfung oben. Ohne echten Link kann die Journey den
-    // "Kurs direkt buchen"-Button für diesen Kurs nicht ehrlich anbieten.
+    // Buchungslink ist seit 17.09. echtes Pflichtfeld für NEUE Kurse
+    // (Rückmeldung "bei direkt starten soll der Link vom Kurs hinterlegt sein
+    // ... das muss dann im Dashboard auch ein Pflichtfeld sein") — dieselbe
+    // Systematik wie die bereichKeys-Prüfung oben. Ohne echten Link kann die
+    // Journey den "Kurs direkt buchen"-Button für diesen Kurs nicht ehrlich
+    // anbieten. Ausnahme (Version 39, 17.09., Rückmeldung "man soll auch die
+    // Möglichkeit haben manuell zu sagen, dass keine vorhanden ist"): die
+    // "Kein Buchungslink vorhanden"-Checkbox (courseForm.noBookingUrl) hebt
+    // die Pflicht bewusst auf, statt ein Pflichtfeld ohne jeden Ausweg zu
+    // erzwingen — der Kurs wird dann ganz normal mit booking_url: null
+    // gespeichert (siehe payload unten).
     const trimmedBookingUrl = courseForm.bookingUrl.trim();
-    if (!trimmedBookingUrl) {
+    if (isNewCourse && !courseForm.noBookingUrl && !trimmedBookingUrl) {
       setCourseFormStatus({
-        msg: "Bitte einen Buchungslink hinterlegen — er führt Interessent:innen beim direkten Buchen auf eure Anmeldeseite.",
+        msg: "Bitte einen Buchungslink hinterlegen — er führt Interessent:innen beim direkten Buchen auf eure Anmeldeseite. Alternativ „Kein Buchungslink vorhanden“ ankreuzen.",
         kind: "err",
       });
       return;
     }
-    if (!/^https?:\/\//i.test(trimmedBookingUrl)) {
+    // Format nur pruefen, wenn ueberhaupt ein Wert eingegeben wurde — bei
+    // "Kein Buchungslink vorhanden" oder beim Bearbeiten eines Altkurses ohne
+    // Nachtrag bleibt das Feld leer und soll nicht als "ungueltige URL"
+    // durchgehen.
+    if (trimmedBookingUrl && !/^https?:\/\//i.test(trimmedBookingUrl)) {
       setCourseFormStatus({
         msg: "Der Buchungslink muss eine vollständige Web-Adresse sein (beginnend mit http:// oder https://).",
         kind: "err",
@@ -1653,9 +1689,11 @@ export function DashboardPage({
         qualification_type: courseForm.qualificationType || null,
         dqr_level: courseForm.dqrLevel.trim() === "" ? null : Math.max(1, Math.min(8, Math.round(Number(courseForm.dqrLevel)))),
         target_group: courseForm.targetGroup.trim() || null,
-        // Direktbuchungslink — Pflichtfeld (siehe Validierung oben), siehe
-        // ausführlichen Kommentar an booking_url/OrbitCourse in orbit.ts.
-        booking_url: trimmedBookingUrl,
+        // Direktbuchungslink — Pflichtfeld für neue Kurse (siehe Validierung
+        // oben), siehe ausführlichen Kommentar an booking_url/OrbitCourse in
+        // orbit.ts. null statt "", wenn bewusst "Kein Buchungslink vorhanden"
+        // angekreuzt wurde oder das Feld (bei einem Altkurs) einfach leer ist.
+        booking_url: trimmedBookingUrl || null,
         // Einkategorisierung — optional, siehe course_category in orbit.ts.
         course_category: courseForm.courseCategory || null,
       });
@@ -1679,9 +1717,35 @@ export function DashboardPage({
       const savedBereichKeys = [...(saved.bereich_keys ?? (saved.bereich_key ? [saved.bereich_key] : []))]
         .sort()
         .join(",");
-      if (sentBereichKeys !== savedBereichKeys) {
+      const bereichMismatch = sentBereichKeys !== savedBereichKeys;
+      // Buchungslink (Version 39, 17.09., Rückmeldung "Auch wenn ich einen
+      // Buchungslink hinterlege geht die Meldung nicht weg, das muss
+      // gespeichert werden"): exakt dasselbe Muster wie bei
+      // bereich_key(s)/custom_banner oben/weiter oben in handleUpdateBanner —
+      // wurde tatsächlich ein Link ans Backend gesendet, kommt er von dort
+      // aber NICHT zurück (z.B. weil die Spalte booking_url dort noch fehlt),
+      // bleibt saved.booking_url leer, die "⚠ Kein Buchungslink"-Warnung im
+      // Kurskatalog-Listing verschwindet dadurch nie, egal wie oft ein
+      // gültiger Link eingegeben und gespeichert wird — nach außen sieht das
+      // wie "Speichern tut nichts" aus, obwohl der Request technisch
+      // erfolgreich war. Nur prüfen, wenn wirklich ein Link gesendet wurde
+      // (bei "Kein Buchungslink vorhanden"/leerem Feld gibt es nichts zu
+      // bestätigen).
+      const sentBookingUrl = trimmedBookingUrl || null;
+      const bookingUrlMismatch = sentBookingUrl !== null && (saved.booking_url ?? null) !== sentBookingUrl;
+      if (bereichMismatch && bookingUrlMismatch) {
+        setCourseFormStatus({
+          msg: "Gespeichert, aber Bereich UND Buchungslink kamen vom Server nicht zurück — dein Backend unterstützt bereich_key/bereich_keys und booking_url vermutlich noch nicht.",
+          kind: "err",
+        });
+      } else if (bereichMismatch) {
         setCourseFormStatus({
           msg: "Gespeichert, aber der Bereich kam vom Server nicht zurück — dein Backend unterstützt das Feld bereich_key/bereich_keys vermutlich noch nicht.",
+          kind: "err",
+        });
+      } else if (bookingUrlMismatch) {
+        setCourseFormStatus({
+          msg: "Gespeichert, aber der Buchungslink kam vom Server nicht zurück — dein Backend unterstützt das Feld booking_url vermutlich noch nicht. Deshalb bleibt die Warnung im Kurskatalog stehen, obwohl der Link im Formular korrekt hinterlegt ist.",
           kind: "err",
         });
       } else {
@@ -2306,6 +2370,20 @@ export function DashboardPage({
       qualificationType: d.qualification_type ?? "",
       dqrLevel: d.dqr_level != null ? String(d.dqr_level) : "",
       targetGroup: d.target_group?.trim() ?? "",
+      // Rückmeldung 17.09.: "wenn man es über die domain macht, dass die
+      // einzeldomain direkt gespeichert wird" — res.source_url ist die
+      // tatsächlich geladene Kurs-Seiten-URL (nach evtl. Redirects, siehe
+      // Kommentar an CourseUrlExtractResponse in orbit.ts) und damit genau
+      // die Seite, auf der ein Interessent sich für DIESEN Kurs anmeldet.
+      // Bisher wurde sie nach der Extraktion verworfen, obwohl bookingUrl im
+      // Formular seit dem 17.09. ein Pflichtfeld ist — jeder importierte
+      // Entwurf zwang so zum manuellen Nachtragen genau der URL, die gerade
+      // erst abgerufen wurde. source_url ist zwar nicht IMMER exakt die
+      // Anmeldeseite (manche Kurs-Seiten verlinken die Anmeldung separat),
+      // aber die mit Abstand beste automatische Näherung; bei Bedarf lässt
+      // sie sich im Formular direkt korrigieren, bevor gespeichert wird.
+      bookingUrl: res.source_url ?? "",
+      noBookingUrl: false,
     }));
     setUrlImportVerifiedFields(res.verified_fields);
     setUrlImportDurationHint(d.duration_hint?.trim() || null);
@@ -3014,10 +3092,15 @@ export function DashboardPage({
       qualificationType: course.qualification_type ?? "",
       dqrLevel: course.dqr_level != null ? String(course.dqr_level) : "",
       targetGroup: course.target_group ?? "",
-      // Leer = Kurs stammt von vor diesem Feature (Pflichtfeld seit 17.09.) —
-      // die Buchungslink-Validierung beim Speichern zwingt dann zur
-      // Nachpflege, genau wie bei bereichKeys oben.
+      // Leer = Kurs stammt von vor diesem Feature (Pflichtfeld seit 17.09.)
+      // ODER wurde bewusst per "Kein Buchungslink vorhanden" ohne Link
+      // gespeichert — beides sieht man dem Feld nicht mehr an, daher startet
+      // noBookingUrl beim erneuten Öffnen zum Bearbeiten immer bei false
+      // (unkritisch, siehe Kommentar an noBookingUrl in CourseFormState:
+      // Bearbeiten bestehender Kurse blockiert ohnehin nicht mehr an
+      // bookingUrl, genau wie bei bereichKeys oben).
       bookingUrl: course.booking_url ?? "",
+      noBookingUrl: false,
       courseCategory: course.course_category ?? "",
     });
     setCourseSkillUris(new Set(course.covered_skill_uris));
@@ -4269,19 +4352,40 @@ export function DashboardPage({
                         </div>
                       </div>
                       <div className="lf-field">
-                        <label>Buchungslink * (Pflichtfeld — führt direkt zur Anmeldeseite dieses Kurses)</label>
+                        <label>Buchungslink {!courseForm.noBookingUrl && "* (Pflichtfeld — führt direkt zur Anmeldeseite dieses Kurses)"}</label>
                         <input
                           type="url"
                           placeholder="https://…/anmeldung/dein-kurs"
-                          required
+                          required={!courseForm.noBookingUrl}
+                          disabled={courseForm.noBookingUrl}
                           value={courseForm.bookingUrl}
                           onChange={(e) => setCourseForm((f) => ({ ...f, bookingUrl: e.target.value }))}
                         />
+                        {/* Rückmeldung 17.09.: "es soll ein Pflichtfeld sein, aber man soll
+                           auch die Möglichkeit haben manuell zu sagen, dass keine vorhanden
+                           ist" — es gibt Kurse ganz ohne eigene Online-Anmeldeseite (z.B. nur
+                           telefonische Anmeldung); ohne diese Checkbox blieb "Kurs speichern"
+                           für einen NEUEN Kurs in diesem Fall komplett unmöglich, siehe
+                           isNewCourse-Prüfung in handleAddCourse. */}
+                        <label className="lf-checkbox-field">
+                          <input
+                            type="checkbox"
+                            checked={courseForm.noBookingUrl}
+                            onChange={(e) =>
+                              setCourseForm((f) => ({
+                                ...f,
+                                noBookingUrl: e.target.checked,
+                                bookingUrl: e.target.checked ? "" : f.bookingUrl,
+                              }))
+                            }
+                          />
+                          Kein Buchungslink vorhanden (z.B. nur telefonische Anmeldung)
+                        </label>
                         <div className="hint">
                           Interessent:innen landen beim "Kurs direkt buchen"-Button in der Journey direkt auf dieser
                           Seite — im Idealfall verlinkst du direkt aufs Anmeldeformular.
                         </div>
-                        {!courseForm.bookingUrl.trim() && (
+                        {!courseForm.noBookingUrl && !courseForm.bookingUrl.trim() && (
                           <div className="hint warn">
                             Ohne Buchungslink bietet die Journey für diesen Kurs keinen "Kurs direkt buchen"-Button an.
                           </div>
@@ -4825,7 +4929,9 @@ export function DashboardPage({
                     {(() => {
                       const missingRecommendedFields = [
                         courseForm.bereichKeys.length === 0 ? "einen Bereich" : null,
-                        !courseForm.bookingUrl.trim() ? "einen Buchungslink" : null,
+                        // "Kein Buchungslink vorhanden" (Version 39) ist eine bewusste
+                        // Bestätigung, kein Versehen — zählt deshalb nicht als "fehlend".
+                        !courseForm.noBookingUrl && !courseForm.bookingUrl.trim() ? "einen Buchungslink" : null,
                       ].filter((v): v is string => v !== null);
                       const isNewCourse = !editingCourseId;
                       return (

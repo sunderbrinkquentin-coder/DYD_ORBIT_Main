@@ -431,6 +431,39 @@ export interface OrbitCourse {
   /** Zielgruppe/Voraussetzungen als Freitext, z.B. "Grundlegende
    *  IT-Kenntnisse von Vorteil, keine Programmiererfahrung nötig". */
   target_group?: string | null;
+  /**
+   * Direktbuchungslink (Version 37, 17.09. — Rückmeldung "bei direkt starten
+   * soll der Link vom Kurs hinterlegt sein, sodass man direkt aufs
+   * Anmeldefeld kommt"): die tatsächliche Anmelde-/Buchungsseite des
+   * Bildungsträgers für GENAU diesen Kurs — kein DYD-eigener Anmeldeprozess.
+   * Journey (KursStep/LeadStep) öffnet diesen Link in einem neuen Tab, wenn
+   * die Person "Kurs direkt buchen" wählt, und legt zusätzlich ganz normal
+   * einen Lead an, damit der Bildungsträger die Anfrage trotzdem sieht. Im
+   * Kursformular PFLICHTFELD (siehe CourseUpsertRequest unten und die
+   * entsprechende Validierung in DashboardPage.tsx) — ANDERS als die übrigen
+   * additiven Felder hier, weil ohne einen echten Link der "direkt buchen"-
+   * Button gar nicht ehrlich angeboten werden kann (keine erfundene
+   * Weiterleitung). Optional im TYP trotzdem (wie bereich_key), damit
+   * bereits bestehende Kurse aus der Zeit vor diesem Feature nicht plötzlich
+   * als "kaputt" gelten — sie zeigen in der Journey einfach (noch) keinen
+   * "Kurs direkt buchen"-Button, bis nachgepflegt wurde.
+   */
+  booking_url?: string | null;
+  /**
+   * Grobe Einkategorisierung des Kurses (Version 37, 17.09. — Rückmeldung
+   * "Einkategorisierung in Zertifikate, Weiterbildung, Studium etc."). Bewusst
+   * EIN ZUSÄTZLICHES, einfaches Feld NEBEN qualification_type: qualification_type
+   * bildet die IHK-spezifische Abschlussart ab (seminarzertifikat/
+   * lehrgangszertifikat/ihk_pruefung/sonstiger_abschluss) und ist für einen
+   * Bildungsträger ohne IHK-Bezug oft gar nicht einschlägig; course_category
+   * ist die einfache, format-unabhängige Grobsortierung, nach der ein
+   * Bildungsträger seinen Katalog im Dashboard filtert/organisiert (z.B. auch
+   * ein Studiengang oder ein reines Online-Seminar, für die qualification_type
+   * nicht passt). Additiv/optional wie die übrigen neuen Felder — ein Kurs
+   * ohne gesetzten Wert erscheint im Dashboard einfach als "nicht
+   * kategorisiert" statt mit einer erfundenen Zuordnung.
+   */
+  course_category?: CourseCategory | null;
 }
 
 /** "hybrid" = sowohl remote als auch vor Ort möglich. */
@@ -441,6 +474,8 @@ export type EmploymentMode = "vollzeit" | "teilzeit" | "beides";
 export type FundingType = "bildungsgutschein" | "aufstiegs_bafoeg" | "laenderfoerderung" | "bildungsurlaub";
 /** Siehe ausführlichen Kommentar an qualification_type/OrbitCourse oben. */
 export type QualificationType = "seminarzertifikat" | "lehrgangszertifikat" | "ihk_pruefung" | "sonstiger_abschluss";
+/** Siehe ausführlichen Kommentar an course_category/OrbitCourse oben. */
+export type CourseCategory = "zertifikat" | "weiterbildung" | "studium" | "seminar" | "sonstiges";
 
 export interface CourseListResponse {
   tenant_id: string;
@@ -488,6 +523,10 @@ export interface CourseUpsertRequest {
   qualification_type?: QualificationType | null;
   dqr_level?: number | null;
   target_group?: string | null;
+  /** Siehe booking_url in OrbitCourse oben — im Kursformular Pflichtfeld. */
+  booking_url?: string | null;
+  /** Siehe course_category in OrbitCourse oben. */
+  course_category?: CourseCategory | null;
 }
 
 // ---------- Test-Tracking (POST /api/v1/orbit/tests, .../recommendation) ----------

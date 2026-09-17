@@ -3653,6 +3653,12 @@ export function DashboardPage({
                                   {l.contact_phone ? ` · ${l.contact_phone}` : ""}
                                 </div>
                                 {l.assigned_to && <div className="lead-assigned-chip">👤 {l.assigned_to}</div>}
+                                {/* Nur ein Hinweis-Chip in der Kompaktkarte (Platz ist hier
+                                    knapp) — der volle Text steht im Detail-Modal (siehe
+                                    lead-message-block unten). */}
+                                {l.message && l.message.trim() && (
+                                  <div className="lead-assigned-chip lead-message-chip">✉️ Anliegen hinterlegt</div>
+                                )}
                               </div>
                             </div>
                             {/* Eigene Steuerelemente in der Karte (Buchen-Button etc.) müssen die
@@ -5902,6 +5908,18 @@ export function DashboardPage({
                         🎓 {FUNDING_PREFERENCE_LABELS[l.funding_preference]}
                       </span>
                     )}
+                  </div>
+                )}
+
+                {/* Freitext-Anliegen (Version 38, 17.09., siehe message in
+                    LeadCreateRequest/LeadResponse orbit.ts) — eigener Block statt
+                    Chip in der lead-meta-row oben, weil es sich um freien
+                    Fließtext statt einem kurzen Auswahlwert handelt. Nur
+                    sichtbar, wenn die Person tatsächlich etwas geschrieben hat. */}
+                {l.message && l.message.trim() && (
+                  <div className="lead-message-block">
+                    <div className="lead-message-label">✉️ Anliegen der Person</div>
+                    <div className="lead-message-text">{l.message.trim()}</div>
                   </div>
                 )}
 

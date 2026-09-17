@@ -4083,46 +4083,74 @@ input.big-input:focus {
   font-size: 13.5px;
   color: var(--dyd-navy);
 }
-.course-hero-reveal-skills {
+/* Rahmendaten (Dauer/Ort/Kosten/Niveau/Förderung/Start) — Rückmeldung
+   17.09. "die Infos Dauer, Ort, Kosten, Niveau etc. sollen auch
+   drinstehen". Kompakte Definitionsliste, bewusst vor den Skills, damit
+   die harten Fakten zuerst kommen. */
+.course-hero-reveal-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px 14px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.course-hero-reveal-fact {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 2px;
 }
-.course-hero-reveal-label {
-  margin-bottom: 6px;
-  font-size: 9.5px;
+.course-hero-reveal-fact-label {
+  font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
-.course-hero-reveal-label-open {
-  color: var(--dyd-blue-dark);
+.course-hero-reveal-fact span:last-child {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--dyd-navy);
+}
+
+/* Gelernte Skills bewusst deutlich im Vordergrund (Rückmeldung 17.09.
+   "die erlernten Skills sollten viel mehr im Vordergrund stehen als die
+   noch offenen Skills"): große, satte grüne Chips mit eigener
+   Zwischenüberschrift — die noch offenen Skills (.course-hero-reveal-open
+   weiter unten) sind bewusst nur noch ein kleiner, einzeiliger
+   Fließtext-Hinweis statt gleichwertiger Chips. */
+.course-hero-reveal-covered-heading {
+  margin-bottom: 9px;
+  font-family: "Baloo 2", sans-serif;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--dyd-navy);
 }
 .course-hero-reveal-chip-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-}
-.course-hero-reveal-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
+  gap: 7px;
 }
 .course-hero-reveal-chip.is-covered {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 800;
   background: var(--green-bg);
   color: var(--green-text);
+  border: 1px solid rgba(23, 138, 76, 0.16);
 }
-.course-hero-reveal-chip.is-open {
-  background: var(--blue-bg);
-  color: var(--dyd-blue-dark);
+.course-hero-reveal-open {
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
 }
-.course-hero-reveal-chip.is-more {
-  background: var(--border-soft);
+.course-hero-reveal-open-label {
+  font-weight: 700;
   color: var(--text-secondary);
 }
 .course-hero-reveal-progress {

@@ -30,6 +30,7 @@ import {
   fetchLeads,
   fetchOrbitReport,
   fetchSkillLevelDetect,
+  fetchTenantInfo,
   setCourseFeatured,
   setLeadAssignedTo,
   setLeadBooked,
@@ -917,6 +918,16 @@ export function DashboardPage({
   }
   // Selbst hochgeladen hat Vorrang vor dem per Prop mitgegebenen Default.
   const effectiveLogoUrl = customLogoDataUrl ?? tenantLogoUrl;
+  // ---------- Mandanten-Name aus Supabase (Version 42, 17.09.) ----------
+  // tenantName (Prop) war bisher IMMER der statische Default ("Beispiel
+  // Bildungsträger GmbH") — kein Aufruf im Repo befüllt diesen Prop mit
+  // echten Daten. Quentin will stattdessen den echten, in Supabase
+  // (Tabelle api_keys, Spalte tenant_name) hinterlegten Namen sehen, sobald
+  // man sich mit dem API-Key verbindet. fetchedTenantName wird in connect()
+  // gesetzt (siehe dort) und hat Vorrang, sobald geladen — bis dahin (oder
+  // falls der Endpunkt am Backend noch fehlt) bleibt es beim Prop-Default.
+  const [fetchedTenantName, setFetchedTenantName] = useState<string | null>(null);
+  const effectiveTenantName = fetchedTenantName ?? tenantName;
   // ---------- Feedback/Ticket an DYD (Version 41, 17.09.) ----------
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackName, setFeedbackName] = useState("");
@@ -942,8 +953,8 @@ export function DashboardPage({
       setFeedbackStatus({ msg: "Bitte Name, Kontakt und Anliegen ausfüllen.", kind: "err" });
       return;
     }
-    const subject = `DYD ORBIT Feedback — ${tenantName}`;
-    const body = [`Name: ${name}`, `Kontakt: ${contact}`, `Mandant: ${tenantName}`, "", "Anliegen:", message].join("\n");
+    const subject = `DYD ORBIT Feedback — ${effectiveTenantName}`;
+    const body = [`Name: ${name}`, `Kontakt: ${contact}`, `Mandant: ${effectiveTenantName}`, "", "Anliegen:", message].join("\n");
     const mailtoUrl = `mailto:${FEEDBACK_TARGET_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     window.location.href = mailtoUrl;
     setFeedbackStatus({
@@ -993,7 +1004,7 @@ export function DashboardPage({
   // Mandanten). Pflichtfeld bleibt es trotzdem, siehe Speichern-Button unten.
   // Deshalb hier per Lazy-Initializer aus der Prop gesetzt statt aus
   // DEFAULT_COURSE_FORM.
-  const [courseForm, setCourseForm] = useState<CourseFormState>(() => ({ ...DEFAULT_COURSE_FORM, provider: tenantName }));
+  const [courseForm, setCourseForm] = useState<CourseFormState>(() => ({ ...DEFAULT_COURSE_FORM, provider: effectiveTenantName }));
   const [courseFormStatus, setCourseFormStatus] = useState<{ msg: string; kind: StatusKind }>({ msg: "", kind: "" });
   const [savingCourse, setSavingCourse] = useState(false);
   // Kurzes Bestaetigungs-Popup beim Speichern (siehe handleAddCourse) —
@@ -1237,7 +1248,7 @@ export function DashboardPage({
       !courseForm.courseName.trim()
     ) {
       manualExampleAppliedRef.current = true;
-      setCourseForm({ ...EXAMPLE_COURSE_FORM, provider: tenantName });
+      setCourseForm({ ...EXAMPLE_COURSE_FORM, provider: effectiveTenantName });
     }
     if (tourStepSelector === '[data-tour="kurse-csv-import"]' && !csvExampleAppliedRef.current && importDataRows.length === 0) {
       csvExampleAppliedRef.current = true;
@@ -1309,6 +1320,17 @@ export function DashboardPage({
     }
     setConnecting(true);
     setConnStatus({ msg: "Lade…", kind: "" });
+    // Mandanten-Name (Version 42) — bewusst NICHT Teil des Promise.allSettled
+    // unten: ein fehlender/alter Backend-Endpunkt hier soll weder den
+    // "Verbunden"-Status kippen noch die failed.length-Zählung (die auf
+    // genau vier Kern-Endpunkte ausgelegt ist) durcheinanderbringen.
+    // Schlägt der Aufruf fehl, bleibt effectiveTenantName einfach beim
+    // Prop-Default — kein Fehler, keine Statusmeldung, kein Blocker.
+    fetchTenantInfo(baseUrl, apiKey)
+      .then((info) => setFetchedTenantName(info.tenant_name || null))
+      .catch(() => {
+        // Endpunkt existiert (noch) nicht oder Anfrage fehlgeschlagen.
+      });
     try {
       const [rolesRes, leadsRes, reportRes, coursesRes] = await Promise.allSettled([
         fetchTargetRoles(baseUrl, apiKey),
@@ -1883,7 +1905,7 @@ export function DashboardPage({
     }
   }
   function resetCourseForm() {
-    setCourseForm({ ...DEFAULT_COURSE_FORM, provider: tenantName });
+    setCourseForm({ ...DEFAULT_COURSE_FORM, provider: effectiveTenantName });
     setUrlImportVerifiedFields([]);
     setUrlImportDurationHint(null);
     setCourseSkillUris(new Set());
@@ -2460,7 +2482,7 @@ export function DashboardPage({
       // Seitenkopf, nicht als eigenes "Anbieter"-Feld). Fallback auf
       // tenantName statt etwas zu erfinden — derselbe Wert, den auch
       // resetCourseForm()/das leere Formular per Default nutzt.
-      provider: d.provider?.trim() || tenantName,
+      provider: d.provider?.trim() || effectiveTenantName,
       description: d.description?.trim() ?? "",
       durationWeeks: d.duration_weeks != null ? String(Math.max(1, Math.round(d.duration_weeks))) : DEFAULT_COURSE_FORM.durationWeeks,
       durationUnit: "weeks",
@@ -3165,7 +3187,7 @@ export function DashboardPage({
       // ist änderbar, siehe Kommentar beim courseForm-State oben) — fällt nur
       // auf den aktuellen Mandanten zurück, falls ein Kurs noch keinen
       // Anbieter hat.
-      provider: course.provider || tenantName,
+      provider: course.provider || effectiveTenantName,
       // Backend liefert nur Wochen zurück — beim Bearbeiten deshalb immer in
       // Wochen angezeigt, unabhängig davon, in welcher Einheit ursprünglich
       // eingegeben wurde.
@@ -3450,7 +3472,7 @@ export function DashboardPage({
                 {effectiveLogoUrl ? (
                   <img
                     src={effectiveLogoUrl}
-                    alt={`${tenantName} Logo`}
+                    alt={`${effectiveTenantName} Logo`}
                     style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "inherit" }}
                   />
                 ) : (
@@ -3470,7 +3492,7 @@ export function DashboardPage({
             </div>
             <div>
               <div className="tenant-label">Angemeldet als</div>
-              <div className="tenant-name">{tenantName}</div>
+              <div className="tenant-name">{effectiveTenantName}</div>
               {customLogoDataUrl && (
                 <button type="button" className="tenant-logo-remove-btn" onClick={handleRemoveLogo}>
                   Eigenes Logo entfernen
@@ -4162,7 +4184,7 @@ export function DashboardPage({
                         <input
                           value={courseForm.provider}
                           onChange={(e) => setCourseForm((f) => ({ ...f, provider: e.target.value }))}
-                          placeholder={tenantName}
+                          placeholder={effectiveTenantName}
                           required
                         />
                         <div className="hint">Vorbelegt mit deinem Mandanten (identisch mit dem für die API hinterlegten Anbieter) — bei Bedarf änderbar, darf aber nicht leer sein.</div>

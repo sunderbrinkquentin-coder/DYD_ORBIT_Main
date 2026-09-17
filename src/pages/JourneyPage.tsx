@@ -681,6 +681,36 @@ function formatEuro(amount: number): string {
     maximumFractionDigits: 2,
   }).format(amount);
 }
+/**
+ * Einheitliches Dauer-Format (Rückmeldung 17.09., "Kosten Dauer in einem
+ * einheitlichen Format") — bisher zeigte course-hero-meta nur "X Wochen",
+ * course-hero-facts daneben zusätzlich "Y UE" als eigene Pille, und die
+ * "Weitere passende Kurse"-Kachel gar keine UE. Jetzt eine Stelle, die beides
+ * konsistent zu einem String zusammenzieht — nur reale Felder, teaching_units
+ * bleibt weg, wenn der Bildungsträger es nicht gepflegt hat.
+ */
+function formatCourseDuration(course: { duration_weeks: number; teaching_units?: number | null }): string {
+  const weeks = `${course.duration_weeks} Wochen`;
+  return course.teaching_units != null ? `${weeks} · ${course.teaching_units} UE` : weeks;
+}
+/**
+ * Einheitliches Preis-Format (siehe formatCourseDuration oben, gleicher
+ * Anlass) — bisher hatte course-hero-facts USt.-Hinweis + Prüfungsgebühr,
+ * course-hero-reveal-facts nur den USt.-Hinweis, die Kurskachel im Karussell
+ * gar keinen Zusatz. Jetzt eine Stelle für alle drei. null, wenn kein Preis
+ * gepflegt ist — keine Zeile statt einer erfundenen.
+ */
+function formatCoursePrice(course: {
+  price_eur?: number | null;
+  price_vat_exempt?: boolean | null;
+  exam_fee_eur?: number | null;
+}): string | null {
+  if (course.price_eur == null) return null;
+  let text = formatEuro(course.price_eur);
+  if (course.price_vat_exempt) text += " · USt.-befreit";
+  if (course.exam_fee_eur != null) text += ` (+ ${formatEuro(course.exam_fee_eur)} Prüfungsgebühr)`;
+  return text;
+}
 /** Rechnet, wie in lead_service.py/index.ts (Backend), den projizierten
  * Match-Score aus: "wenn diese Person den empfohlenen Kurs abschließt, wie
  * nah wäre sie danach an der Zielrolle?" — hier client-seitig nachgebaut,
@@ -2024,18 +2054,26 @@ async function runDemoAnalysis() {
   }
   /** Version 27: nimmt consultationRequested jetzt als expliziten PARAMETER
    *  statt ihn aus dem wantsConsultation-State zu lesen — LeadStep hat keine
-   *  Checkbox mehr, sondern zwei eigene Buttons ("direkt buchen" vs. "erst
-   *  beraten lassen"), die den Wert beim Klick direkt mitgeben. Würde
-   *  submitLead() stattdessen weiter aus State lesen, könnte ein
-   *  Button-Klick, der setWantsConsultation() und onSubmit() im selben
-   *  Handler aufruft, noch den ALTEN (nicht neu gerenderten) State-Wert
-   *  erwischen — der explizite Parameter macht das unabhängig vom
-   *  React-Render-Timing. */
-  async function submitLead(intent: "start" | "consultation") {
+   *  Checkbox mehr, sondern eigene Buttons je Absicht, die den Wert beim
+   *  Klick direkt mitgeben. Würde submitLead() stattdessen weiter aus State
+   *  lesen, könnte ein Button-Klick, der setWantsConsultation() und
+   *  onSubmit() im selben Handler aufruft, noch den ALTEN (nicht neu
+   *  gerenderten) State-Wert erwischen — der explizite Parameter macht das
+   *  unabhängig vom React-Render-Timing.
+   *  Version 37 (17.09., "Kurs direkt buchen, Anfragen für mehr
+   *  Informationen oder persönliches Beratungsgespräch"): drittes Intent
+   *  "info" ergänzt — eine neutrale Anfrage ohne "asap"-Startwunsch und ohne
+   *  Beratungswunsch, für alle, die weder sofort buchen noch vorab telefonisch
+   *  beraten werden wollen. Technisch weiterhin EIN einziger Lead-Datensatz
+   *  (siehe consultation_requested/desired_start unten), kein neues
+   *  Backend-Feld nötig. */
+  async function submitLead(intent: "start" | "info" | "consultation") {
     const consultationRequested = intent === "consultation";
-    // "Jetzt direkt starten" ist eine qualifizierte Startanfrage. Wir nutzen
+    // "Kurs direkt buchen" ist eine qualifizierte Startanfrage. Wir nutzen
     // das bereits vorhandene desired_start-Feld und setzen es für diesen CTA
     // bewusst auf "asap", ohne einen neuen Backend-Endpunkt zu erfinden.
+    // "info" lässt den im Präferenzen-Schritt genannten Startwunsch
+    // unverändert, statt fälschlich "asap" zu behaupten.
     const requestedStart = intent === "start" ? "asap" : desiredStart;
     const trimmedEmail = leadEmail.trim();
     if (!trimmedEmail || !EMAIL_RE.test(trimmedEmail)) {
@@ -4349,7 +4387,7 @@ function KursStep({
   setConsent: (v: boolean) => void;
   leadBusy: boolean;
   leadError: string | null;
-  onSubmitLead: (intent: "start" | "consultation") => void;
+  onSubmitLead: (intent: "start" | "info" | "consultation") => void;
   desiredStartLabel?: string;
   employmentTypeLabel?: string;
   workLocationLabel?: string;
@@ -4467,21 +4505,44 @@ function KursStep({
   // Eine Karte, wiederverwendet für beide "weitere Kurse"-Gruppen unten
   // (soonStartingCourses/bannerCourses) — exakt dieselbe Darstellung wie
   // zuvor, nur nicht mehr zweimal dupliziert.
+  // Redesign (Rückmeldung 17.09., "in einer besseren Darstellung ... Kosten
+  // Dauer in einem einheitlichen Format ... auch die Beschreibung soll
+  // sichtbar bzw. ausklappbar sein"): dieselben Format-Helper wie auf der
+  // Hauptkarte (formatCourseDuration/formatCoursePrice) statt eigener,
+  // abweichender Kurzformate, und dieselben Rahmendaten-Facts (Ort, Niveau,
+  // Förderung, Start) statt nur Preis/Förderung — vorher hatte diese Kachel
+  // spürbar weniger Informationsgehalt als die Hauptkarte, obwohl dieselben
+  // Katalogdaten vorliegen. Die Beschreibung bekommt eine eigene, benannte
+  // Sektion ("Beschreibung"), damit sie nicht mehr wie ein beiläufiger
+  // Fließtext unter den Fakten wirkt.
   const renderPopularCard = (c: OrbitCourse) => {
     const isAlsoRequested = additionalCourseIds.has(c.course_id);
+    const priceText = formatCoursePrice(c);
+    const startText = formatCourseStartDate(c.starts_at);
     return (
       <div className={`popular-course-card ${isAlsoRequested ? "selected" : ""}`} key={c.course_id}>
         <CourseBadgeRow course={c} alwaysShow />
         <div className="popular-course-name">{c.course_name}</div>
         <div className="popular-course-meta">
-          {c.provider} · {c.duration_weeks} Wochen
+          {c.provider} · {formatCourseDuration(c)}
+          {c.location_mode && COURSE_LOCATION_LABELS[c.location_mode] && ` · ${COURSE_LOCATION_LABELS[c.location_mode]}`}
         </div>
-        {(c.price_eur != null || (c.funding_types && c.funding_types.length > 0)) && (
+        {(priceText || (c.qualification_type && QUALIFICATION_TYPE_LABELS[c.qualification_type]) ||
+          (c.funding_types && c.funding_types.length > 0) || startText) && (
           <div className="popular-course-facts">
-            {c.price_eur != null && <span className="course-hero-fact">💶 {formatEuro(c.price_eur)}</span>}
-            {c.funding_types && c.funding_types.length > 0 && (
-              <span className="course-hero-fact course-hero-fact-funding">💰 Förderfähig</span>
+            {priceText && <span className="course-hero-fact">💶 {priceText}</span>}
+            {c.qualification_type && QUALIFICATION_TYPE_LABELS[c.qualification_type] && (
+              <span className="course-hero-fact">🎓 {QUALIFICATION_TYPE_LABELS[c.qualification_type]}</span>
             )}
+            {c.funding_types && c.funding_types.length > 0 && (
+              <span
+                className="course-hero-fact course-hero-fact-funding"
+                title={c.funding_types.map((f) => FUNDING_TYPE_LABELS[f] ?? f).join(", ")}
+              >
+                💰 Förderfähig
+              </span>
+            )}
+            {startText && <span className="course-hero-fact">📅 Start {startText}</span>}
           </div>
         )}
         {(() => {
@@ -4492,7 +4553,8 @@ function KursStep({
           const preview = descTrimmed ? truncateAtWord(descTrimmed, 90) : null;
           const canExpand = (descTrimmed && descTrimmed.length > (preview?.length ?? 0)) || targetGroupTrimmed;
           return (
-            <>
+            <div className="popular-course-desc-block">
+              <div className="popular-course-desc-label">Beschreibung</div>
               {descTrimmed && <div className="popular-course-desc">{isExpandedPopular ? descTrimmed : preview}</div>}
               {isExpandedPopular && targetGroupTrimmed && (
                 <div className="popular-course-desc">
@@ -4508,7 +4570,7 @@ function KursStep({
                   {isExpandedPopular ? "▴ Weniger anzeigen" : "▾ Mehr erfahren"}
                 </button>
               )}
-            </>
+            </div>
           );
         })()}
         <label className="course-hero-also">
@@ -4725,7 +4787,6 @@ function KursStep({
                   .filter((skill) => (fullCourse.covered_skill_uris ?? []).includes(skill.esco_uri))
                   .map((skill) => skill.preferred_label)
               : [];
-            const cardOpenGapLabels = gapSkillLabels.filter((label) => !cardCoveredGapLabels.includes(label));
             const cardCurrentMatch = courseResult?.match_percentage ?? null;
             const cardProjectedMatch =
               cardCurrentMatch != null
@@ -4801,7 +4862,7 @@ function KursStep({
                 </div>
                 <div className="course-hero-name">{course.course_name}</div>
                 <div className="course-hero-meta">
-                  {course.provider} · {course.duration_weeks} Wochen
+                  {course.provider} · {formatCourseDuration(fullCourse ?? course)}
                   {!isGenericFallback && !showsZeroGapDirectly && (
                     <>
                       {" · "}
@@ -4883,22 +4944,11 @@ function KursStep({
                     Fakten). */}
                 {fullCourse &&
                   (fullCourse.price_eur != null ||
-                    fullCourse.teaching_units != null ||
                     fullCourse.qualification_type ||
                     (fullCourse.funding_types && fullCourse.funding_types.length > 0)) && (
                     <div className="course-hero-facts">
-                      {fullCourse.price_eur != null && (
-                        <span className="course-hero-fact">
-                          💶 {formatEuro(fullCourse.price_eur)}
-                          {fullCourse.price_vat_exempt ? " · USt.-befreit" : ""}
-                          {fullCourse.exam_fee_eur != null &&
-                            ` (+ ${formatEuro(fullCourse.exam_fee_eur)} Prüfungsgebühr)`}
-                        </span>
-                      )}
-                      {fullCourse.teaching_units != null && (
-                        <span className="course-hero-fact" title="Unterrichtseinheiten à 45 Minuten">
-                          ⏱ {fullCourse.teaching_units} UE
-                        </span>
+                      {formatCoursePrice(fullCourse) && (
+                        <span className="course-hero-fact">💶 {formatCoursePrice(fullCourse)}</span>
                       )}
                       {fullCourse.qualification_type && QUALIFICATION_TYPE_LABELS[fullCourse.qualification_type] && (
                         <span className="course-hero-fact">
@@ -4961,39 +5011,83 @@ function KursStep({
                     )}
                   </div>
                 )}
-                {isSelected && (cardCoveredGapLabels.length > 0 || cardOpenGapLabels.length > 0 || (cardProjectedMatch != null && cardCurrentMatch != null && cardProjectedMatch > cardCurrentMatch)) && (
+                {isSelected && (cardCoveredGapLabels.length > 0 || Boolean(fullCourse) || (cardProjectedMatch != null && cardCurrentMatch != null && cardProjectedMatch > cardCurrentMatch)) && (
                   <div className="course-hero-reveal" onClick={(e) => e.stopPropagation()}>
                     <div className="course-hero-reveal-head">
                       <span className="course-hero-reveal-icon" aria-hidden="true">✓</span>
                       <strong>Das bringt dir dieser Kurs konkret</strong>
                     </div>
-                    {(cardCoveredGapLabels.length > 0 || cardOpenGapLabels.length > 0) && (
-                      <div className="course-hero-reveal-skills">
-                        {cardCoveredGapLabels.length > 0 && (
-                          <div>
-                            <div className="course-hero-reveal-label">DIESE SKILLS LERNST DU</div>
-                            <div className="course-hero-reveal-chip-row">
-                              {cardCoveredGapLabels.slice(0, 5).map((skill) => (
-                                <span className="course-hero-reveal-chip is-covered" key={skill}>✓ {skill}</span>
-                              ))}
-                              {cardCoveredGapLabels.length > 5 && (
-                                <span className="course-hero-reveal-chip is-more">
-                                  +{cardCoveredGapLabels.length - 5} weitere
-                                </span>
-                              )}
-                            </div>
+                    {/* Rückmeldung 17.09. ("die Infos Dauer, Ort, Kosten,
+                        Niveau etc. sollen auch drinstehen"): dieselben echten
+                        Rahmendaten wie in course-hero-facts/-meta weiter oben
+                        auf der Karte, hier zusätzlich direkt im Reveal, damit
+                        sie im Moment der Auswahl nicht separat gesucht werden
+                        müssen. Nur Zeilen mit echten Werten, nichts erfunden. */}
+                    {fullCourse && (
+                      <div className="course-hero-reveal-facts">
+                        <div className="course-hero-reveal-fact">
+                          <span className="course-hero-reveal-fact-label">Dauer</span>
+                          <span>{formatCourseDuration(fullCourse)}</span>
+                        </div>
+                        {fullCourse.location_mode && COURSE_LOCATION_LABELS[fullCourse.location_mode] && (
+                          <div className="course-hero-reveal-fact">
+                            <span className="course-hero-reveal-fact-label">Ort</span>
+                            <span>{COURSE_LOCATION_LABELS[fullCourse.location_mode]}</span>
                           </div>
                         )}
-                        {cardOpenGapLabels.length > 0 && (
-                          <div>
-                            <div className="course-hero-reveal-label course-hero-reveal-label-open">DANACH NOCH OFFEN</div>
-                            <div className="course-hero-reveal-chip-row">
-                              {cardOpenGapLabels.slice(0, 3).map((skill) => (
-                                <span className="course-hero-reveal-chip is-open" key={skill}>○ {skill}</span>
-                              ))}
-                            </div>
+                        {formatCoursePrice(fullCourse) && (
+                          <div className="course-hero-reveal-fact">
+                            <span className="course-hero-reveal-fact-label">Kosten</span>
+                            <span>{formatCoursePrice(fullCourse)}</span>
                           </div>
                         )}
+                        {fullCourse.qualification_type && QUALIFICATION_TYPE_LABELS[fullCourse.qualification_type] && (
+                          <div className="course-hero-reveal-fact">
+                            <span className="course-hero-reveal-fact-label">Niveau</span>
+                            <span>
+                              {QUALIFICATION_TYPE_LABELS[fullCourse.qualification_type]}
+                              {fullCourse.dqr_level != null ? ` (DQR ${fullCourse.dqr_level})` : ""}
+                            </span>
+                          </div>
+                        )}
+                        {fullCourse.funding_types && fullCourse.funding_types.length > 0 && (
+                          <div className="course-hero-reveal-fact">
+                            <span className="course-hero-reveal-fact-label">Förderung</span>
+                            <span>
+                              Förderfähig
+                              {fullCourse.funding_types.length === 1 && FUNDING_TYPE_LABELS[fullCourse.funding_types[0]]
+                                ? ` (${FUNDING_TYPE_LABELS[fullCourse.funding_types[0]]})`
+                                : ""}
+                            </span>
+                          </div>
+                        )}
+                        {formatCourseStartDate(fullCourse.starts_at) && (
+                          <div className="course-hero-reveal-fact">
+                            <span className="course-hero-reveal-fact-label">Start</span>
+                            <span>{formatCourseStartDate(fullCourse.starts_at)}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {/* Rückmeldung 17.09. ("die erlernten Skills sollten viel
+                        mehr im Vordergrund stehen als die noch offenen
+                        Skills"): gelernte Skills als große, grüne Hero-Chips
+                        MIT Zwischenüberschrift, alle statt nur der ersten 5.
+                        Die frühere "Danach noch offen: ..."-Zeile wurde auf
+                        erneute Rückmeldung ("das danach offen soll weg")
+                        ersatzlos entfernt — nur noch der positive Teil (das,
+                        was die Person tatsächlich lernt) bleibt im Reveal. */}
+                    {cardCoveredGapLabels.length > 0 && (
+                      <div className="course-hero-reveal-covered">
+                        <div className="course-hero-reveal-covered-heading">
+                          ✓ {cardCoveredGapLabels.length} {cardCoveredGapLabels.length === 1 ? "Skill lernst" : "Skills lernst"} du
+                          mit dieser Weiterbildung
+                        </div>
+                        <div className="course-hero-reveal-chip-row">
+                          {cardCoveredGapLabels.map((skill) => (
+                            <span className="course-hero-reveal-chip is-covered" key={skill}>✓ {skill}</span>
+                          ))}
+                        </div>
                       </div>
                     )}
                     {cardCurrentMatch != null && cardProjectedMatch != null && cardProjectedMatch > cardCurrentMatch && (
@@ -5089,7 +5183,10 @@ function KursStep({
           onBlur={() => setCarouselPaused(false)}
         >
           <div className="course-carousel-heading">
-            <div className="field-label">Weitere passende Kurse</div>
+            {/* Rückmeldung 17.09.: neue, persönlichere Formulierung statt der
+                sachlichen Überschrift — passt zum eher einladenden statt rein
+                listenhaften Ton des restlichen Kurs-Schritts. */}
+            <div className="field-label">Vielleicht sind diese Kurse auch für dich spannend</div>
             <p>Noch nicht sicher? Wirf einen Blick auf weitere Weiterbildungen aus unserem Katalog — du kannst auch mehrere anfragen.</p>
           </div>
           <div className="course-carousel-viewport">
@@ -5178,6 +5275,15 @@ function KursStep({
           wantsConsultation={wantsConsultation}
           setWantsConsultation={setWantsConsultation}
           privacyPolicyUrl={privacyPolicyUrl}
+          // Rückmeldung 17.09. ("bei direkt starten soll der Link vom Kurs
+          // hinterlegt sein, sodass man direkt aufs Anmeldefeld kommt"): die
+          // volle Kursakte (nicht nur die CourseRecommendation) tragen, weil
+          // nur sie booking_url führt — courseById() ist derselbe Lookup wie
+          // an den Kurskarten oben. null, wenn der Bildungsträger für DIESEN
+          // Kurs noch keinen Link gepflegt hat (ältere Kurse) — LeadStep
+          // blendet den "Kurs direkt buchen"-Button dann aus, statt einen
+          // toten Link anzubieten.
+          bookingUrl={selected ? courseById(selected.course_id)?.booking_url ?? null : null}
         />
       </section>
     </div>
@@ -5237,6 +5343,7 @@ function LeadStep({
   wantsConsultation,
   setWantsConsultation,
   privacyPolicyUrl,
+  bookingUrl,
 }: {
   leadName: string;
   setLeadName: (v: string) => void;
@@ -5251,13 +5358,14 @@ function LeadStep({
   busy: boolean;
   error: string | null;
   /**
-   * Version 27 — nimmt jetzt entgegen, WELCHEN der beiden CTA-Buttons unten
-   * die Person angeklickt hat ("Weiterbildung anfragen" -> false,
-   * "Lieber erst beraten lassen" -> true), statt intern den
-   * wantsConsultation-Checkbox-State zu lesen. Siehe Kommentar an
-   * submitLead() in JourneyPage.
+   * Version 27 — nimmt entgegen, WELCHEN der CTA-Buttons unten die Person
+   * angeklickt hat, statt intern den wantsConsultation-Checkbox-State zu
+   * lesen. Seit Version 37 (17.09.) drei statt zwei Absichten: "start" (Kurs
+   * direkt buchen), "info" (Mehr Informationen anfragen), "consultation"
+   * (persönliches Beratungsgespräch). Siehe Kommentar an submitLead() in
+   * JourneyPage.
    */
-  onSubmit: (intent: "start" | "consultation") => void;
+  onSubmit: (intent: "start" | "info" | "consultation") => void;
   onBack: () => void;
   targetRoleName: string | null;
   courseName?: string;
@@ -5284,12 +5392,21 @@ function LeadStep({
    *  (Hinweistext bleibt dann unverlinkt, statt auf eine tote Seite zu
    *  zeigen). */
   privacyPolicyUrl?: string;
+  /**
+   * Direktbuchungslink des aktuell gewählten Kurses (Version 37, 17.09.,
+   * siehe booking_url in orbit.ts) — null/undefined, wenn der Bildungsträger
+   * für DIESEN Kurs noch keinen gepflegt hat. Steuert, ob der "Kurs direkt
+   * buchen"-Button überhaupt angeboten wird (siehe Kommentar am
+   * cta-block-JSX unten) — ohne echten Link gäbe es sonst eine unehrliche
+   * Weiterleitung.
+   */
+  bookingUrl?: string | null;
 }) {
   const emailValid = leadEmail.trim().length > 0 && EMAIL_RE.test(leadEmail.trim());
-  // Rein praesentationsbezogen (welcher der beiden Buttons gerade den
+  // Rein praesentationsbezogen (welcher der drei Buttons gerade den
   // Lade-Spinner zeigen soll, waehrend busy=true) — muss NICHT an
   // JourneyPage gehoben werden, siehe onSubmit-Kommentar oben.
-  const [clickedIntent, setClickedIntent] = useState<"book" | "consultation" | null>(null);
+  const [clickedIntent, setClickedIntent] = useState<"book" | "info" | "consultation" | null>(null);
   function handleDirectBook() {
     if (!emailValid) {
       setClickedIntent(null);
@@ -5304,6 +5421,31 @@ function LeadStep({
     setClickedIntent("book");
     setWantsConsultation(false);
     onSubmit("start");
+    // Rückmeldung 17.09. ("bei direkt starten soll der Link vom Kurs
+    // hinterlegt sein, sodass man direkt aufs Anmeldefeld kommt"): den Lead
+    // trotzdem ganz normal anlegen (fire-and-forget, siehe onSubmit oben),
+    // damit der Bildungsträger die Anfrage sieht — UND zusätzlich die echte
+    // Anmeldeseite des Kurses in einem neuen Tab öffnen. window.open() direkt
+    // im synchronen Klick-Handler (nicht erst nach einem await), damit
+    // Browser-Popup-Blocker das nicht als nicht-nutzergesteuert einstufen.
+    if (bookingUrl) {
+      window.open(bookingUrl, "_blank", "noopener,noreferrer");
+    }
+  }
+  function handleRequestInfo() {
+    if (!emailValid) {
+      setClickedIntent(null);
+      document.getElementById("leadEmail")?.focus();
+      return;
+    }
+    if (!consent) {
+      setClickedIntent(null);
+      setWantsConsultation(false);
+      return;
+    }
+    setClickedIntent("info");
+    setWantsConsultation(false);
+    onSubmit("info");
   }
   function handleConsultationFirst() {
     if (!emailValid) {
@@ -5424,33 +5566,67 @@ function LeadStep({
         <span className="ready-divider" />
         <strong>{emailValid && consent ? "Bereit für deinen nächsten Schritt" : "Noch 1–2 Angaben fehlen"}</strong>
       </div>
+      {/* Rückmeldung 17.09. ("Zusätzlich sollen die Möglichkeiten Kurs
+          direkt buchen, Anfragen für mehr Informationen oder persönliches
+          Beratungsgespräch unten haben"): drei statt zwei gleichwertige
+          Wege. "Kurs direkt buchen" gibt es nur, wenn der Bildungsträger für
+          DIESEN Kurs einen echten booking_url gepflegt hat (siehe orbit.ts)
+          — ohne ihn wäre der Button eine leere Behauptung. Fehlt er, rückt
+          "Mehr Informationen anfragen" an die primäre (große) Position, statt
+          eine Lücke zu lassen. */}
       <div className="lead-intent-heading">
         <strong>Was möchtest du jetzt tun?</strong>
-        <span>Du kannst direkt starten oder dich vorher kostenlos beraten lassen.</span>
+        <span>
+          {bookingUrl
+            ? "Du kannst den Kurs direkt buchen, mehr Informationen anfragen oder dich vorher kostenlos beraten lassen."
+            : "Du kannst mehr Informationen anfragen oder dich vorher kostenlos beraten lassen."}
+        </span>
       </div>
       <div className="cta-block">
         <button
           type="button"
-          className={`btn-cta-primary ${busy && clickedIntent === "book" ? "loading" : ""}`}
-          onClick={handleDirectBook}
+          className={`btn-cta-primary ${busy && clickedIntent === (bookingUrl ? "book" : "info") ? "loading" : ""}`}
+          onClick={bookingUrl ? handleDirectBook : handleRequestInfo}
           disabled={busy}
         >
-          {busy && clickedIntent === "book" ? (
+          {busy && clickedIntent === (bookingUrl ? "book" : "info") ? (
             <>
               <span className="btn-spinner" aria-hidden="true" /> Wird gesendet…
             </>
+          ) : bookingUrl ? (
+            <>
+              🚀 Kurs direkt buchen <span className="arrow">↗</span>
+            </>
           ) : (
             <>
-              🚀 Jetzt direkt starten <span className="arrow">→</span>
+              ✉️ Mehr Informationen anfragen <span className="arrow">→</span>
             </>
           )}
         </button>
         <div className="cta-trust-row">
-          <span>✓ Startanfrage direkt weitergegeben</span>
+          <span>{bookingUrl ? "✓ Führt direkt zur Anmeldung deines Bildungsträgers" : "✓ Anfrage direkt weitergegeben"}</span>
           <span>✓ Kostenlos</span>
           <span>✓ Keine Verpflichtung</span>
         </div>
       </div>
+      {bookingUrl && (
+        <button
+          type="button"
+          className="consultation-optin info-optin"
+          onClick={handleRequestInfo}
+          disabled={busy}
+          style={{ width: "100%", font: "inherit", textAlign: "left" }}
+        >
+          <span className="consultation-optin-text">
+            <span className="consultation-optin-title">
+              {busy && clickedIntent === "info" ? "⏳ Wird gesendet…" : "✉️ Lieber erst mehr Informationen anfragen"}
+            </span>
+            <span className="consultation-optin-sub">
+              Du willst dich noch nicht festlegen? Dein Bildungsträger schickt dir gerne erst alle Details zum Kurs zu.
+            </span>
+          </span>
+        </button>
+      )}
       <button
         type="button"
         className="consultation-optin"
@@ -5460,7 +5636,7 @@ function LeadStep({
       >
         <span className="consultation-optin-text">
           <span className="consultation-optin-title">
-            {busy && clickedIntent === "consultation" ? "⏳ Wird gesendet…" : "📞 Erst kostenlos beraten lassen"}
+            {busy && clickedIntent === "consultation" ? "⏳ Wird gesendet…" : "📞 Persönliches Beratungsgespräch"}
           </span>
           <span className="consultation-optin-sub">
             Du bist noch nicht sicher? Wir klären gemeinsam, ob der Kurs wirklich zu dir passt — kostenlos und unverbindlich.

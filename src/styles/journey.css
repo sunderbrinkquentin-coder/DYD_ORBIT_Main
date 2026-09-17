@@ -4116,9 +4116,9 @@ input.big-input:focus {
 /* Gelernte Skills bewusst deutlich im Vordergrund (Rückmeldung 17.09.
    "die erlernten Skills sollten viel mehr im Vordergrund stehen als die
    noch offenen Skills"): große, satte grüne Chips mit eigener
-   Zwischenüberschrift — die noch offenen Skills (.course-hero-reveal-open
-   weiter unten) sind bewusst nur noch ein kleiner, einzeiliger
-   Fließtext-Hinweis statt gleichwertiger Chips. */
+   Zwischenüberschrift. Die vormalige "Danach noch offen: ..."-Zeile
+   (.course-hero-reveal-open) wurde auf erneute Rückmeldung ersatzlos
+   entfernt, siehe Kommentar am JSX in JourneyPage.tsx. */
 .course-hero-reveal-covered-heading {
   margin-bottom: 9px;
   font-family: "Baloo 2", sans-serif;
@@ -4142,16 +4142,6 @@ input.big-input:focus {
   background: var(--green-bg);
   color: var(--green-text);
   border: 1px solid rgba(23, 138, 76, 0.16);
-}
-.course-hero-reveal-open {
-  margin-top: 10px;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--text-muted);
-}
-.course-hero-reveal-open-label {
-  font-weight: 700;
-  color: var(--text-secondary);
 }
 .course-hero-reveal-progress {
   display: flex;
@@ -4189,4 +4179,60 @@ input.big-input:focus {
 @media (max-width: 620px) {
   .course-hero.course-hero-primary .course-hero-pitch { padding: 14px 15px; }
   .course-hero-reveal { padding: 13px 14px; }
+}
+
+/* ---------- Redesign "Weitere passende Kurse"-Karussell (Rückmeldung
+   17.09., "in einer besseren Darstellung ... Kosten Dauer in einem
+   einheitlichen Format ... Beschreibung soll sichtbar bzw. ausklappbar
+   sein") — die Kachel hatte bisher spürbar weniger visuelles Gewicht als
+   die Hauptempfehlung, obwohl dieselben Katalogdaten vorliegen. Größerer
+   Name (Baloo 2, wie course-hero-name), mehr Innenabstand, eigene benannte
+   Beschreibungs-Sektion statt beiläufigem Fließtext. */
+.popular-course-card {
+  padding: 18px 19px;
+}
+.popular-course-name {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--dyd-navy);
+  line-height: 1.3;
+  margin-top: 2px;
+}
+.popular-course-meta {
+  font-size: 12.5px;
+  margin-top: 4px;
+}
+.popular-course-facts {
+  margin-top: 9px;
+  gap: 7px;
+}
+.popular-course-desc-block {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(10, 25, 47, 0.08);
+}
+.popular-course-desc-label {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.popular-course-desc {
+  font-size: 12px;
+}
+
+/* ---------- "Mehr Informationen anfragen" als eigene Option neben "Kurs
+   direkt buchen"/"Persönliches Beratungsgespräch" (Rückmeldung 17.09.) —
+   nutzt dieselbe .consultation-optin-Struktur, nur mit Mint/Grün statt Blau
+   als Akzent, damit die drei Optionen auf einen Blick unterscheidbar
+   bleiben, ohne drei völlig verschiedene Bauweisen pflegen zu müssen. */
+.info-optin {
+  border-color: var(--dyd-mint-2);
+  background: var(--green-bg);
+}
+.info-optin .consultation-optin-title {
+  color: var(--green-text);
 }

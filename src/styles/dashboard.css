@@ -2827,6 +2827,30 @@ button.course-skill-chip:disabled {
   font-weight: 700;
   font-size: 18px;
 }
+/* Freitext-Anliegen im Lead-Detail (Version 38, 17.09., siehe message in
+   LeadCreateRequest/LeadResponse orbit.ts). */
+.lead-message-block {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+}
+.lead-message-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dyd-blue-dark);
+  margin-bottom: 4px;
+}
+.lead-message-text {
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+.lead-message-chip {
+  color: var(--dyd-blue-dark);
+}
 .lead-modal-section {
   margin-top: 18px;
   padding-top: 16px;

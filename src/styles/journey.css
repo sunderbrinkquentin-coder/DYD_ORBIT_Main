@@ -2621,6 +2621,12 @@ input.big-input:focus {
   background: #f8fafc;
   border: 1px solid rgba(10,25,47,.06);
 }
+/* Ehrliche Alternativ-Formulierung, wenn ein Kurs (ohne Rollen-Fallback)
+   covers_gap_count === 0 hat — vermeidet eine nackte "0 von N"-Zahl, siehe
+   showsZeroGapDirectly in JourneyPage.tsx (KursStep). */
+.course-coverage-summary--indirect {
+  background: linear-gradient(135deg, rgba(95,220,153,.08), rgba(47,143,214,.06));
+}
 .course-coverage-head {
   display: flex;
   justify-content: space-between;

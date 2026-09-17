@@ -1,0 +1,56 @@
+# Render Blueprint - definiert Backend + Datenbank in einem Rutsch.
+#
+# Nutzung (einmalig):
+#   1. Repo auf GitHub pushen (dieses render.yaml muss im Root liegen).
+#   2. Auf render.com einloggen -> "New +" -> "Blueprint" -> dieses Repo waehlen.
+#   3. Render liest diese Datei automatisch, legt Web-Service + Datenbank an
+#      und verbindet beide (DATABASE_URL wird automatisch gesetzt).
+#   4. Nach ein paar Minuten ist die API unter https://<name>.onrender.com
+#      erreichbar - genau diese Adresse traegst du im Bolt-Frontend unter
+#      "API-Adresse" ein (siehe README, Abschnitt "Deployment (Render)").
+#
+# Kostenlos nutzbar (Render Free Plan). Wichtig fuer die Demo: der kostenlose
+# Web-Service "schlaeft" nach ca. 15 Minuten Inaktivitaet ein und braucht dann
+# beim naechsten Aufruf ~30-60 Sekunden zum Aufwachen - vor einer Live-Demo
+# also kurz vorher einmal https://<name>.onrender.com/health aufrufen, damit
+# der Server schon wach ist. Die kostenlose Datenbank ist bei Render zeitlich
+# begrenzt (Render zeigt das genaue Limit beim Anlegen an) - fuer eine Demo
+# reicht das, fuer Dauerbetrieb spaeter auf einen bezahlten Plan wechseln.
+
+databases:
+  - name: dyd-skill-api-db
+    plan: free
+    region: frankfurt
+    databaseName: dyd_skill_api
+    user: dyd_skill_api
+
+services:
+  - type: web
+    name: dyd-skill-api
+    env: python
+    plan: free
+    region: frankfurt
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dyd-skill-api-db
+          property: connectionString
+      # API-Keys stehen BEWUSST nicht in dieser Datei: alles hier liegt im Repo
+      # und ist damit oeffentlich bekannt - ein bekannter Key ist keine
+      # Authentifizierung. Render fragt den Wert beim Anlegen ab (sync: false).
+      # Format: "<key>:<tenant_id>:<Anzeigename>:<produkte>[:public|operator]",
+      # mehrere Eintraege mit Komma trennen. Zufaelligen Key erzeugen mit:
+      #   python -c "import secrets; print(secrets.token_urlsafe(32))"
+      - key: API_KEYS
+        sync: false
+      # Erlaubte Browser-Herkuenfte (CORS), kommagetrennt - die Domain(s), unter
+      # denen das Frontend laeuft. Kein "*".
+      - key: CORS_ALLOW_ORIGINS
+        sync: false

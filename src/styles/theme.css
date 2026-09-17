@@ -1,0 +1,116 @@
+/*
+ * DYD CI – gemeinsame Design-Tokens für beide Seiten (Dashboard + Journey).
+ * Nachgebaut aus Screenshots der echten Landingpage (decide-your-dream.de),
+ * kein offizielles Brand-Kit. Bei Bedarf hier zentral anpassen.
+ */
+
+:root {
+  color-scheme: light;
+  --dyd-navy: #0c1c34;
+  --dyd-navy-2: #081426;
+  --dyd-navy-glow: #172c50;
+  --dyd-mint: #8fecb4;
+  --dyd-mint-2: #5fdc99;
+  --dyd-brand-green: #4fe08a;
+  --dyd-blue: #2f8fd6;
+  --dyd-blue-dark: #1f6fae;
+  --dyd-violet: #7c6fe0;
+  --page: #eef2f9;
+  --surface: #ffffff;
+  --border: #e6eaf2;
+  --border-soft: #eef1f7;
+  --text-primary: #0f1b2d;
+  --text-secondary: #5b6779;
+  --text-muted: #93a0b3;
+  --red-bg: #fdeff0;
+  --red-border: #f6d3d7;
+  --red-text: #c23a3a;
+  --blue-bg: #eaf4fc;
+  --blue-border: #cfe6f8;
+  --green-bg: #e5f8ec;
+  --green-text: #178a4c;
+  --amber-bg: #fff3da;
+  --amber-text: #92640a;
+  --shadow-sm: 0 1px 2px rgba(15, 27, 45, 0.04);
+  --shadow-md: 0 8px 24px rgba(15, 27, 45, 0.08);
+  --shadow-lg: 0 24px 64px rgba(15, 27, 45, 0.16);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--page);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+.display {
+  font-family: "Baloo 2", "Inter", system-ui, sans-serif;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes ringDraw {
+  from {
+    stroke-dashoffset: var(--ring-full);
+  }
+  to {
+    stroke-dashoffset: var(--ring-offset);
+  }
+}
+
+@keyframes pulseDot {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(143, 236, 180, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(143, 236, 180, 0);
+  }
+}
+
+@keyframes meshDrift {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-2%, 2%) scale(1.05);
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

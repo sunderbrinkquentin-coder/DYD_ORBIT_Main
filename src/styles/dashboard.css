@@ -1,0 +1,3105 @@
+/* Seiten-spezifische Styles für DashboardPage (Interface A: Bildungsträger/Operator). */
+
+/* ============ Shell layout ============ */
+.shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  background: linear-gradient(175deg, var(--dyd-navy-glow), var(--dyd-navy) 55%, var(--dyd-navy-2));
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+.sidebar::before {
+  content: "";
+  position: absolute;
+  inset: -30% -30% auto auto;
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(circle, rgba(143, 236, 180, 0.16), transparent 70%);
+  animation: meshDrift 14s ease-in-out infinite;
+  pointer-events: none;
+}
+.sidebar::after {
+  content: "";
+  position: absolute;
+  inset: auto auto -20% -20%;
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(circle, rgba(47, 143, 214, 0.18), transparent 70%);
+  animation: meshDrift 18s ease-in-out infinite reverse;
+  pointer-events: none;
+}
+.sidebar-inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 22px 18px;
+}
+
+.dyd-mark {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 14px;
+}
+.dyd-mark svg {
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 6px rgba(79, 224, 138, 0.35));
+}
+.dyd-mark-text {
+  line-height: 1;
+}
+.dyd-name {
+  font-family: "Baloo 2", sans-serif;
+  font-weight: 800;
+  font-size: 25px;
+  letter-spacing: 0.01em;
+  color: #fff;
+}
+.dyd-tagline {
+  font-size: 10px;
+  color: #8494ac;
+  margin-top: 3px;
+  letter-spacing: 0.02em;
+}
+
+.product-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(47, 143, 214, 0.14);
+  border: 1px solid rgba(47, 143, 214, 0.32);
+  border-radius: 9px;
+  padding: 7px 10px;
+  margin-bottom: 16px;
+}
+.product-tag .dotmark {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dyd-blue);
+  flex-shrink: 0;
+}
+.product-tag-text {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #dce6f5;
+}
+.product-tag-sub {
+  font-size: 10px;
+  color: #91a6c2;
+}
+
+.trust-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.trust-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10.5px;
+  color: #93a2ba;
+}
+.trust-item .tick {
+  color: var(--dyd-brand-green);
+  font-weight: 800;
+}
+
+/* ---------- Tenant / partner identity (Ingredient Branding) ---------- */
+.tenant-block {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+  border-radius: 11px;
+  padding: 9px 10px;
+}
+.tenant-logo-placeholder {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px dashed rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #8494ac;
+}
+.tenant-label {
+  font-size: 9.5px;
+  color: #7f8fa8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tenant-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #dce6f5;
+}
+
+.orbit-letters {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 20px;
+  flex-wrap: wrap;
+}
+.orbit-letter {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Baloo 2", sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--dyd-navy);
+  background: linear-gradient(135deg, var(--dyd-mint), var(--dyd-blue));
+  opacity: 0.92;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #b7c2d6;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: background 0.15s, color 0.15s;
+}
+.nav-item .icon {
+  width: 17px;
+  text-align: center;
+  font-size: 14px;
+}
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+.nav-item.active {
+  background: rgba(143, 236, 180, 0.1);
+  color: #fff;
+  border-left-color: var(--dyd-mint);
+}
+.nav-item.disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.nav-item.disabled:hover {
+  background: transparent;
+  color: #b7c2d6;
+}
+.soon-tag {
+  margin-left: auto;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 5px;
+  color: #9fb0c9;
+}
+
+.sidebar-spacer {
+  flex: 1;
+}
+
+.conn-block {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 12px;
+  margin-top: 10px;
+}
+.conn-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.conn-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9fb0c9;
+}
+.live-dot-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--dyd-mint);
+  font-weight: 700;
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dyd-mint);
+  animation: pulseDot 2s infinite;
+}
+.live-dot.off {
+  background: #6b7688;
+  animation: none;
+}
+
+.conn-field {
+  margin-bottom: 8px;
+}
+.conn-field label {
+  display: block;
+  font-size: 10px;
+  color: #8494ac;
+  margin-bottom: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.conn-field input {
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-family: inherit;
+}
+.conn-field input::placeholder {
+  color: #6b7688;
+}
+.conn-btn {
+  width: 100%;
+  padding: 9px;
+  border-radius: 8px;
+  border: none;
+  margin-top: 2px;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  color: var(--dyd-navy);
+  font-weight: 700;
+  font-size: 12.5px;
+  cursor: pointer;
+  font-family: "Baloo 2", sans-serif;
+}
+.conn-btn:hover {
+  filter: brightness(1.05);
+}
+.conn-status {
+  font-size: 11px;
+  margin-top: 7px;
+  line-height: 1.4;
+}
+.conn-status.err {
+  color: #ff9d9d;
+}
+.conn-status.ok {
+  color: var(--dyd-mint);
+}
+
+/* ---------- Main content ---------- */
+.main {
+  flex: 1;
+  min-width: 0;
+  background: radial-gradient(circle at 12% 8%, rgba(143, 236, 180, 0.1), transparent 40%),
+    radial-gradient(circle at 90% 0%, rgba(47, 143, 214, 0.1), transparent 45%), var(--page);
+}
+.main-inner {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 34px 36px 70px;
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 26px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--dyd-blue-dark);
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+  padding: 4px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+}
+.page-head h1 {
+  margin: 0;
+  font-size: 25px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.page-head .sub {
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  margin-top: 4px;
+}
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  color: var(--green-text);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 13px 7px 11px;
+  border-radius: 999px;
+}
+.live-pill.offline {
+  color: var(--text-muted);
+}
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 15px;
+  color: var(--text-secondary);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.icon-btn:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+  color: var(--dyd-blue-dark);
+}
+.icon-btn.spinning {
+  animation: spin 0.7s linear;
+}
+
+.banner {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--amber-text);
+  background: var(--amber-bg);
+  border: 1px solid #f2d999;
+  border-radius: 12px;
+  padding: 12px 15px;
+  margin-bottom: 24px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.banner .icon {
+  flex-shrink: 0;
+}
+.banner b {
+  font-weight: 700;
+}
+
+/* ---------- Stat tiles ---------- */
+.tile-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 26px;
+}
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+  animation: fadeInUp 0.4s ease both;
+}
+.tile-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.tile-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.tile-icon-chip {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+.tile-icon-chip.mint {
+  background: var(--green-bg);
+  color: var(--green-text);
+}
+.tile-icon-chip.blue {
+  background: var(--blue-bg);
+  color: var(--dyd-blue-dark);
+}
+.tile-icon-chip.violet {
+  background: #eeecfb;
+  color: var(--dyd-violet);
+}
+.tile-icon-chip.amber {
+  background: var(--amber-bg);
+  color: var(--amber-text);
+}
+.tile-value {
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+.tile-foot {
+  margin-top: 12px;
+}
+
+.dot-strip {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.dot-strip .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border);
+}
+.dot-strip .dot.qualified {
+  background: #1c8a4e;
+}
+.dot-strip .dot.pending {
+  background: #f2b229;
+}
+
+.ratio-track {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--border-soft);
+  overflow: hidden;
+}
+.ratio-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--dyd-mint-2), var(--dyd-blue));
+  transition: width 0.6s ease;
+}
+.ratio-caption {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+/* ---------- Cards ---------- */
+.app-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  margin-bottom: 18px;
+  animation: fadeInUp 0.45s ease both;
+}
+.app-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.app-card-header h2 {
+  margin: 0;
+  font-size: 17.5px;
+  font-weight: 700;
+}
+.app-card-header .sub {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  margin-top: 3px;
+}
+.app-card-body {
+  padding: 20px 22px 22px;
+}
+
+.course-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.course-bar-row:last-child {
+  margin-bottom: 0;
+}
+.course-rank {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--blue-bg);
+  color: var(--dyd-blue-dark);
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.course-bar-label {
+  width: 200px;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.course-bar-track {
+  flex: 1;
+  height: 10px;
+  background: var(--border-soft);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.course-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--dyd-mint-2), var(--dyd-blue));
+  border-radius: 999px;
+  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.course-bar-fill.gap {
+  background: linear-gradient(90deg, #f7c26b, var(--red-text));
+}
+.course-bar-count {
+  width: 22px;
+  text-align: right;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+.course-bar-count.wide {
+  width: 40px;
+}
+
+.empty-state {
+  color: var(--text-muted);
+  font-size: 13.5px;
+  padding: 30px 10px;
+  text-align: center;
+}
+.empty-state .icon {
+  font-size: 26px;
+  display: block;
+  margin-bottom: 8px;
+  opacity: 0.5;
+}
+
+/* ---------- Lead form ---------- */
+.lead-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+.lf-field label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.lf-field textarea,
+.lf-field input,
+.lf-field select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  font-size: 13.5px;
+  font-family: inherit;
+  background: #fbfcfe;
+  color: var(--text-primary);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.lf-field textarea {
+  min-height: 62px;
+  resize: vertical;
+}
+.role-filter-input {
+  margin-bottom: 8px;
+}
+.lf-field textarea:focus,
+.lf-field input:focus,
+.lf-field select:focus {
+  outline: none;
+  border-color: var(--dyd-blue);
+  box-shadow: 0 0 0 3px rgba(47, 143, 214, 0.14);
+  background: #fff;
+}
+.row2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+/* Checkbox-Zeile im Lead-Formular (Version 22), z.B. "Beratungsgespräch
+   gewünscht" — eigener, kompakter Stil statt der vollen .lf-field-Breite,
+   passend zu den anderen Formularfeldern darüber. */
+.lf-checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.lf-checkbox-field input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--dyd-blue);
+  cursor: pointer;
+}
+
+.btn-primary {
+  padding: 11px 20px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  color: var(--dyd-navy);
+  font-weight: 700;
+  font-size: 13.5px;
+  cursor: pointer;
+  font-family: "Baloo 2", sans-serif;
+  justify-self: start;
+  box-shadow: 0 8px 20px rgba(47, 143, 214, 0.22);
+  transition: transform 0.15s, box-shadow 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 26px rgba(47, 143, 214, 0.3);
+}
+.btn-primary:active {
+  transform: translateY(0);
+}
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+.form-status {
+  font-size: 12.5px;
+  margin-top: -2px;
+}
+.form-status.err {
+  color: var(--red-text);
+}
+.form-status.ok {
+  color: var(--green-text);
+}
+
+/* ---------- Lead cards ---------- */
+.lead-card {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 20px;
+  margin-bottom: 14px;
+  background: #fff;
+  transition: box-shadow 0.2s, transform 0.2s;
+  animation: fadeInUp 0.4s ease both;
+}
+.lead-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+/* Version 24: die ganze Karte öffnet jetzt das Lead-Detail (vorher nur der
+   kleine Name-Bereich, siehe .lead-who.clickable weiter unten — das war
+   nicht offensichtlich genug). Der schon vorhandene Hover-Effekt oben
+   signalisiert das zusätzlich mit; hier nur noch der Cursor und ein klarer
+   Fokus-Ring für Tastatur-Bedienung. */
+.lead-card.clickable {
+  cursor: pointer;
+}
+.lead-card.clickable:focus-visible {
+  outline: 2px solid var(--accent, #2f6fed);
+  outline-offset: 2px;
+}
+.lead-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.lead-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, var(--blue-bg), #dcecfa);
+  color: var(--dyd-blue-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Baloo 2", sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px var(--blue-border);
+}
+.lead-name {
+  font-weight: 700;
+  font-size: 15px;
+}
+.lead-role {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  margin-top: 1px;
+}
+
+.match-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.match-badge.qualified {
+  background: var(--green-bg);
+  color: var(--green-text);
+}
+.match-badge.pending {
+  background: var(--amber-bg);
+  color: var(--amber-text);
+}
+.match-badge .bdot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.match-badge.qualified .bdot {
+  background: var(--green-text);
+}
+.match-badge.pending .bdot {
+  background: var(--amber-text);
+}
+/* Eigenes Beratungsgespräch-Feld (Version 22) — Lead hat im letzten
+   Journey-Schritt die Checkbox "Zusätzlich persönlich beraten lassen"
+   angehakt (siehe consultation_requested in orbit.ts). Bewusst ein eigener,
+   gut sichtbarer Block statt eines kleinen Badges, mit zwei unabhängigen
+   Stufen: "Vereinbart" (Termin-Datum selbst eintragbar, siehe
+   handleSetConsultationScheduled) und "Durchgeführt" (Datum setzt der
+   Server automatisch, siehe handleToggleConsultationCompleted). */
+.consultation-field {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1.5px solid var(--blue-border);
+  background: var(--blue-bg);
+}
+.consultation-field.done {
+  border-color: var(--green-text);
+  background: var(--green-bg);
+}
+.consultation-field-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.consultation-field-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.consultation-field-title {
+  font-weight: 700;
+  font-size: 12.5px;
+  color: var(--dyd-blue-dark);
+}
+.consultation-field.done .consultation-field-title {
+  color: var(--green-text);
+}
+.consultation-field-stages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+}
+.consultation-field-stage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.consultation-field-sub {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.consultation-field-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--dyd-blue-dark);
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.consultation-field.done .consultation-field-toggle {
+  color: var(--green-text);
+}
+.consultation-field-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--dyd-blue);
+  cursor: pointer;
+}
+.consultation-field.done .consultation-field-toggle input {
+  accent-color: var(--green-text);
+}
+.consultation-date-input {
+  font-size: 11.5px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1.5px solid var(--blue-border);
+  background: #fff;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+/* Datum/Wunschstart-Zeile (Version 21) — direkt unter Name/Badges, damit der
+   Bildungsträger auf einen Blick sieht, WANN der Lead reinkam und wie
+   dringlich er starten möchte, ohne die Karte aufklappen zu müssen. */
+.lead-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.lead-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.match-bar-block {
+  margin-top: 14px;
+}
+.match-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.match-bar-labels b {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+.match-bar-track {
+  position: relative;
+  height: 12px;
+  background: var(--border-soft);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.match-bar-projected {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(143, 236, 180, 0.55), rgba(47, 143, 214, 0.5));
+  transition: width 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.match-bar-current {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--dyd-mint-2), var(--dyd-blue));
+  box-shadow: 0 0 0 2px #fff inset;
+  transition: width 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.skill-block {
+  margin-top: 14px;
+}
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  font-size: 11.5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  background: #eef1f6;
+  color: var(--text-secondary);
+}
+.chip.gap {
+  background: var(--red-bg);
+  color: var(--red-text);
+}
+
+.course-row {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(90deg, var(--blue-bg), #f5faff);
+  border: 1px solid var(--blue-border);
+  border-radius: 12px;
+  padding: 11px 14px;
+}
+.course-row-left {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.course-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--dyd-blue-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+}
+.course-name {
+  font-weight: 700;
+  font-size: 13px;
+}
+.course-sub {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.course-score {
+  font-weight: 800;
+  font-size: 17px;
+  font-family: "Baloo 2", sans-serif;
+  color: var(--dyd-blue-dark);
+}
+/* Kleiner Hinweis unten auf der Lead-Kachel, siehe .lead-card in
+   DashboardPage.tsx — macht klar, dass ein Klick auf die Kachel das
+   Detail-Modal mit weiteren Infos öffnet (Bearbeiter, Beratungsgespräch,
+   Kurse nachträglich ändern), auch wenn die wichtigsten Kurse jetzt schon
+   direkt sichtbar sind. */
+.lead-card-more-hint {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.info-note {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+  border-radius: 12px;
+  padding: 12px 15px;
+  margin-top: 4px;
+}
+
+.dashboard-footer {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  margin-top: 26px;
+  text-align: center;
+}
+
+/* ---------- Lead-Badges + Buchungs-Toggle (Version 14) ---------- */
+.lead-badges {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.booked-toggle {
+  border: 1px solid var(--blue-border);
+  background: var(--blue-bg);
+  color: var(--dyd-blue-dark);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.booked-toggle:hover:not(:disabled) {
+  border-color: var(--dyd-blue);
+}
+.booked-toggle:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.booked-toggle.booked {
+  background: var(--green-bg);
+  color: var(--green-text);
+  border-color: var(--green-text);
+}
+
+/* "Lead endgültig löschen" im Detail-Modal (Version 28, Art. 17 DSGVO) —
+   bewusst zurückhaltender als booked-toggle (kein durchgängig roter Button),
+   damit ein unwiderruflicher Löschvorgang nicht wie eine harmlose
+   Alltagsaktion aussieht, aber trotzdem klar als Aktion erkennbar bleibt. */
+.danger-link-btn {
+  display: block;
+  margin-top: 4px;
+  border: 1px solid var(--red-text);
+  background: transparent;
+  color: var(--red-text);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.danger-link-btn:hover:not(:disabled) {
+  background: var(--red-bg);
+}
+.danger-link-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ---------- Einklappbare Karten (Version 14): "Neuen Lead anlegen",
+   "Neuen Kurs hinzufügen" — bewusst nicht mehr die prominente Standardansicht. ---------- */
+.collapsible-card summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 18px 22px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 14.5px;
+  color: var(--dyd-blue-dark);
+  user-select: none;
+}
+.collapsible-card summary::-webkit-details-marker {
+  display: none;
+}
+.collapsible-card summary::before {
+  content: "▸";
+  margin-right: 2px;
+  transition: transform 0.15s;
+  display: inline-block;
+}
+.collapsible-card[open] summary::before {
+  transform: rotate(90deg);
+}
+.collapsible-hint {
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.collapsible-card[open] summary {
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* ---------- Kurskatalog-Verwaltung (Version 14) ---------- */
+.course-manage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+.course-manage-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #fff;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+.course-manage-card.featured {
+  border-color: var(--dyd-mint);
+  box-shadow: 0 0 0 1px var(--dyd-mint);
+}
+.course-manage-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.course-manage-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+.course-manage-meta {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-top: 2px;
+}
+/* Version 33: Förderfähigkeits-Badge im course-manage-meta-Zeilenblock (siehe
+   oben in DashboardPage.tsx) — analog zur gruenen Foerderfaehig-Pille in
+   journey.css (.course-hero-fact-funding), damit Bildungstraeger und
+   Endnutzer dieselbe visuelle Sprache fuer "gefoerdert" sehen. */
+.course-funding-badge {
+  display: inline-block;
+  font-weight: 600;
+  color: var(--green-text);
+  background: var(--green-bg);
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-left: 2px;
+}
+.featured-toggle {
+  border: 1px solid var(--border);
+  background: var(--border-soft);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.featured-toggle:hover:not(:disabled) {
+  border-color: var(--dyd-mint);
+}
+.featured-toggle:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.featured-toggle.on {
+  background: linear-gradient(90deg, var(--dyd-mint-2), var(--dyd-blue));
+  color: var(--dyd-navy);
+  border-color: transparent;
+}
+
+/* ---------- Konversions-Banner auf der Kurskachel (siehe CourseBadgeRow in
+   src/data/courseBadges.tsx — dieselben Klassen wie in journey.css, damit
+   Bildungsträger im Dashboard genau das sieht, was der Endnutzer in der
+   Journey bekommt) plus Quick-Picker, um starts_at/seats_remaining/
+   custom_banner direkt auf der Kachel zu setzen — genauso präsent/direkt
+   anklickbar wie der Top-Toggle oben, statt in "✎ Bearbeiten" versteckt. */
+.course-banner-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.course-banner {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  padding: 4px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+/* Bugfix/Erweiterung (14.09., "Kursangebot ... visuell ansprechend ...
+ * startet in x Wochen/Tagen"): course-banner-soon nutzte bisher schlicht
+ * blue-bg/dyd-blue-dark wie ein normales Info-Pill — hier auf denselben
+ * knalligeren Gradient wie in journey.css umgestellt, damit der
+ * Bildungsträger im Dashboard exakt sieht, was der Endnutzer bekommt (siehe
+ * Kommentar am Block oben, "damit Bildungsträger ... genau das sieht"). Neu
+ * dazugekommen: course-banner-upcoming (siehe courseBadges.tsx — ein
+ * bekanntes Startdatum wird jetzt immer als Badge gezeigt, nicht nur
+ * innerhalb von STARTS_SOON_DAYS). */
+.course-banner-soon {
+  background: linear-gradient(90deg, #ff8a3d, #ff5f6d);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(255, 95, 109, 0.3);
+}
+.course-banner-upcoming {
+  background: var(--blue-bg);
+  color: var(--dyd-blue-dark);
+  border: 1px solid var(--blue-border);
+}
+.course-banner-seats {
+  background: var(--amber-bg);
+  color: var(--amber-text);
+}
+.course-banner-full {
+  background: var(--border-soft);
+  color: var(--text-secondary);
+}
+.course-banner-custom {
+  background: var(--green-bg);
+  color: var(--green-text);
+}
+.banner-quickpick {
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.banner-quickpick-label {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.banner-quickpick-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.banner-preset-btn {
+  border: 1px solid var(--border);
+  background: var(--border-soft);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 5px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.banner-preset-btn:hover:not(:disabled) {
+  border-color: var(--green-text);
+}
+.banner-preset-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.banner-preset-btn.on {
+  /* War vorher nur --green-bg (#e5f8ec) auf --border-soft (#eef1f7) --
+     zwei fast identisch helle Töne, kaum unterscheidbar auf einer kleinen
+     Pill-Schaltfläche. Jetzt derselbe kräftige Verlauf wie .featured-toggle.on
+     ("★ Top", siehe oben) statt eines eigenen, schwächeren Stils — auf
+     Wunsch "soll wie bei Top auch sichtbar sein". Top-Button und
+     Banner-Quick-Picker sitzen in eigenen, klar getrennten Blöcken der
+     Kurskachel (Top-Button oben, Banner-Zeile darunter mit eigenem
+     Trennstrich), beide Zustände können also unabhängig voneinander aktiv
+     sein und sind gleichzeitig sichtbar, ohne sich zu überlappen. */
+  background: linear-gradient(90deg, var(--dyd-mint-2), var(--dyd-blue));
+  color: var(--dyd-navy);
+  border-color: transparent;
+  font-weight: 800;
+  box-shadow: 0 1px 4px rgba(47, 143, 214, 0.35);
+}
+.banner-preset-btn.on::before {
+  content: "✓ ";
+}
+.banner-quickpick-row {
+  display: flex;
+  gap: 8px;
+}
+.banner-quickpick-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  flex: 1;
+}
+.banner-quickpick-field input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  width: 100%;
+}
+.banner-quickpick-saving {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.banner-quickpick-error {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--amber-text);
+  background: var(--amber-bg);
+  border-radius: 6px;
+  padding: 4px 7px;
+}
+
+/* ---------- Kurs-Skill-Zuordnung (kritischer Fix, siehe
+   kritische-prozess-analyse.md Finding 1) ---------- */
+.hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.hint.warn {
+  color: var(--amber-text);
+  background: var(--amber-bg);
+  border-radius: 8px;
+  padding: 8px 11px;
+}
+
+/* ---------- Kurs-Import per URL/Domain (Version 33, 14.09., siehe
+   course-url-import-index.ts / applyCourseUrlDraftToForm in
+   DashboardPage.tsx) ---------- */
+.url-import-candidates {
+  margin-top: 10px;
+  padding: 12px;
+  background: var(--border-soft);
+  border-radius: 10px;
+}
+.url-import-candidate-list {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.url-import-candidate-list li {
+  padding: 3px 0;
+}
+.url-import-candidate-url {
+  font-size: 12px;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+.url-import-queue-status {
+  margin-top: 10px;
+  padding: 12px;
+  background: var(--border-soft);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.url-import-verified-hint {
+  color: var(--green-text);
+  background: var(--green-bg);
+  border-radius: 8px;
+  padding: 8px 11px;
+  margin-bottom: 8px;
+}
+.url-import-duration-hint {
+  color: var(--amber-text);
+  background: var(--amber-bg);
+  border-radius: 8px;
+  padding: 6px 9px;
+  margin-top: 4px;
+}
+.url-import-select-actions {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0;
+}
+.url-import-resume-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.url-import-resume-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.url-import-select-actions .btn-small {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+/* Mehrstufiger "Ladephase"-Fortschritt waehrend der URL-Extraktion (Version 2,
+   14.09. — Nachfrage "Ladephase muss innovativer aussehen und was ist mit
+   Skills/Zielrolle"): macht die ohnehin schon automatisch laufende Skill-
+   /Zielrollen-Erkennung waehrend des Imports sichtbar statt stumm im
+   Hintergrund zu passieren. */
+.url-import-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 2px 0 10px;
+}
+.url-import-progress-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  transition: color 0.2s ease;
+}
+.url-import-progress-step--active {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+.url-import-progress-step--done {
+  color: var(--green-text);
+}
+.url-import-progress-step--error {
+  color: var(--amber-text);
+}
+.url-import-progress-icon {
+  display: inline-block;
+  font-size: 14px;
+  line-height: 1;
+}
+.url-import-progress-icon--spin {
+  animation: btn-ai-spin 1.1s linear infinite;
+}
+/* Ausfuehrliche "ARCS"-Ladeanzeige waehrend der eigentlichen KI-Extraktion
+   (siehe UrlImportAnalysisLoader in DashboardPage.tsx) — an CvAnalysisLoader/
+   .cv-loading* in journey.css angelehnt, aber mit eigenen, hier lokal
+   definierten Keyframes (spin/pulseDot/fadeInUp existieren in dieser Datei
+   bisher nicht — siehe Kommentar bei @keyframes fadeIn weiter unten, dort
+   wird bewusst NICHT der schon vorhandene, aber anderswo tote fadeInUp-Name
+   wiederverwendet, um dieses unabhaengige Verhalten nicht ungefragt
+   mitzuaendern). */
+.url-import-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  padding: 28px 18px 20px;
+  animation: urlImportFadeInUp 0.35s ease;
+}
+.url-import-loading-spinner {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.url-import-loading-spinner-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid var(--border-soft);
+  border-top-color: var(--dyd-mint-2);
+  border-right-color: var(--dyd-blue);
+  animation: urlImportSpin 1s linear infinite;
+}
+.url-import-loading-spinner-icon {
+  font-size: 19px;
+  animation: urlImportPulseDot 1.8s ease-in-out infinite;
+}
+.url-import-loading-phase {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--dyd-blue-dark);
+  text-transform: uppercase;
+}
+.url-import-loading-bar-track {
+  width: 100%;
+  max-width: 320px;
+  height: 6px;
+  background: var(--border-soft);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.url-import-loading-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  border-radius: 999px;
+  transition: width 0.25s ease-out;
+}
+.url-import-loading-message {
+  max-width: 380px;
+  min-height: 68px;
+  animation: popIn 0.35s ease;
+}
+.url-import-loading-message-title {
+  font-family: "Baloo 2", "Inter", system-ui, sans-serif;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.url-import-loading-message-body {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+@keyframes urlImportSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes urlImportPulseDot {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.75;
+  }
+}
+@keyframes urlImportFadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .url-import-loading-spinner-ring,
+  .url-import-loading-spinner-icon {
+    animation: none;
+  }
+}
+/* Kurzes Bestaetigungs-Popup beim Kurs-Speichern (siehe courseSaveToast in
+   DashboardPage.tsx) — schwebt fest ueber dem Inhalt, unabhaengig vom
+   aktiven Tab, und verschwindet nach kurzer Zeit von selbst wieder. */
+.course-save-toast {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 500;
+  background: var(--dyd-navy, #16324f);
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  animation: popIn 0.3s ease;
+  pointer-events: none;
+}
+.skill-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  /* Explizit overflow-x:hidden setzen — sonst berechnen Browser overflow-x
+     automatisch als "auto" (CSS-Spec-Regel: wenn overflow-y != visible und
+     overflow-x nicht gesetzt ist, wird overflow-x ebenfalls zu "auto"), was
+     bei langen, leerzeichenlosen Rollennamen/IDs (Fallback r.role_id, siehe
+     DashboardPage.tsx) zu einer unerwarteten horizontalen Scrollbar führt,
+     obwohl hier nie horizontal gescrollt werden soll. */
+  overflow-x: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #fbfcfe;
+}
+.skill-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  padding: 5px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  /* min-width:0 erlaubt Flex-Kindern (dem Text-Node), unter ihre intrinsische
+     Breite zu schrumpfen; overflow-wrap:anywhere bricht auch sehr lange,
+     leerzeichenlose Bezeichnungen (z.B. IDs als Fallback) um, statt die Zeile
+     unsichtbar über den Rand hinauswachsen zu lassen. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.skill-picker-item:hover {
+  background: var(--border-soft);
+}
+.skill-picker-item.checked {
+  color: var(--green-text);
+  font-weight: 700;
+}
+.skill-picker-item input {
+  flex-shrink: 0;
+}
+.course-skill-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.course-skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 8px 6px 12px;
+  border-radius: 999px;
+  background: var(--green-bg);
+  color: var(--green-text);
+}
+.chip-remove {
+  border: none;
+  background: rgba(255, 255, 255, 0.6);
+  color: inherit;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+/* Kurs-Auswahl im Lead-Formular (siehe "Interessante/gebuchte
+   Weiterbildungen" in DashboardPage.tsx) — dieselbe Kachel-Optik wie
+   "Dein Kurskatalog" (.course-manage-grid/-card weiter unten), nur als
+   anklickbare Auswahl statt Verwaltungsansicht, damit das Kursportfolio
+   hier genauso hochwertig wirkt statt als karge Liste/Chip-Reihe. */
+.course-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+.course-pick-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 34px 12px 14px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.course-pick-card:hover {
+  border-color: var(--dyd-blue);
+}
+.course-pick-card.checked {
+  border-color: var(--green-text);
+  box-shadow: 0 0 0 1px var(--green-text);
+  background: var(--green-bg);
+}
+.course-pick-card input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.course-pick-card-body {
+  min-width: 0;
+}
+.course-pick-card-name {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.course-pick-card-meta {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  margin-top: 3px;
+}
+.course-pick-check {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: #fff;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.course-pick-card.checked .course-pick-check {
+  background: var(--green-text);
+  border-color: var(--green-text);
+}
+
+/* ---------- Automatische Skill-Erkennung (manuelles Formular + CSV-Import,
+   siehe handleDetectManualSkills/handleDetectImportSkills in DashboardPage.tsx)
+   ---------- */
+.skill-suggest-box {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--amber-text);
+  border-radius: 12px;
+  background: var(--amber-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.skill-suggest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.skill-suggest-approve-all {
+  border: none;
+  background: transparent;
+  color: var(--dyd-blue-dark);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: underline;
+}
+.skill-suggest-approve-all:hover {
+  color: var(--dyd-navy);
+}
+/* Vorschlags-Chip: noch NICHT freigegeben — optisch bewusst von den
+   bereits zugeordneten (gruenen) .course-skill-chip unterscheidbar. */
+.skill-suggest-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 8px 6px 12px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--amber-text);
+  border: 1px dashed var(--amber-text);
+}
+/* Ein bereits im CSV-Import verworfener Vorschlag: durchgestrichen statt
+   entfernt, damit er sich per Klick wieder uebernehmen laesst. */
+.skill-suggest-chip.dismissed {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+.chip-add {
+  border: none;
+  background: rgba(255, 255, 255, 0.7);
+  color: inherit;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+/* ---------- Zugeordnete Skills MIT Erfahrungslevel (manuelles Formular,
+   siehe courseSkillLevels/setCourseSkillLevel in DashboardPage.tsx) ----------
+   Eigene Zeile pro Skill statt kleiner Buchstaben-Badges in einem Chip —
+   das Level war vorher kaum erkennbar/klickbar (9.5px, 55% Deckkraft). Jetzt:
+   Skillname links, ausgeschriebener Segmented-Control rechts, klar lesbar. */
+.course-skill-level-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.course-skill-level-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.course-skill-level-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--green-bg);
+}
+.course-skill-level-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--green-text);
+  min-width: 0;
+  word-break: break-word;
+}
+.experience-level-toggle {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.experience-level-btn {
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
+  background: #fff;
+  color: var(--text-secondary);
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: "Baloo 2", sans-serif;
+  white-space: nowrap;
+}
+.experience-level-btn:hover {
+  border-color: var(--dyd-navy);
+  color: var(--text-primary);
+}
+.experience-level-btn.active {
+  border-color: var(--dyd-navy);
+  background: var(--dyd-navy);
+  color: #fff;
+}
+
+/* ---------- Erfahrungslevel-Chips je Skill (CSV-Import-Vorschau, siehe
+   importSkillLevels in DashboardPage.tsx) ----------
+   Bleibt bewusst kompakt: hier stehen potenziell viele Kurse mit je
+   mehreren Skills in einer dichten Vorschau-Liste. */
+.skill-level-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  flex-shrink: 0;
+}
+.skill-level-badge {
+  border: none;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.skill-level-badge:hover {
+  opacity: 0.85;
+}
+.skill-level-badge.active {
+  opacity: 1;
+  background: var(--dyd-navy);
+  color: #fff;
+}
+.import-skill-row {
+  padding: 7px 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.import-skill-row:first-of-type {
+  border-top: none;
+}
+.import-skill-row strong {
+  font-size: 12.5px;
+  color: var(--text-primary);
+}
+.course-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.btn-ghost {
+  padding: 11px 18px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  background: #fff;
+  color: var(--text-secondary);
+  font-weight: 700;
+  font-size: 13.5px;
+  cursor: pointer;
+  font-family: "Baloo 2", sans-serif;
+}
+.btn-ghost:hover:not(:disabled) {
+  border-color: var(--text-muted);
+  color: var(--text-primary);
+}
+.btn-ghost:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.course-skill-warning {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--amber-text);
+}
+.course-skill-count {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.course-role-count {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.course-edit-btn {
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--dyd-blue-dark);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 12px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.course-edit-btn:hover {
+  border-color: var(--dyd-blue);
+}
+.popular-course-badge {
+  background: linear-gradient(90deg, var(--dyd-mint-2), var(--dyd-blue));
+  color: var(--dyd-navy);
+  font-size: 10.5px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+@media (max-width: 820px) {
+  .sidebar {
+    display: none;
+  }
+  .tile-row {
+    grid-template-columns: 1fr;
+  }
+  .row2 {
+    grid-template-columns: 1fr;
+  }
+  .main-inner {
+    padding: 22px 16px 50px;
+  }
+  .lead-badges {
+    align-items: flex-start;
+  }
+}
+
+/* ============ Geführter Rundgang (DashboardTour) ============ */
+
+.tour-trigger-btn {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 45;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: none;
+  border-radius: 11px;
+  padding: 10px 16px;
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--dyd-navy);
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue) 130%);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.tour-trigger-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg);
+}
+
+.tour-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+}
+
+.tour-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 20, 38, 0.62);
+  pointer-events: auto;
+  z-index: 200;
+}
+
+.tour-card {
+  position: fixed;
+  z-index: 202;
+  pointer-events: auto;
+}
+.tour-spotlight {
+  position: fixed;
+  border-radius: 14px;
+
+  /* Ein einziges, konstantes Overlay */
+  box-shadow: 0 0 0 9999px rgba(8, 20, 38, 0.62);
+
+  /* Ruhiger Rahmen statt Pulsieren */
+  outline: 2px solid var(--dyd-mint);
+  outline-offset: 3px;
+
+  pointer-events: none;
+
+  /* Sehr weiche Bewegung zwischen den Elementen */
+  transition:
+    top 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    left 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Verhindert visuelle Artefakte beim Übergang */
+  will-change: top, left, width, height;
+
+  z-index: 201;
+}
+
+/* Das eigentlich hervorgehobene ECHTE Element (nicht der Spotlight-Rahmen)
+   muss ueber dem dunklen ".tour-scrim"-Overlay liegen, sonst schimmert es nur
+   durch den Spotlight-Ausschnitt hindurch, statt wirklich sichtbar zu sein.
+   "tour-highlight-active" bleibt daher die GESAMTE Dauer eines Schritts
+   gesetzt (siehe DashboardTour.tsx) -- vorher wurde das nur kurz ueber
+   "tour-pulse-target" gemacht, das nach 550ms wieder entfernt wurde: das
+   Feld blitzte kurz auf und wirkte danach wieder dunkel, obwohl der Schritt
+   noch lief. */
+.tour-highlight-active {
+  position: relative;
+  z-index: 201;
+}
+
+/* Der "kurz groß werden"-Effekt: kurz auf das echte, hervorgehobene Element
+   angewendet (nicht auf den Spotlight-Rahmen), damit der Bereich selbst
+   spürbar reagiert statt nur umrahmt zu sein. Reine Animation -- die
+   Sichtbarkeit selbst kommt aus "tour-highlight-active" oben. */
+.tour-pulse-target {
+  animation: tourPulse 0.55s ease;
+}
+@keyframes tourPulse {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.035);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.tour-card {
+  position: fixed;
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  padding: 18px 20px 16px;
+
+  z-index: 202;
+  pointer-events: auto;
+
+  transition:
+    top 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    left 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+
+  will-change: top, left;
+}
+/* Bugfix (14.09., "Erklärfeld darf nie im Hintergrund sein und immer gut
+ * sichtbar"): DashboardTour.tsx positionierte die Karte bisher DYNAMISCH
+ * relativ zum jeweils hervorgehobenen Element (oberhalb/unterhalb, je nach
+ * verfügbarem Platz). Bei einem sehr hohen Zielelement (z.B. der ganze
+ * Kurskatalog oder die Lead-Liste, siehe kurse-catalog/lead-list) reichte
+ * WEDER der Platz darüber NOCH darunter — die Karte landete dann teilweise
+ * oder komplett ausserhalb des sichtbaren Bereichs, wirkte wie "verschwunden".
+ * JourneyTour.tsx hatte genau dieses Problem bereits gelöst (siehe
+ * ausführlicher Kommentar dort): eine FESTE Docking-Position (unten mittig),
+ * unabhängig von Größe/Position des Ziels — dieselbe Lösung jetzt auch hier
+ * uebernommen, DashboardTour.tsx berechnet cardStyle nicht mehr dynamisch. */
+.tour-card-dock {
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+
+/* Bugfix (14.09., "die Kachel von der Rundtour ist hinter den Infos, die
+ * muss irgendwo am Rand stehen, sodass man beides immer sieht" — identischer
+ * Fix wie in journey.css, siehe ausführlicher Kommentar dort): unten mittig
+ * loest zwar das Ausserhalb-des-Bildschirms-Problem, kann bei einem hohen,
+ * inhaltsreichen Schritt (z.B. dem ganzen Kurskatalog, siehe kurse-catalog)
+ * aber trotzdem Teile des echten Inhalts ueberdecken. Ab genug Fensterbreite
+ * dockt die Karte deshalb stattdessen seitlich am rechten Rand, vertikal
+ * zentriert — echter, freier Platz, siehe ".dashboard-tour-open .main" unten,
+ * das dem Dashboard-Inhaltsraster dafuer per Body-Klasse (DashboardTour.tsx)
+ * tatsaechlich schmaler macht, statt die Karte einfach ueber den Inhalt zu
+ * legen. Schmalere Fenster (Media Query greift dort nicht) behalten
+ * unveraendert die bisherige unten-mittig-Position. */
+@media (min-width: 1100px) {
+  .tour-card-dock {
+    left: auto;
+    right: 28px;
+    bottom: auto;
+    top: 50%;
+    transform: translateY(-50%);
+    max-height: calc(100vh - 60px);
+  }
+  .dashboard-tour-open .main {
+    padding-right: 420px;
+    transition: padding-right 0.25s ease;
+  }
+}
+
+.tour-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.tour-step-count {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.tour-close {
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+.tour-close:hover {
+  background: var(--border-soft);
+  color: var(--text-primary);
+}
+
+.tour-title {
+  font-family: "Baloo 2", "Inter", sans-serif;
+  font-size: 18px;
+  margin: 0 0 6px;
+  color: var(--text-primary);
+}
+.tour-desc {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0 0 14px;
+}
+
+.tour-progress {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 14px;
+}
+.tour-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border);
+}
+.tour-dot.done {
+  background: var(--dyd-blue);
+}
+.tour-dot.active {
+  background: var(--dyd-brand-green);
+  width: 16px;
+  border-radius: 4px;
+}
+
+.tour-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.tour-nav-btns {
+  display: flex;
+  gap: 8px;
+}
+.tour-btn {
+  border: none;
+  border-radius: 9px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+.tour-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.tour-btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+}
+.tour-btn-ghost:hover {
+  color: var(--text-secondary);
+}
+.tour-btn-secondary {
+  background: var(--border-soft);
+  color: var(--text-primary);
+}
+.tour-btn-secondary:hover:not(:disabled) {
+  background: var(--border);
+}
+.tour-btn-primary {
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue) 130%);
+  color: var(--dyd-navy);
+}
+.tour-btn-primary:hover {
+  filter: brightness(1.04);
+}
+
+@media (max-width: 560px) {
+  .tour-trigger-btn span.tour-trigger-label {
+    display: none;
+  }
+  .tour-card {
+    width: calc(100vw - 32px) !important;
+    left: 16px !important;
+    right: 16px;
+  }
+  /* .tour-card-dock zentriert per transform: translateX(-50%) relativ zu
+   * left: 50% - auf Mobile ist die Karte oben schon per left/right auf volle
+   * Breite gesetzt, der Transform wuerde sie dann zusaetzlich (und falsch)
+   * nach links verschieben (identischer Fix wie in journey.css). */
+  .tour-card-dock {
+    bottom: 12px;
+    transform: none;
+  }
+}
+
+/* ---------- Kurs-CSV-Import ---------- */
+.import-file-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.import-preview-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin: 8px 0 4px 0;
+}
+.import-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.import-preview-table th,
+.import-preview-table td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.import-preview-table th {
+  color: var(--text-muted);
+  font-weight: 600;
+  background: rgba(10, 25, 47, 0.03);
+}
+.import-preview-table tr.row-invalid td {
+  color: var(--amber-text);
+}
+.import-preview-table tr:last-child td {
+  border-bottom: none;
+}
+.import-summary-errors {
+  margin: 6px 0 0 18px;
+  padding: 0;
+  font-size: 12px;
+}
+
+/* ---------- Durchführungsort (Remote/Vor Ort), siehe courseForm.isRemote/
+   location in DashboardPage.tsx ---------- */
+.location-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.location-toggle-btn {
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: #fff;
+  color: var(--text-secondary);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: "Baloo 2", sans-serif;
+  white-space: nowrap;
+}
+.location-toggle-btn:hover {
+  border-color: var(--text-muted);
+  color: var(--text-primary);
+}
+.location-toggle-btn.active {
+  border-color: var(--dyd-navy);
+  background: var(--dyd-navy);
+  color: #fff;
+}
+
+/* ---------- Bereich (Pflichtfeld, Mehrfachauswahl), siehe
+   courseForm.bereichKeys in DashboardPage.tsx — Pill-Buttons statt Checkbox-
+   Liste (15.09., "ein bisschen schöner aussehen"), gleiches Grundmuster wie
+   .location-toggle-btn, aktiver Zustand aber in Lime statt Navy: mehrere
+   gleichzeitig aktiv sein können (anders als der Ort-Toggle, der immer nur
+   einen auswählt) und sollen sich davon optisch klar absetzen. */
+.bereich-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.bereich-toggle-btn {
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: #fff;
+  color: var(--text-secondary);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: "Baloo 2", sans-serif;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.bereich-toggle-btn:hover {
+  border-color: var(--dyd-navy);
+  color: var(--text-primary);
+}
+.bereich-toggle-btn.active {
+  border-color: var(--dyd-navy);
+  background: var(--dyd-lime, #DEFF9A);
+  color: var(--dyd-navy);
+}
+.location-input {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
+/* ---------- Dauer: Stepper + Wochen/Monate-Toggle, siehe
+   courseForm.durationWeeks/durationUnit in DashboardPage.tsx. Ersetzt die
+   alte Zahleneingabe + <select>-Kombination, die sich wie ein
+   Formular-Pflichtfeld anfühlte statt wie eine schnelle, greifbare Auswahl. */
+.duration-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.duration-stepper {
+  display: flex;
+  align-items: center;
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  overflow: hidden;
+}
+.duration-step-btn {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--dyd-navy);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Baloo 2", sans-serif;
+}
+.duration-step-btn:hover {
+  background: rgba(10, 25, 47, 0.06);
+}
+.duration-number-input {
+  width: 56px;
+  border: none;
+  border-left: 1.5px solid var(--border);
+  border-right: 1.5px solid var(--border);
+  text-align: center;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 8px 4px;
+  -moz-appearance: textfield;
+}
+.duration-number-input::-webkit-outer-spin-button,
+.duration-number-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.duration-unit-toggle {
+  display: flex;
+  gap: 6px;
+}
+.duration-unit-btn {
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: #fff;
+  color: var(--text-secondary);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: "Baloo 2", sans-serif;
+  white-space: nowrap;
+}
+.duration-unit-btn:hover {
+  border-color: var(--text-muted);
+  color: var(--text-primary);
+}
+.duration-unit-btn.active {
+  border-color: var(--dyd-navy);
+  background: var(--dyd-navy);
+  color: #fff;
+}
+
+/* ---------- ESCO-Live-Suche (siehe skillSearchQuery in DashboardPage.tsx)
+   ---------- */
+.skill-search-input {
+  width: 100%;
+}
+
+/* Suchtreffer und Modulhandbuch-Vorschläge werden als <button> gerendert
+   (klickbar, add-per-Klick) statt als reines <span> wie beim reinen
+   Anzeige-Chip — Button-Reset, damit sie optisch trotzdem wie die
+   bestehenden .course-skill-chip/.skill-suggest-chip aussehen. */
+button.course-skill-chip,
+button.skill-suggest-chip {
+  border: none;
+  font-family: "Baloo 2", sans-serif;
+  cursor: pointer;
+}
+button.skill-suggest-chip {
+  border: 1px dashed var(--amber-text);
+}
+button.course-skill-chip:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+/* ---------- Zielrollen-Vorschläge (siehe targetRoleSuggestions in
+   DashboardPage.tsx) ---------- */
+.role-suggest-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.role-suggest-chip {
+  border: 1px solid var(--dyd-blue-dark);
+  background: var(--blue-bg, rgba(30, 100, 200, 0.08));
+  color: var(--dyd-blue-dark);
+  border-radius: 999px;
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: "Baloo 2", sans-serif;
+  white-space: nowrap;
+}
+.role-suggest-chip:hover {
+  background: var(--dyd-blue-dark);
+  color: #fff;
+}
+.role-suggest-chip.active {
+  background: var(--dyd-navy);
+  border-color: var(--dyd-navy);
+  color: #fff;
+}
+
+/* ---------- Modulhandbuch-Upload (siehe handbookStage in
+   DashboardPage.tsx) — bewusst als klarer 3-Schritte-Fortschritt sichtbar,
+   damit die Wartezeit bei einer grossen Datei nicht wie ein haengender
+   Prozess wirkt. ---------- */
+.handbook-upload-field {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  margin-top: 4px;
+}
+.handbook-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.handbook-progress-step {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(10, 25, 47, 0.05);
+  color: var(--text-muted);
+}
+.handbook-progress-step.active {
+  background: var(--amber-bg);
+  color: var(--amber-text);
+}
+.handbook-progress-step.done {
+  background: var(--green-bg);
+  color: var(--green-text);
+}
+
+/* ---------- "Innovative" KI-Buttons (Skills erkennen, Beschreibung
+   vorschlagen, Level verfeinern) — bewusst optisch von den neutralen
+   .btn-ghost-Aktionen abgesetzt, damit klar ist: hier passiert etwas
+   "Smartes", nicht nur ein simpler Formular-Klick. ---------- */
+.btn-ai {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #6d5cf6 0%, #8b5cf6 45%, #c084fc 100%);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13.5px;
+  cursor: pointer;
+  font-family: "Baloo 2", sans-serif;
+  box-shadow: 0 2px 10px rgba(109, 92, 246, 0.35);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+}
+.btn-ai:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(109, 92, 246, 0.45);
+}
+.btn-ai:disabled {
+  opacity: 0.55;
+  cursor: default;
+  box-shadow: none;
+}
+.btn-ai-icon {
+  display: inline-block;
+  font-size: 16px;
+}
+.btn-ai.busy .btn-ai-icon {
+  animation: btn-ai-spin 1.1s linear infinite;
+}
+@keyframes btn-ai-spin {
+  from {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(180deg) scale(1.15);
+  }
+  to {
+    transform: rotate(360deg) scale(1);
+  }
+}
+/* Zweizeiliger Button-Text (Label + kurze Erklärung, was dahintersteckt) —
+   macht den Unterschied zwischen den beiden Aktionen auf einen Blick klar:
+   ".match" ist sofortiger Datenbank-Abgleich, ".generate" ist ein
+   KI-Textgenerierungs-Aufruf. */
+.btn-ai-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.25;
+}
+.btn-ai-sub {
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0.8;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+/* ".match": schneller, deterministischer ESCO-Datenbank-Abgleich, keine KI —
+   bewusst in einer anderen Farbfamilie (Blau/Türkis) als die generativen
+   ".generate"-Aktionen (Lila), damit "sofort & kostenlos" vs. "KI-generiert"
+   auch farblich sofort unterscheidbar ist. */
+.btn-ai.match {
+  background: linear-gradient(135deg, #0ea5b7 0%, #22b8cf 50%, #38d9c9 100%);
+  box-shadow: 0 2px 10px rgba(14, 165, 183, 0.35);
+}
+.btn-ai.match:hover:not(:disabled) {
+  box-shadow: 0 4px 14px rgba(14, 165, 183, 0.45);
+}
+
+/* ---------- Modulhandbuch-Dropzone (ersetzt den unschönen nativen
+   <input type="file">), siehe handbookDragOver in DashboardPage.tsx
+   ---------- */
+.handbook-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  padding: 22px 16px;
+  margin-top: 8px;
+  border: 2px dashed var(--border);
+  border-radius: 14px;
+  background: rgba(109, 92, 246, 0.03);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.handbook-dropzone:hover {
+  border-color: #8b5cf6;
+  background: rgba(109, 92, 246, 0.06);
+}
+.handbook-dropzone.drag-over {
+  border-color: #8b5cf6;
+  background: rgba(109, 92, 246, 0.12);
+}
+.handbook-dropzone.busy {
+  cursor: default;
+  opacity: 0.75;
+}
+.handbook-dropzone-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+.handbook-dropzone-text {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.handbook-dropzone-text strong {
+  color: var(--text-primary);
+}
+.handbook-dropzone-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+/* CSV-Import nutzt dieselbe Dropzone-Optik wie der Modulhandbuch-Upload
+   (siehe .handbook-dropzone oben) — hier nur etwas kompakter, weil sie in
+   einer Zeile neben "Vorlage herunterladen" sitzt statt allein. */
+.csv-dropzone {
+  padding: 14px 12px;
+  margin-top: 6px;
+}
+
+/* ---------- Lead-Detailansicht (Version 23, Klickfläche seit Version 24
+   die ganze Karte statt nur .lead-who — siehe .lead-card.clickable oben) ----------
+   Klick auf einen Lead öffnet ein Overlay mit ALLEN Infos zu einem Lead plus
+   drei neuen Aktionen: Bearbeiter zuweisen, Beratungsgespräch manuell
+   anlegen, Kurse aus dem eigenen Katalog manuell verlinken. Siehe die
+   entsprechende IIFE ganz am Ende von DashboardPage.tsx. */
+.lead-assigned-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dyd-blue-dark);
+}
+.lead-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 30, 45, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 20px;
+  overflow-y: auto;
+  z-index: 200;
+  animation: fadeIn 0.15s ease both;
+}
+.lead-modal {
+  position: relative;
+  background: #fff;
+  border-radius: 18px;
+  padding: 28px 26px;
+  max-width: 560px;
+  width: 100%;
+  box-shadow: var(--shadow-md);
+  animation: popIn 0.2s ease both;
+}
+.lead-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: var(--border-soft);
+  color: var(--text-secondary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+.lead-modal-close:hover {
+  background: var(--border);
+}
+.lead-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 6px;
+  padding-right: 30px;
+}
+.avatar-lg {
+  width: 54px;
+  height: 54px;
+  font-size: 17px;
+}
+.lead-modal-header-info {
+  flex: 1;
+  min-width: 0;
+}
+.lead-modal-name {
+  font-weight: 700;
+  font-size: 18px;
+}
+.lead-modal-section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-soft);
+}
+.lead-modal-section-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 8px;
+}
+.assign-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  font-size: 13.5px;
+  font-family: inherit;
+  background: #fbfcfe;
+  color: var(--text-primary);
+}
+.assign-input:focus {
+  outline: none;
+  border-color: var(--dyd-blue);
+  box-shadow: 0 0 0 3px rgba(47, 143, 214, 0.14);
+  background: #fff;
+}
+.btn-secondary-small {
+  padding: 9px 16px;
+  border-radius: 10px;
+  border: 1.5px solid var(--blue-border);
+  background: var(--blue-bg);
+  color: var(--dyd-blue-dark);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn-secondary-small:hover:not(:disabled) {
+  border-color: var(--dyd-blue);
+}
+.btn-secondary-small:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.linked-course-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.linked-course-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 6px 6px 6px 12px;
+  border-radius: 999px;
+  background: var(--green-bg);
+  color: var(--green-text);
+}
+.linked-course-chip button {
+  border: none;
+  background: rgba(255, 255, 255, 0.6);
+  color: inherit;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ---------- Zielrollen-Combobox im Kurs-Formular (Version 24) ----------
+   Ersetzt die vorherige, dauerhaft ausgeklappte Checkbox-Liste
+   (.skill-picker-list), die bei vielen Zielrollen die ganze Seite füllte.
+   Ausgewählte Rollen als Chips (.role-chip, gleiches Muster wie
+   .linked-course-chip), Auswahl/Suche über eine kompakte Combobox
+   (.role-combo) mit Dropdown, das NUR bei Fokus/Eingabe erscheint und als
+   position:absolute-Overlay über dem restlichen Formular schwebt, statt
+   Platz im Layout einzunehmen — dadurch bleibt die Box immer klein, egal
+   wie viele Zielrollen es gibt. Siehe roleComboOpen/newRoleFormOpen in
+   DashboardPage.tsx. */
+.role-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 6px 6px 12px;
+  border-radius: 999px;
+  background: var(--blue-bg, rgba(30, 100, 200, 0.08));
+  color: var(--dyd-blue-dark);
+}
+.role-chip button {
+  border: none;
+  background: rgba(255, 255, 255, 0.6);
+  color: inherit;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.role-combo {
+  position: relative;
+}
+.role-combo-input {
+  width: 100%;
+}
+.role-combo-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #fff;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: var(--shadow-md);
+}
+.role-combo-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 7px 9px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: "Baloo 2", sans-serif;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.role-combo-option:hover {
+  background: var(--border-soft);
+}
+.role-combo-create {
+  color: var(--dyd-blue-dark);
+  font-weight: 700;
+  border-top: 1px solid var(--border-soft);
+  margin-top: 4px;
+  padding-top: 9px;
+}
+/* Mini-Formular "+ Neue Zielrolle anlegen" — braucht serverseitig einen
+   API-Key mit Produkt "admin"/"all", siehe Kommentar bei
+   handleCreateNewRole() in DashboardPage.tsx. */
+.new-role-form {
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: #fbfcfe;
+}
+.new-role-form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.new-role-form-close {
+  border: none;
+  background: none;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-secondary, #667);
+  padding: 2px 6px;
+}
+.new-role-name-input {
+  width: 100%;
+  margin-bottom: 8px;
+}
+.new-role-skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.new-role-skill-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  background: #fff;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+.new-role-skill-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.new-role-skill-weight {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-secondary, #667);
+  white-space: nowrap;
+}
+.new-role-skill-weight input {
+  width: 48px;
+}
+.new-role-skill-row button {
+  border: none;
+  background: var(--border-soft);
+  color: inherit;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.new-role-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.booked-toggle.wide {
+  width: 100%;
+  margin-top: 18px;
+  padding: 11px 12px;
+  text-align: center;
+  border-radius: 10px;
+}
+/* Fürs Modal-Overlay/-Panel oben — waren im Rest der Datei noch nicht
+   definiert (auch .lead-card referenziert fadeInUp, das es bisher nirgends
+   gibt und deshalb bereits stillschweigend keine Animation zeigt; hier
+   zumindest für das neue Modal sauber nachgezogen). */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

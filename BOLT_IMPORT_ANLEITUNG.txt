@@ -1,0 +1,54 @@
+BOLT_IMPORT_ANLEITUNG.txt – wie dieser Ordner korrekt in Bolt landet
+================================================================
+
+Das hier ist der komplette, aktuelle React/TypeScript-Frontend-Ordner (inkl.
+dem Dashboard-Update aus Version 9: Skill-Gaps + Conversion). Wichtig: dieser
+Ordner ist NICHT dasselbe Repo wie dein Python-Backend
+("Quentin907/DYD-Nexus-Orbit") — und genau das war der Fehler beim letzten
+Bolt-Import ("npm error ... Could not read package.json"). Bolt kann nur
+JavaScript/Node-Projekte ausfuehren; dein Backend-Repo hat gar kein
+package.json, weil es ein reines Python-Projekt ist.
+
+Loesung: diesen Ordner als EIGENES, separates GitHub-Repo anlegen und GENAU
+DAS in Bolt importieren — nie wieder "Quentin907/DYD-Nexus-Orbit" in Bolt
+importieren.
+
+So gehst du vor (mit Visual Studio, wie du es schon kennst):
+--------------------------------------------------------------------
+1. Entpacke dieses ZIP in einen NEUEN, leeren Ordner auf deinem Rechner,
+   z.B. "DYD-Orbit-Bolt-Frontend" (bewusst NICHT in denselben Ordner wie dein
+   Python-Backend-Projekt).
+
+2. In Visual Studio: "Datei" -> "Ordner oeffnen" -> diesen neuen Ordner
+   auswaehlen.
+
+3. Falls der Ordner noch kein Git-Repo ist: im "Git-Aenderungen"-Panel
+   (dasselbe Panel, das du schon fuers Backend nutzt) sollte ein Button wie
+   "In Repository initialisieren" o.ae. erscheinen - draufklicken.
+
+4. Danach im selben Panel nach "Zu GitHub veroeffentlichen" / "Publish to
+   GitHub" suchen (erscheint automatisch, wenn ein Repo noch keinen
+   GitHub-Remote hat). Gib ihm einen eigenen Namen, z.B.
+   "DYD-Orbit-Bolt-Frontend" - NICHT denselben Namen wie das Backend-Repo.
+   Das legt automatisch ein neues, LEERES GitHub-Repo an und pusht diesen
+   Ordner hinein.
+
+5. In Bolt: "Import GitHub repository" -> diesmal das NEUE Repo auswaehlen
+   (z.B. "Quentin907/DYD-Orbit-Bolt-Frontend"), NICHT
+   "Quentin907/DYD-Nexus-Orbit".
+
+6. Bolt sollte jetzt "npm install" ohne Fehler durchlaufen lassen (es gibt
+   jetzt ein package.json im Repo-Root) und das Projekt starten.
+
+Falls du KEIN neues GitHub-Repo anlegen willst/kannst:
+--------------------------------------------------------------------
+Alternativ kannst du in Bolt auch einfach per Chat-Prompt ein neues,
+leeres React/Vite-Projekt starten lassen und dann die Dateien aus diesem
+ZIP einzeln ueber die Büroklammer/Anhang-Funktion im Bolt-Chat nachreichen
+- das ist aber muehsamer (Bolt unterstuetzt laut eigener Doku aktuell keinen
+Ordner-/ZIP-Upload auf einen Schlag, nur einzelne Dateien). Der GitHub-Weg
+oben ist deutlich schneller.
+
+Zur Erinnerung: dieser Ordner enthaelt AUSSCHLIESSLICH Frontend-Code.
+node_modules/ und dist/ sind bewusst nicht dabei (werden automatisch von
+"npm install" bzw. "npm run build" erzeugt, siehe .gitignore).

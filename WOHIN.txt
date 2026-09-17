@@ -1,0 +1,59 @@
+DYD ORBIT — Version 14: Test-Tracking, Top-Weiterbildungen, Buchungsstatus
+============================================================================
+
+WICHTIG — ZUERST DIE SQL-MIGRATION AUSFÜHREN:
+
+1) schema.sql
+   -> Supabase Dashboard -> SQL Editor -> Inhalt dieser Datei komplett
+      einfügen -> Run.
+   Das Skript ist sicher erneut ausführbar: es nutzt CREATE TABLE IF NOT
+   EXISTS und ALTER TABLE ... ADD COLUMN IF NOT EXISTS, löscht also NICHTS
+   von deinen bestehenden Leads/Kursen. Es ergänzt nur:
+     - orbit_courses: neue Spalte is_featured (Standard: false)
+     - orbit_leads:   neue Spalten booked, booked_at (Standard: false/leer)
+     - orbit_tests:   komplett neue Tabelle (startet leer)
+
+2) index.ts
+   -> Supabase Dashboard -> Edge Functions -> "api" -> Code ersetzen durch
+      den kompletten Inhalt dieser Datei -> Deploy.
+   ("Verify JWT" bleibt AUS, wie beim ersten Deploy schon eingestellt.)
+
+Danach im Bolt-Projekt (dyd-bolt-frontend/) diese Dateien ersetzen:
+
+3) orbit.ts          -> src/api/orbit.ts
+4) JourneyPage.tsx    -> src/pages/JourneyPage.tsx
+5) DashboardPage.tsx  -> src/pages/DashboardPage.tsx
+6) dashboard.css      -> src/styles/dashboard.css
+7) journey.css        -> src/styles/journey.css
+
+Was neu ist:
+- Dashboard: neue Kachelreihe "Anzahl der Tests" / "Skill-Gaps" /
+  "Vorgeschlagene Weiterbildungen" / "Gebuchte Weiterbildungen" oben auf
+  dem Leads-Tab. "Neuen Lead anlegen" ist jetzt eingeklappt (kleiner
+  Punkt zum Ausklappen), da das nur für Tests/Demos gedacht ist.
+- Dashboard: neuer "Kurse"-Tab (vorher "bald") — dort kannst du jeden
+  Kurs in deinem Katalog per Klick als "Top" markieren/entmarkieren und
+  neue Kurse hinzufügen.
+- Dashboard: jeder Lead hat jetzt einen Button "Als gebucht markieren" —
+  du setzt den, sobald die Buchung in deinem eigenen System (nicht in
+  ORBIT) stattgefunden hat. Das schreibt den Status in deine Datenbank
+  und ist die Basis für die "Gebuchte Weiterbildungen"-Kachel.
+- Endnutzer-Journey: unten im Kurs-Schritt erscheint jetzt zusätzlich zur
+  individuellen Empfehlung eine Sektion "Beliebte Weiterbildungen bei
+  uns" mit den von dir als "Top" markierten Kursen.
+- Endnutzer-Journey: vor dem Kontaktformular steht jetzt ein Hinweis
+  ("🎁 Sichere dir ... ein exklusives Angebot ...") — bewusst OHNE feste
+  Prozentzahl, wie besprochen.
+- Neu im Hintergrund: JEDER abgeschlossene Skill-Check wird jetzt geloggt
+  (auch wenn jemand danach abspringt und nie das Kontaktformular abschickt)
+  — das ist die Datengrundlage für "Anzahl der Tests".
+
+Zum Buchungsstatus, kurz erklärt: ORBIT hat keinen eigenen Checkout — die
+Buchung passiert weiterhin in deinem eigenen System. Der Button im
+Dashboard ist der pragmatische erste Schritt, damit der Status trotzdem
+in deiner Datenbank landet. Der Endpunkt dahinter
+(POST /api/v1/orbit/leads/:id/booking) ist so gebaut, dass ihn später auch
+automatisch ein Webhook aus deinem Buchungssystem oder ein Make.com-
+Szenario aufrufen könnte, ohne dass sich am Schema noch etwas ändern muss.
+
+Kein Code im Frontend-Setup (API-Adresse/API-Key) musste geändert werden.

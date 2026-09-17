@@ -108,6 +108,17 @@ export interface CourseCatalogEntry {
    *  abgeleitete Skill-Ueberschneidung. */
   bereich_key?: string | null;
   bereich_keys?: string[] | null;
+  /**
+   * Einkategorisierung (siehe CourseCategory/course_category an OrbitCourse
+   * in orbit.ts, Version 27/16.09., "Einkategorisierung in Zertifikate,
+   * Weiterbildung, Studium etc.") — fuenfte Praeferenz-Dimension (17.09.,
+   * "danach gefragt werden ob man schon weiss was man machen will,
+   * Zertifikat, Seminar, Weiterbildung, Studium"). Optional wie die anderen
+   * Praeferenz-Felder — fehlt es, zaehlt das in preferenceMatchScore() nicht
+   * als Widerspruch (kein Kurs hat "keine Kategorie" faelschlich als
+   * Ablehnung zu tragen).
+   */
+  course_category?: string | null;
 }
 
 /** Wie viele Tage nach dem gewünschten Startzeitpunkt (START_OPTIONS in
@@ -122,10 +133,26 @@ const START_PREFERENCE_MAX_DAYS: Record<string, number> = {
   "1-3-monate": 110,
 };
 
+/** Wie START_PREFERENCE_MAX_DAYS oben, aber fuer die gewuenschte Kursdauer
+ *  (17.09., "die Dauer soll auch abgefragt werden" / "beim Matching
+ *  algorithmus muss auch auf die Zeit etc. eingegangen werden") — genauso
+ *  ein weicher Tiebreak, kein Filter: ein KUERZERER Kurs als gewuenscht ist
+ *  nie ein Widerspruch (weniger Zeitaufwand ist nie schlechter), nur ein
+ *  LAENGERER als die gewaehlte Obergrenze zaehlt. "lang" (Zeit ist kein
+ *  Problem) hat bewusst KEINEN Eintrag, genau wie "offen" bei
+ *  START_PREFERENCE_MAX_DAYS — wird als "keine Praeferenz" behandelt, jeder
+ *  Kurs zaehlt dann als Treffer. Siehe DURATION_OPTIONS in JourneyPage.tsx
+ *  fuer die dazugehoerigen Antwortmoeglichkeiten. */
+const DURATION_PREFERENCE_MAX_WEEKS: Record<string, number> = {
+  kurz: 8,
+  mittel: 24,
+};
+
 /**
  * Wie gut ein Kurs zu den im Journey-"Präferenzen"-Schritt genannten
- * Rahmenbedingungen passt (0-4, je ein Punkt pro Dimension: Beschäftigungsart,
- * Arbeitsort, gewünschter Startzeitpunkt, Förderung) — bewusst KEIN harter
+ * Rahmenbedingungen passt (0-6, je ein Punkt pro Dimension: Beschäftigungsart,
+ * Arbeitsort, gewünschter Startzeitpunkt, Förderung, Einkategorisierung,
+ * gewünschte Dauer) — bewusst KEIN harter
  * Filter: ein Kurs ohne exakte Passung wird nie ausgeblendet, nur niedriger
  * einsortiert (siehe rankCoursesForGap unten, Sortierung bleibt primär nach
  * Skill-Gap-Abdeckung). Zählt als Treffer, wenn die Person keine Präferenz
@@ -152,12 +179,27 @@ const START_PREFERENCE_MAX_DAYS: Record<string, number> = {
  * mindestens einem Fördertyp zählt immer als Treffer, unabhängig davon,
  * WELCHEN — die Journey-Frage ist bewusst grob gehalten (siehe dort).
  *
- * "egal"/"offen" (Version 26, siehe EMPLOYMENT_OPTIONS/LOCATION_OPTIONS/
- * START_OPTIONS in JourneyPage.tsx) sind AUSDRUECKLICHE "keine Praeferenz"-
- * Antworten, kein echter Wert zum Abgleichen — werden hier wie "keine
- * Angabe" behandelt, sonst wuerde jeder Kurs mit gesetztem Feld faelschlich
- * als Widerspruch gewertet (kein Kurs hat je "egal"/"offen" als eigenen
- * Wert).
+ * Einkategorisierung (17.09., "danach gefragt werden ob man schon weiss was
+ * man machen will, Zertifikat, Seminar, Weiterbildung, Studium"):
+ * "widerspricht" nur, wenn die Person sich klar fuer eine Kategorie
+ * entschieden hat UND der Kurs eine ANDERE, ebenfalls gesetzte Kategorie
+ * traegt. "weiß noch nicht" (kein echter Wert) und ein Kurs ohne
+ * course_category zaehlen immer als Treffer — gleiches Prinzip wie bei den
+ * anderen Dimensionen.
+ *
+ * Dauer (17.09., "die Dauer soll auch abgefragt werden ... beim Matching
+ * algorithmus muss auch auf die Zeit etc. eingegangen werden"): funktioniert
+ * nach demselben Muster wie der Startzeitpunkt oben (siehe
+ * DURATION_PREFERENCE_MAX_WEEKS) — ein KUERZERER Kurs als gewuenscht ist nie
+ * ein Widerspruch, nur ein laengerer als die gewaehlte Obergrenze.
+ *
+ * "egal"/"offen"/"weiss-noch-nicht"/"lang" (Version 26/28, siehe
+ * EMPLOYMENT_OPTIONS/LOCATION_OPTIONS/START_OPTIONS/CATEGORY_OPTIONS/
+ * DURATION_OPTIONS in JourneyPage.tsx) sind AUSDRUECKLICHE "keine
+ * Praeferenz"-Antworten, kein echter Wert zum Abgleichen — werden hier wie
+ * "keine Angabe" behandelt, sonst wuerde jeder Kurs mit gesetztem Feld
+ * faelschlich als Widerspruch gewertet (kein Kurs hat je einen dieser Werte
+ * als eigenen Wert).
  */
 export function preferenceMatchScore(
   course: {
@@ -165,11 +207,15 @@ export function preferenceMatchScore(
     employment_mode?: string | null;
     starts_at?: string | null;
     funding_types?: string[] | null;
+    course_category?: string | null;
+    duration_weeks?: number | null;
   },
   employmentType: string | null | undefined,
   workLocation: string | null | undefined,
   desiredStart?: string | null | undefined,
-  fundingPreference?: string | null | undefined
+  fundingPreference?: string | null | undefined,
+  categoryPreference?: string | null | undefined,
+  desiredDuration?: string | null | undefined
 ): number {
   const wantedEmployment = employmentType === "egal" ? null : employmentType;
   const wantedLocationRaw = workLocation === "egal" ? null : workLocation;
@@ -189,6 +235,15 @@ export function preferenceMatchScore(
   }
   const wantsFunding = fundingPreference === "gefoerdert";
   if (!wantsFunding || (course.funding_types && course.funding_types.length > 0)) {
+    score += 1;
+  }
+  const wantedCategory = categoryPreference && categoryPreference !== "weiss-noch-nicht" ? categoryPreference : null;
+  if (!wantedCategory || !course.course_category || course.course_category === wantedCategory) {
+    score += 1;
+  }
+  const wantedDuration = desiredDuration && desiredDuration !== "lang" ? desiredDuration : null;
+  const maxWeeks = wantedDuration ? DURATION_PREFERENCE_MAX_WEEKS[wantedDuration] : undefined;
+  if (!wantedDuration || maxWeeks == null || course.duration_weeks == null || course.duration_weeks <= maxWeeks) {
     score += 1;
   }
   return score;
@@ -212,11 +267,15 @@ export function describePreferenceMismatches(
     employment_mode?: string | null;
     starts_at?: string | null;
     funding_types?: string[] | null;
+    course_category?: string | null;
+    duration_weeks?: number | null;
   },
   employmentType: string | null | undefined,
   workLocation: string | null | undefined,
   desiredStart?: string | null | undefined,
-  fundingPreference?: string | null | undefined
+  fundingPreference?: string | null | undefined,
+  categoryPreference?: string | null | undefined,
+  desiredDuration?: string | null | undefined
 ): string[] {
   const mismatches: string[] = [];
   const wantedEmployment = employmentType === "egal" ? null : employmentType;
@@ -237,6 +296,15 @@ export function describePreferenceMismatches(
   if (fundingPreference === "gefoerdert" && !(course.funding_types && course.funding_types.length > 0)) {
     mismatches.push("Förderung");
   }
+  const wantedCategory = categoryPreference && categoryPreference !== "weiss-noch-nicht" ? categoryPreference : null;
+  if (wantedCategory && course.course_category && course.course_category !== wantedCategory) {
+    mismatches.push("Art der Weiterbildung");
+  }
+  const wantedDuration = desiredDuration && desiredDuration !== "lang" ? desiredDuration : null;
+  const maxWeeks = wantedDuration ? DURATION_PREFERENCE_MAX_WEEKS[wantedDuration] : undefined;
+  if (wantedDuration && maxWeeks != null && course.duration_weeks != null && course.duration_weeks > maxWeeks) {
+    mismatches.push("Dauer");
+  }
   return mismatches;
 }
 
@@ -255,8 +323,9 @@ export interface CourseRecommendationResult {
    * Version 25, ab 14.09. um Startzeitpunkt und Förderung erweitert — siehe
    * preferenceMatchScore() oben. Nur gesetzt, wenn rankCoursesForGap/
    * matchCoursesToGap mit mindestens einer echten Präferenz aufgerufen
-   * wurde; 0-4 (je ein Punkt pro Dimension: Beschäftigungsart, Arbeitsort,
-   * gewünschter Startzeitpunkt, Förderung, siehe dort). Rein informativ
+   * wurde; 0-6 (je ein Punkt pro Dimension: Beschäftigungsart, Arbeitsort,
+   * gewünschter Startzeitpunkt, Förderung, Einkategorisierung, gewünschte
+   * Dauer, siehe dort). Rein informativ
    * fuers UI (z.B. JourneyPage.tsx KursStep) — beeinflusst NUR die
    * Sortierung, nie ob ein Kurs ueberhaupt auftaucht.
    */
@@ -285,6 +354,12 @@ export function rankCoursesForGap(
     workLocation?: string | null;
     desiredStart?: string | null;
     fundingPreference?: string | null;
+    /** Version 28/17.09. — siehe preferenceMatchScore()/CATEGORY_OPTIONS in
+     *  JourneyPage.tsx. */
+    categoryPreference?: string | null;
+    /** Version 28/17.09. — siehe preferenceMatchScore()/DURATION_OPTIONS in
+     *  JourneyPage.tsx. */
+    desiredDuration?: string | null;
     /** Rollenkatalog fuer den Bereichs-Fallback unten (FIX 4/5) — Default
      *  ROLES_CATALOG. Ueberschreibbar, damit gapResult.target_role_id auch
      *  auf eine synthetische "Bereichs-Rolle" zeigen kann, die NICHT in
@@ -306,7 +381,9 @@ export function rankCoursesForGap(
     (Boolean(preferences.employmentType) && preferences.employmentType !== "egal") ||
     (Boolean(preferences.workLocation) && preferences.workLocation !== "egal") ||
     (Boolean(preferences.desiredStart) && preferences.desiredStart !== "offen") ||
-    preferences.fundingPreference === "gefoerdert";
+    preferences.fundingPreference === "gefoerdert" ||
+    (Boolean(preferences.categoryPreference) && preferences.categoryPreference !== "weiss-noch-nicht") ||
+    (Boolean(preferences.desiredDuration) && preferences.desiredDuration !== "lang");
 
   const withGapCoverage = courses.map((course) => {
     const coveredGapUris = course.covered_skill_uris.filter((uri) => gapWeightByUri.has(uri));
@@ -316,7 +393,9 @@ export function rankCoursesForGap(
       preferences.employmentType,
       preferences.workLocation,
       preferences.desiredStart,
-      preferences.fundingPreference
+      preferences.fundingPreference,
+      preferences.categoryPreference,
+      preferences.desiredDuration
     );
     return { course, coveredGapUris, coveredGapWeight, prefScore };
   });
@@ -443,7 +522,9 @@ export function rankCoursesForGap(
         preferences.employmentType,
         preferences.workLocation,
         preferences.desiredStart,
-        preferences.fundingPreference
+        preferences.fundingPreference,
+        preferences.categoryPreference,
+        preferences.desiredDuration
       ),
     }))
     .sort((a, b) => {
@@ -479,6 +560,10 @@ export interface MatchCoursesOptions {
   workLocation?: string | null;
   desiredStart?: string | null;
   fundingPreference?: string | null;
+  /** Version 28, 17.09. um Einkategorisierung und gewuenschte Dauer
+   *  erweitert — siehe preferenceMatchScore()/rankCoursesForGap() oben. */
+  categoryPreference?: string | null;
+  desiredDuration?: string | null;
 }
 
 /** TS-Entsprechung von match_courses_to_gap() aus course_matcher.py — ruft
@@ -508,6 +593,8 @@ export function matchCoursesToGap(
       workLocation: opts.workLocation,
       desiredStart: opts.desiredStart,
       fundingPreference: opts.fundingPreference,
+      categoryPreference: opts.categoryPreference,
+      desiredDuration: opts.desiredDuration,
       roles,
     }),
   };

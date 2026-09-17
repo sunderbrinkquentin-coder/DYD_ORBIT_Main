@@ -87,6 +87,15 @@ export interface LeadCreateRequest {
    */
   contact_phone?: string | null;
   /**
+   * Freitext-Anliegen der Person (Version 38, 17.09., Rückmeldung "es soll
+   * da auch ein kleines Freitextfeld geben in dem man schon konkrete
+   * Anliegen schildern kann") — z.B. bereits vorhandene Vorkenntnisse oder
+   * eine konkrete Terminfrage, die der Bildungsträger vor dem ersten
+   * Kontakt schon kennt. Optional/additiv wie contact_phone oben: ein
+   * Backend, das dieses Feld noch nicht kennt, ignoriert es einfach.
+   */
+  message?: string | null;
+  /**
    * Kurs, für den sich die Person im Kurs-Schritt aktiv entschieden hat
    * (Version 15) — kann von der algorithmischen Bestempfehlung abweichen.
    * Optional, damit ein Backend, das dieses Feld noch nicht kennt, die
@@ -181,6 +190,10 @@ export interface LeadResponse {
    *  als "keine Telefonnummer hinterlegt" behandeln). Optional/additiv wie
    *  consultation_requested unten. */
   contact_phone?: string | null;
+  /** Siehe message in LeadCreateRequest oben — fehlt in der Antwort, wenn
+   *  das Backend das Feld noch nicht kennt. Optional/additiv wie
+   *  contact_phone oben. */
+  message?: string | null;
   target_role_id: string;
   target_role_name: string;
   matched_skills: string[];

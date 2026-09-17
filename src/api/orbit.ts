@@ -175,6 +175,24 @@ export interface LeadCreateRequest {
    */
   cv_processing_consent_given?: boolean | null;
   cv_processing_consent_at?: string | null;
+  /**
+   * Momentaufnahme der bereits client-seitig berechneten Skill-Gap-Analyse
+   * (Version 37, siehe resolveLeadTargetRoleId/submitLead in JourneyPage.tsx)
+   * — vor allem für den Bereichs-Kurzweg gedacht, bei dem target_role_id
+   * evtl. nicht 1:1 den ursprünglich gemeinten Bereich trifft. War bislang
+   * nur als Objektliteral im Aufruf vorhanden, ohne hier im Typ zu stehen
+   * (TS-Excess-Property-Fehler bei "tsc --noEmit", auch wenn esbuild das
+   * nicht meldet) — jetzt nachgetragen. Optional/additiv wie die übrigen
+   * Zusatzfelder hier: ein Backend, das journey_snapshot noch nicht kennt,
+   * ignoriert es einfach.
+   */
+  journey_snapshot?: {
+    target_role_name: string;
+    match_percentage: number;
+    matched_skills: string[];
+    gap_skills: string[];
+    selected_course_id: string | null;
+  } | null;
   // Hinweis: Match-Schwelle und Qualifizierungs-Schwelle werden bewusst nicht
   // mitgeschickt — beide setzt ausschliesslich der Server.
 }

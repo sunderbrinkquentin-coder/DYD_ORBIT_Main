@@ -711,6 +711,52 @@ function formatCoursePrice(course: {
   if (course.exam_fee_eur != null) text += ` (+ ${formatEuro(course.exam_fee_eur)} Prüfungsgebühr)`;
   return text;
 }
+/**
+ * Rückmeldung 17.09. ("es sollen immer die Daten sichtbar sein und wenn
+ * keine Hinterlegt worden sind, dann soll auf Anfrage kommen"): bisher
+ * fielen Kosten/Ort/Niveau/Förderung/Start als ganze Zeile/Pille komplett
+ * weg, wenn der Bildungsträger das jeweilige Feld nicht gepflegt hatte
+ * (Projekt-Prinzip "keine erfundenen Fakten" — siehe formatCoursePrice
+ * oben). Jetzt bleibt die Zeile/Pille IMMER sichtbar, zeigt bei einem
+ * fehlenden Wert aber ehrlich "auf Anfrage" statt eines erfundenen Werts
+ * oder eines stillschweigenden Wegfalls. Fünf kleine Wrapper statt eines
+ * generischen "orAufAnfrage()"-Helpers, weil jedes Feld sein eigenes
+ * Label-Lookup/Format mitbringt (COURSE_LOCATION_LABELS,
+ * QUALIFICATION_TYPE_LABELS, FUNDING_TYPE_LABELS, formatCourseStartDate,
+ * formatCoursePrice) — bewusst lose typisiert (wie formatCoursePrice/
+ * formatCourseDuration oben) statt LocationMode/QualificationType/
+ * FundingType hier zusätzlich zu importieren.
+ */
+const RAHMENDATEN_FALLBACK = "auf Anfrage";
+function courseCostText(course: {
+  price_eur?: number | null;
+  price_vat_exempt?: boolean | null;
+  exam_fee_eur?: number | null;
+}): string {
+  return formatCoursePrice(course) ?? RAHMENDATEN_FALLBACK;
+}
+function courseLocationText(course: { location_mode?: string | null }): string {
+  return (course.location_mode && COURSE_LOCATION_LABELS[course.location_mode]) || RAHMENDATEN_FALLBACK;
+}
+function courseQualificationText(course: { qualification_type?: string | null; dqr_level?: number | null }): string {
+  if (course.qualification_type && QUALIFICATION_TYPE_LABELS[course.qualification_type]) {
+    return (
+      QUALIFICATION_TYPE_LABELS[course.qualification_type] +
+      (course.dqr_level != null ? ` (DQR ${course.dqr_level})` : "")
+    );
+  }
+  return RAHMENDATEN_FALLBACK;
+}
+function courseFundingText(course: { funding_types?: string[] | null }): string {
+  if (course.funding_types && course.funding_types.length > 0) {
+    const single = course.funding_types.length === 1 ? FUNDING_TYPE_LABELS[course.funding_types[0]] : null;
+    return `Förderfähig${single ? ` (${single})` : ""}`;
+  }
+  return RAHMENDATEN_FALLBACK;
+}
+function courseStartText(course: { starts_at?: string | null }): string {
+  return formatCourseStartDate(course.starts_at ?? null) ?? RAHMENDATEN_FALLBACK;
+}
 /** Rechnet, wie in lead_service.py/index.ts (Backend), den projizierten
  * Match-Score aus: "wenn diese Person den empfohlenen Kurs abschließt, wie
  * nah wäre sie danach an der Zielrolle?" — hier client-seitig nachgebaut,
@@ -4517,34 +4563,32 @@ function KursStep({
   // Fließtext unter den Fakten wirkt.
   const renderPopularCard = (c: OrbitCourse) => {
     const isAlsoRequested = additionalCourseIds.has(c.course_id);
-    const priceText = formatCoursePrice(c);
-    const startText = formatCourseStartDate(c.starts_at);
     return (
       <div className={`popular-course-card ${isAlsoRequested ? "selected" : ""}`} key={c.course_id}>
         <CourseBadgeRow course={c} alwaysShow />
         <div className="popular-course-name">{c.course_name}</div>
         <div className="popular-course-meta">
           {c.provider} · {formatCourseDuration(c)}
-          {c.location_mode && COURSE_LOCATION_LABELS[c.location_mode] && ` · ${COURSE_LOCATION_LABELS[c.location_mode]}`}
         </div>
-        {(priceText || (c.qualification_type && QUALIFICATION_TYPE_LABELS[c.qualification_type]) ||
-          (c.funding_types && c.funding_types.length > 0) || startText) && (
-          <div className="popular-course-facts">
-            {priceText && <span className="course-hero-fact">💶 {priceText}</span>}
-            {c.qualification_type && QUALIFICATION_TYPE_LABELS[c.qualification_type] && (
-              <span className="course-hero-fact">🎓 {QUALIFICATION_TYPE_LABELS[c.qualification_type]}</span>
-            )}
-            {c.funding_types && c.funding_types.length > 0 && (
-              <span
-                className="course-hero-fact course-hero-fact-funding"
-                title={c.funding_types.map((f) => FUNDING_TYPE_LABELS[f] ?? f).join(", ")}
-              >
-                💰 Förderfähig
-              </span>
-            )}
-            {startText && <span className="course-hero-fact">📅 Start {startText}</span>}
-          </div>
-        )}
+        {/* Rückmeldung 17.09. ("es sollen immer die Daten sichtbar sein und
+            wenn keine Hinterlegt worden sind, dann soll auf Anfrage
+            kommen"): dieselben fünf immer sichtbaren Rahmendaten-Pillen wie
+            auf der Hauptkarte (course-hero-facts), inkl. "auf Anfrage" bei
+            fehlendem Wert — Ort ist deshalb hier raus aus der Meta-Zeile und
+            unten mit dabei, statt dort separat (und nur bei vorhandenem
+            Wert) zu stehen. */}
+        <div className="popular-course-facts">
+          <span className="course-hero-fact">{courseLocationText(c)}</span>
+          <span className="course-hero-fact">💶 {courseCostText(c)}</span>
+          <span className="course-hero-fact">🎓 {courseQualificationText(c)}</span>
+          <span
+            className={`course-hero-fact ${c.funding_types && c.funding_types.length > 0 ? "course-hero-fact-funding" : ""}`}
+            title={c.funding_types && c.funding_types.length > 0 ? c.funding_types.map((f) => FUNDING_TYPE_LABELS[f] ?? f).join(", ") : undefined}
+          >
+            💰 {courseFundingText(c)}
+          </span>
+          <span className="course-hero-fact">📅 Start {courseStartText(c)}</span>
+        </div>
         {(() => {
           const descTrimmed = c.description?.trim() ?? null;
           const targetGroupTrimmed = c.target_group?.trim() || null;
@@ -4905,70 +4949,57 @@ function KursStep({
                     </div>
                   </div>
                 )}
-                {/* Bugfix (15.09., Rückmeldung "es sind nicht die Startdaten
-                    etc. vorhanden"): das echte Startdatum war bisher nur
-                    sichtbar, wenn die Person im Präferenzen-Schritt aktiv
-                    einen Startwunsch genannt hatte — ein vorhandenes,
-                    reales starts_at blieb sonst komplett unsichtbar. Jetzt
-                    wie Preis/UE/Förderung: immer gezeigt, wenn vorhanden. */}
-                {fullCourse &&
-                  (fullCourse.location_mode || fullCourse.employment_mode || fullCourse.starts_at) && (
-                    <div className="course-hero-meta">
-                      {fullCourse.location_mode && COURSE_LOCATION_LABELS[fullCourse.location_mode]}
-                      {fullCourse.location_mode && fullCourse.employment_mode && " · "}
-                      {fullCourse.employment_mode && COURSE_EMPLOYMENT_LABELS[fullCourse.employment_mode]}
-                      {formatCourseStartDate(fullCourse.starts_at) && (
-                        <>
-                          {(fullCourse.location_mode || fullCourse.employment_mode) && " · "}
-                          Start {formatCourseStartDate(fullCourse.starts_at)}
-                        </>
-                      )}
-                      {mismatches.length > 0 && (
-                        <>
-                          {" · "}
-                          <span className="hint">
-                            {mismatches.join("/")} {mismatches.length === 1 ? "passt" : "passen"} evtl. nicht zu
-                            deiner Angabe
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  )}
-                {/* Preis/Förderung/Abschluss-Fakten (Version 33, 14.09.) — der
-                    eigentliche Kern der Anfrage "mehr Infos wie Preise, Anzahl
-                    Stunden und ob es förderfähig ist bei den Kursen". Rein
-                    faktisch aus fullCourse (siehe die entsprechenden Felder an
-                    OrbitCourse in orbit.ts) — keine Zeile, wenn der
-                    Bildungsträger das jeweilige Feld nicht gepflegt hat, statt
-                    "k.A." zu behaupten (Projektphilosophie: keine erfundenen
-                    Fakten). */}
-                {fullCourse &&
-                  (fullCourse.price_eur != null ||
-                    fullCourse.qualification_type ||
-                    (fullCourse.funding_types && fullCourse.funding_types.length > 0)) && (
-                    <div className="course-hero-facts">
-                      {formatCoursePrice(fullCourse) && (
-                        <span className="course-hero-fact">💶 {formatCoursePrice(fullCourse)}</span>
-                      )}
-                      {fullCourse.qualification_type && QUALIFICATION_TYPE_LABELS[fullCourse.qualification_type] && (
-                        <span className="course-hero-fact">
-                          🎓 {QUALIFICATION_TYPE_LABELS[fullCourse.qualification_type]}
-                          {fullCourse.dqr_level != null && ` (DQR ${fullCourse.dqr_level})`}
+                {/* Beschäftigungsart/Präferenz-Mismatch bleiben eine eigene,
+                    kontextuelle Meta-Zeile (kein "Rahmendatum" im Sinne der
+                    Rückmeldung unten, sondern ein Abgleich mit den
+                    Präferenzen-Angaben) — Ort und Start sind seit 17.09. Teil
+                    von course-hero-facts direkt darunter, siehe dort. */}
+                {fullCourse && (fullCourse.employment_mode || mismatches.length > 0) && (
+                  <div className="course-hero-meta">
+                    {fullCourse.employment_mode && COURSE_EMPLOYMENT_LABELS[fullCourse.employment_mode]}
+                    {mismatches.length > 0 && (
+                      <>
+                        {fullCourse.employment_mode && " · "}
+                        <span className="hint">
+                          {mismatches.join("/")} {mismatches.length === 1 ? "passt" : "passen"} evtl. nicht zu
+                          deiner Angabe
                         </span>
-                      )}
-                      {fullCourse.funding_types && fullCourse.funding_types.length > 0 && (
-                        <span
-                          className="course-hero-fact course-hero-fact-funding"
-                          title={fullCourse.funding_types.map((f) => FUNDING_TYPE_LABELS[f] ?? f).join(", ")}
-                        >
-                          💰 Förderfähig
-                          {fullCourse.funding_types.length === 1 &&
-                            FUNDING_TYPE_LABELS[fullCourse.funding_types[0]] &&
-                            ` (${FUNDING_TYPE_LABELS[fullCourse.funding_types[0]]})`}
-                        </span>
-                      )}
-                    </div>
-                  )}
+                      </>
+                    )}
+                  </div>
+                )}
+                {/* Rahmendaten-Pillen (Version 33, 14.09., erweitert 17.09.) —
+                    der eigentliche Kern der Anfrage "mehr Infos wie Preise,
+                    Anzahl Stunden und ob es förderfähig ist bei den Kursen".
+                    Rückmeldung 17.09. ("es sollen immer die Daten sichtbar
+                    sein und wenn keine hinterlegt worden sind, dann soll auf
+                    Anfrage kommen"): ANDERS als bisher fällt eine Pille nicht
+                    mehr weg, wenn der Bildungsträger das Feld nicht gepflegt
+                    hat — sie zeigt dann ehrlich "auf Anfrage" (siehe
+                    courseLocationText/courseCostText/courseQualificationText/
+                    courseFundingText/courseStartText oben), statt einen Wert
+                    zu erfinden ODER die Zeile kommentarlos verschwinden zu
+                    lassen. Ort/Kosten/Niveau/Förderung/Start jetzt hier
+                    gebündelt, statt Ort/Start zusätzlich in der Meta-Zeile
+                    oben zu duplizieren. */}
+                {fullCourse && (
+                  <div className="course-hero-facts">
+                    <span className="course-hero-fact">{courseLocationText(fullCourse)}</span>
+                    <span className="course-hero-fact">💶 {courseCostText(fullCourse)}</span>
+                    <span className="course-hero-fact">🎓 {courseQualificationText(fullCourse)}</span>
+                    <span
+                      className={`course-hero-fact ${fullCourse.funding_types && fullCourse.funding_types.length > 0 ? "course-hero-fact-funding" : ""}`}
+                      title={
+                        fullCourse.funding_types && fullCourse.funding_types.length > 0
+                          ? fullCourse.funding_types.map((f) => FUNDING_TYPE_LABELS[f] ?? f).join(", ")
+                          : undefined
+                      }
+                    >
+                      💰 {courseFundingText(fullCourse)}
+                    </span>
+                    <span className="course-hero-fact">📅 Start {courseStartText(fullCourse)}</span>
+                  </div>
+                )}
                 {(pitch.headline || pitch.skillLine || pitch.goalLine || pitch.descriptionSnippet) && (
                   <div className="course-hero-pitch">
                     {pitch.headline && (
@@ -5018,55 +5049,41 @@ function KursStep({
                       <strong>Das bringt dir dieser Kurs konkret</strong>
                     </div>
                     {/* Rückmeldung 17.09. ("die Infos Dauer, Ort, Kosten,
-                        Niveau etc. sollen auch drinstehen"): dieselben echten
-                        Rahmendaten wie in course-hero-facts/-meta weiter oben
-                        auf der Karte, hier zusätzlich direkt im Reveal, damit
-                        sie im Moment der Auswahl nicht separat gesucht werden
-                        müssen. Nur Zeilen mit echten Werten, nichts erfunden. */}
+                        Niveau etc. sollen auch drinstehen", später konkretisiert:
+                        "es sollen immer die Daten sichtbar sein und wenn keine
+                        Hinterlegt worden sind, dann soll auf Anfrage kommen"):
+                        alle sechs Zeilen sind jetzt IMMER da (Dauer hat als
+                        Pflichtfeld ohnehin immer einen echten Wert), fehlende
+                        Werte zeigen "auf Anfrage" statt komplett zu fehlen —
+                        siehe courseLocationText/courseCostText/
+                        courseQualificationText/courseFundingText/
+                        courseStartText oben. */}
                     {fullCourse && (
                       <div className="course-hero-reveal-facts">
                         <div className="course-hero-reveal-fact">
                           <span className="course-hero-reveal-fact-label">Dauer</span>
                           <span>{formatCourseDuration(fullCourse)}</span>
                         </div>
-                        {fullCourse.location_mode && COURSE_LOCATION_LABELS[fullCourse.location_mode] && (
-                          <div className="course-hero-reveal-fact">
-                            <span className="course-hero-reveal-fact-label">Ort</span>
-                            <span>{COURSE_LOCATION_LABELS[fullCourse.location_mode]}</span>
-                          </div>
-                        )}
-                        {formatCoursePrice(fullCourse) && (
-                          <div className="course-hero-reveal-fact">
-                            <span className="course-hero-reveal-fact-label">Kosten</span>
-                            <span>{formatCoursePrice(fullCourse)}</span>
-                          </div>
-                        )}
-                        {fullCourse.qualification_type && QUALIFICATION_TYPE_LABELS[fullCourse.qualification_type] && (
-                          <div className="course-hero-reveal-fact">
-                            <span className="course-hero-reveal-fact-label">Niveau</span>
-                            <span>
-                              {QUALIFICATION_TYPE_LABELS[fullCourse.qualification_type]}
-                              {fullCourse.dqr_level != null ? ` (DQR ${fullCourse.dqr_level})` : ""}
-                            </span>
-                          </div>
-                        )}
-                        {fullCourse.funding_types && fullCourse.funding_types.length > 0 && (
-                          <div className="course-hero-reveal-fact">
-                            <span className="course-hero-reveal-fact-label">Förderung</span>
-                            <span>
-                              Förderfähig
-                              {fullCourse.funding_types.length === 1 && FUNDING_TYPE_LABELS[fullCourse.funding_types[0]]
-                                ? ` (${FUNDING_TYPE_LABELS[fullCourse.funding_types[0]]})`
-                                : ""}
-                            </span>
-                          </div>
-                        )}
-                        {formatCourseStartDate(fullCourse.starts_at) && (
-                          <div className="course-hero-reveal-fact">
-                            <span className="course-hero-reveal-fact-label">Start</span>
-                            <span>{formatCourseStartDate(fullCourse.starts_at)}</span>
-                          </div>
-                        )}
+                        <div className="course-hero-reveal-fact">
+                          <span className="course-hero-reveal-fact-label">Ort</span>
+                          <span>{courseLocationText(fullCourse)}</span>
+                        </div>
+                        <div className="course-hero-reveal-fact">
+                          <span className="course-hero-reveal-fact-label">Kosten</span>
+                          <span>{courseCostText(fullCourse)}</span>
+                        </div>
+                        <div className="course-hero-reveal-fact">
+                          <span className="course-hero-reveal-fact-label">Niveau</span>
+                          <span>{courseQualificationText(fullCourse)}</span>
+                        </div>
+                        <div className="course-hero-reveal-fact">
+                          <span className="course-hero-reveal-fact-label">Förderung</span>
+                          <span>{courseFundingText(fullCourse)}</span>
+                        </div>
+                        <div className="course-hero-reveal-fact">
+                          <span className="course-hero-reveal-fact-label">Start</span>
+                          <span>{courseStartText(fullCourse)}</span>
+                        </div>
                       </div>
                     )}
                     {/* Rückmeldung 17.09. ("die erlernten Skills sollten viel

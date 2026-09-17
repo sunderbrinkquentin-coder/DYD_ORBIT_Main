@@ -2438,7 +2438,27 @@ async function runDemoAnalysis() {
                     courseCatalogError={courseCatalogError}
                     careerGoal={careerGoal}
                     selectedCourseId={selectedCourseId}
-                    onSelectCourse={setSelectedCourseId}
+                    onSelectCourse={(courseId) => {
+                      // Rückmeldung 17.09.: Kurs anfragen/auswählen soll direkt
+                      // zu den Kontaktdaten führen, statt dass man sich selbst
+                      // durch "Ebenfalls beliebt" + Lernfeld-Panel scrollen
+                      // muss. Kurze Verzögerung, damit die Auswahl (✓ Deine
+                      // Wahl) erst sichtbar wird, bevor gescrollt wird — siehe
+                      // dasselbe Timing-Muster bei window.setTimeout(onForward,
+                      // …) weiter oben in dieser Datei. Kein Scroll bei der
+                      // automatischen Erstauswahl (die läuft direkt über
+                      // setSelectedCourseId, nicht über diesen Handler hier).
+                      const changed = courseId !== selectedCourseId;
+                      setSelectedCourseId(courseId);
+                      if (changed) {
+                        window.setTimeout(() => {
+                          document.getElementById("dyd-course-contact")?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          });
+                        }, 320);
+                      }
+                    }}
                     additionalCourseIds={additionalCourseIds}
                     onToggleAdditional={toggleAdditionalCourse}
                     employmentType={employmentType}
@@ -4421,6 +4441,30 @@ function KursStep({
   const bannerCourses = remainingCourses.filter(
     (c) => !soonStartingIds.has(c.course_id) && (c.is_featured || Boolean(c.custom_banner))
   );
+  // Rückmeldung 17.09. ("die Kurse sollen im Vordergrund stehen … die
+  // anderen Kurse sollen rotieren und dort präsent präsentiert werden"):
+  // vorher standen soonStartingCourses/bannerCourses als zwei lange,
+  // statische Grids GANZ unten, nach dem kompletten Kontaktformular — das
+  // zog die Seite unnötig in die Länge, ohne dass die weiteren Kurse
+  // wirklich auffielen. Jetzt EIN kombiniertes, automatisch rotierendes
+  // Karussell direkt nach der Hauptempfehlung, vor dem Kontaktformular (das
+  // damit klar der erkennbare letzte Schritt bleibt). CourseBadgeRow leitet
+  // ihr Badge weiterhin pro Kurs aus echten Datenfeldern ab (siehe
+  // courseBadges.tsx), die Unterscheidung "startet bald" vs. "Banner" geht
+  // beim Zusammenlegen also nicht verloren.
+  const popularCourses = [...soonStartingCourses, ...bannerCourses];
+  const [popularIndex, setPopularIndex] = useState(0);
+  const [carouselPaused, setCarouselPaused] = useState(false);
+  const safePopularIndex = popularCourses.length > 0 ? popularIndex % popularCourses.length : 0;
+  useEffect(() => {
+    if (popularCourses.length <= 1 || carouselPaused) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = window.setInterval(() => {
+      setPopularIndex((i) => (i + 1) % popularCourses.length);
+    }, 6000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [popularCourses.length, carouselPaused]);
   // Präferenzen-Zusammenfassung (14.09., "soll auch als Zusammenfassung
   // angezeigt werden") — nur die tatsächlich beantworteten Fragen aus dem
   // "Präferenzen"-Schritt, in derselben Reihenfolge wie dort gefragt. "egal"/
@@ -4990,11 +5034,66 @@ function KursStep({
 
         </>
       )}
-      {/* Conversion-Reihenfolge: individuelle Empfehlung + Pitch → Kontaktdaten →
-          klare Handlungswahl. Weitere Kurse stehen bewusst erst danach als
-          sekundäre Option, damit die Hauptentscheidung nicht verwässert wird. */}
+      {popularCourses.length > 0 && (
+        <div
+          className="course-carousel"
+          onMouseEnter={() => setCarouselPaused(true)}
+          onMouseLeave={() => setCarouselPaused(false)}
+          onFocus={() => setCarouselPaused(true)}
+          onBlur={() => setCarouselPaused(false)}
+        >
+          <div className="course-carousel-heading">
+            <div className="field-label">Weitere passende Kurse</div>
+            <p>Noch nicht sicher? Wirf einen Blick auf weitere Weiterbildungen aus unserem Katalog — du kannst auch mehrere anfragen.</p>
+          </div>
+          <div className="course-carousel-viewport">
+            {popularCourses.length > 1 && (
+              <button
+                type="button"
+                className="course-carousel-nav course-carousel-prev"
+                aria-label="Vorheriger Kurs"
+                onClick={() => setPopularIndex((i) => (i - 1 + popularCourses.length) % popularCourses.length)}
+              >
+                ‹
+              </button>
+            )}
+            <div className="course-carousel-track" key={popularCourses[safePopularIndex].course_id}>
+              {renderPopularCard(popularCourses[safePopularIndex])}
+            </div>
+            {popularCourses.length > 1 && (
+              <button
+                type="button"
+                className="course-carousel-nav course-carousel-next"
+                aria-label="Nächster Kurs"
+                onClick={() => setPopularIndex((i) => (i + 1) % popularCourses.length)}
+              >
+                ›
+              </button>
+            )}
+          </div>
+          {popularCourses.length > 1 && (
+            <div className="course-carousel-dots" role="tablist" aria-label="Weiteren Kurs auswählen">
+              {popularCourses.map((c, i) => (
+                <button
+                  key={c.course_id}
+                  type="button"
+                  role="tab"
+                  aria-selected={i === safePopularIndex}
+                  aria-label={`Kurs ${i + 1} von ${popularCourses.length}: ${c.course_name}`}
+                  className={`course-carousel-dot ${i === safePopularIndex ? "active" : ""}`}
+                  onClick={() => setPopularIndex(i)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {/* Conversion-Reihenfolge: individuelle Empfehlung + Pitch → weitere
+          Kurse (Karussell, präsent aber kompakt) → Kontaktdaten → klare
+          Handlungswahl. Das Kontaktformular bleibt damit trotzdem der klar
+          erkennbare letzte Schritt. */}
       <div className="course-contact-divider" aria-hidden="true" />
-      <section className="course-contact-panel" aria-label="Nächster Schritt">
+      <section id="dyd-course-contact" className="course-contact-panel" aria-label="Nächster Schritt">
         <div className="contact-conversion-head">
           <div className="course-contact-eyebrow"><span aria-hidden="true">✦</span> DEIN NÄCHSTER SCHRITT</div>
           <h3 className="course-contact-title">Möchtest du mit dieser Weiterbildung weitermachen?</h3>
@@ -5035,29 +5134,6 @@ function KursStep({
           privacyPolicyUrl={privacyPolicyUrl}
         />
       </section>
-      {(soonStartingCourses.length > 0 || bannerCourses.length > 0) && (
-        <div className="course-secondary-heading">
-          <div className="field-label">Noch nicht sicher? Weitere Möglichkeiten</div>
-          <p>Du kannst dir auch andere Weiterbildungen ansehen und zusätzlich anfragen.</p>
-        </div>
-      )}
-      {/* Zwei getrennte Gruppen statt eines gemischten Topfs (15.09., "unten
-          auch alle anderen Kurse mit Banner oder startet innerhalb 1 Monats
-          und das schön getrennt") — siehe soonStartingCourses/bannerCourses
-          oben. Beide nutzen dieselbe Kartenoptik/-logik (renderPopularCard). */}
-      {soonStartingCourses.length > 0 && (
-        <div className="popular-courses">
-          <label className="field-label">🚀 Startet bald</label>
-          <div className="popular-course-grid">{soonStartingCourses.map(renderPopularCard)}</div>
-        </div>
-      )}
-      {bannerCourses.length > 0 && (
-        <div className="popular-courses">
-          <label className="field-label">Weitere Top-Kurse bei uns</label>
-          <div className="popular-course-grid">{bannerCourses.map(renderPopularCard)}</div>
-        </div>
-      )}
-
     </div>
   );
 }

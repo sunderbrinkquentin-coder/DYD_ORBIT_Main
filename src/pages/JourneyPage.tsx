@@ -134,7 +134,7 @@ const BEREICH_ICONS: Record<string, string> = {
  * bewusst 4 Optionen statt eines starren Geld-vs-Wissen-Zweiklangs, damit
  * die haeufigsten echten Beweggruende abgedeckt sind. Fliesst (a) als
  * Zusatzmerkmal in den Lead (siehe submitLead) und (b) in den
- * personalisierten Pitch im Kurs-Schritt ein (siehe PersonalizedPitch) —
+ * personalisierten Pitch im Kurs-Schritt ein (siehe course-hero-pitch) —
  * damit die Frage fuer die Person selbst spuerbar etwas bewirkt, nicht nur
  * Statistik fuer den Bildungstraeger ist. Optional (Skip-Link in GoalStep),
  * um die Einstiegshuerde nicht zu erhoehen. */
@@ -151,7 +151,7 @@ const GOAL_OPTIONS: { key: string; label: string; icon: string }[] = [
 // Ziel-Personalisierung der Kursempfehlung (Version 20)
 //
 // Bisher wurde careerGoal (siehe GOAL_OPTIONS) nur gesammelt und tauchte als
-// EIN Satz im Kurs-Schritt wieder auf (siehe PersonalizedPitch) — auf die
+// EIN Satz im Kurs-Schritt wieder auf (siehe course-hero-pitch) — auf die
 // Reihenfolge der Kursempfehlungen selbst hatte das Ziel keinerlei Einfluss.
 // Die beiden Funktionen unten aendern das, bewusst KONSERVATIV:
 //
@@ -293,10 +293,11 @@ function truncateAtWord(text: string, max: number): string {
 /**
  * Individueller, inhaltlich verankerter Pitch für EINE einzelne Kursempfehlung
  * (Version 29, auf Wunsch "warum genau passt diese Weiterbildung zu deinem
- * Ziel — am besten mit Inhalten verknüpft"). Im Unterschied zu
- * PersonalizedPitch weiter unten (die nur EINMAL für den gewählten Favoriten
- * unterhalb aller Karten steht) bekommt hier JEDE der gezeigten Kurskarten
- * ihre eigene, auf genau diesen Kurs zugeschnittene Begründung.
+ * Ziel — am besten mit Inhalten verknüpft"). JEDE der gezeigten Kurskarten
+ * bekommt ihre eigene, auf genau diesen Kurs zugeschnittene Begründung (siehe
+ * course-hero-pitch in KursStep) — ergänzt seit 17.09. um course-hero-reveal
+ * (konkrete Skills + Ziel-Fortschritt), sobald die jeweilige Karte ausgewählt
+ * ist.
  *
  * Bewusst NICHTS erfunden (gleiches Prinzip wie überall sonst in dieser
  * Journey, siehe z.B. cvLoadingMessages/courseBadges): nur echte Felder aus
@@ -2438,27 +2439,13 @@ async function runDemoAnalysis() {
                     courseCatalogError={courseCatalogError}
                     careerGoal={careerGoal}
                     selectedCourseId={selectedCourseId}
-                    onSelectCourse={(courseId) => {
-                      // Rückmeldung 17.09.: Kurs anfragen/auswählen soll direkt
-                      // zu den Kontaktdaten führen, statt dass man sich selbst
-                      // durch "Ebenfalls beliebt" + Lernfeld-Panel scrollen
-                      // muss. Kurze Verzögerung, damit die Auswahl (✓ Deine
-                      // Wahl) erst sichtbar wird, bevor gescrollt wird — siehe
-                      // dasselbe Timing-Muster bei window.setTimeout(onForward,
-                      // …) weiter oben in dieser Datei. Kein Scroll bei der
-                      // automatischen Erstauswahl (die läuft direkt über
-                      // setSelectedCourseId, nicht über diesen Handler hier).
-                      const changed = courseId !== selectedCourseId;
-                      setSelectedCourseId(courseId);
-                      if (changed) {
-                        window.setTimeout(() => {
-                          document.getElementById("dyd-course-contact")?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start",
-                          });
-                        }, 320);
-                      }
-                    }}
+                    // Rückmeldung 17.09.: der Auto-Scroll zum Kontaktformular
+                    // nach Kursauswahl (kurz zuvor eingeführt) kam nicht gut an
+                    // ("das mit dem Scrolling finde ich nicht gut") — wieder
+                    // entfernt. Auswahl wirkt jetzt wieder ausschließlich lokal
+                    // an der Karte selbst (siehe course-hero-reveal in
+                    // KursStep) statt die Seite zu bewegen.
+                    onSelectCourse={setSelectedCourseId}
                     additionalCourseIds={additionalCourseIds}
                     onToggleAdditional={toggleAdditionalCourse}
                     employmentType={employmentType}
@@ -4308,8 +4295,8 @@ function KursStep({
   /** Dieselben Gap-Skills wie gapSkillLabels, aber mit esco_uri statt nur als
    *  Label-String (Version 29) — nötig, um pro Kurskarte exakt zu bestimmen,
    *  WELCHE deiner offenen Skills genau DIESER Kurs abdeckt (siehe
-   *  buildCoursePitch). gapSkillLabels bleibt unverändert für die bestehende
-   *  PersonalizedPitch (Gesamtübersicht unterhalb aller Karten). */
+   *  buildCoursePitch UND course-hero-reveal, das dieselbe Zuordnung für die
+   *  jeweils ausgewählte Karte nutzt). */
   gapSkills: RoleSkillStatus[];
   /** Bereits vorhandene Skills der Zielrolle (gapResult.covered_skills) —
    *  nur für den Fallback-Fall in buildCoursePitch gebraucht (Kurs deckt
@@ -4531,10 +4518,6 @@ function KursStep({
       </div>
     );
   };
-  const selectedFullCourse = selected ? courseById(selected.course_id) : undefined;
-  const selectedCoveredGapSkillLabels = selectedFullCourse
-    ? gapSkills.filter((skill) => (selectedFullCourse.covered_skill_uris ?? []).includes(skill.esco_uri)).map((skill) => skill.preferred_label)
-    : [];
 
   return (
     <div className="dyd-kurs-result-wrap">
@@ -4729,6 +4712,25 @@ function KursStep({
             // ja aus einem echten Grund empfohlen wird, auch irreführend
             // (Rückmeldung 17.09.: "0 von 128 Skills werden vermittelt").
             const showsZeroGapDirectly = !course.is_role_fallback && (course.covers_gap_count ?? 0) === 0;
+            // Rückmeldung 17.09. ("es muss dann kommen welche Skills man mit
+            // der Weiterbildung erlernt und dass man damit näher an seinem
+            // Ziel ist"): direkt an der jeweils ausgewählten Karte selbst
+            // sichtbar (course-hero-reveal unten), statt in einem separaten
+            // Panel unterhalb aller Karten (das vormalige PersonalizedPitch,
+            // siehe Kommentar an buildCoursePitch oben — entfernt). Dieselbe
+            // Zuordnungslogik wie die vorherige selectedCoveredGapSkillLabels,
+            // nur jetzt pro Karte statt nur für die eine globale Auswahl.
+            const cardCoveredGapLabels = fullCourse
+              ? gapSkills
+                  .filter((skill) => (fullCourse.covered_skill_uris ?? []).includes(skill.esco_uri))
+                  .map((skill) => skill.preferred_label)
+              : [];
+            const cardOpenGapLabels = gapSkillLabels.filter((label) => !cardCoveredGapLabels.includes(label));
+            const cardCurrentMatch = courseResult?.match_percentage ?? null;
+            const cardProjectedMatch =
+              cardCurrentMatch != null
+                ? projectedMatchPct(cardCurrentMatch, course.covers_gap_percentage ?? 0)
+                : null;
             return (
               <div
                 key={course.course_id}
@@ -4959,7 +4961,57 @@ function KursStep({
                     )}
                   </div>
                 )}
-                <div className="course-hero-select">{isSelected ? "✓ Deine Wahl" : "Als Favorit wählen"}</div>
+                {isSelected && (cardCoveredGapLabels.length > 0 || cardOpenGapLabels.length > 0 || (cardProjectedMatch != null && cardCurrentMatch != null && cardProjectedMatch > cardCurrentMatch)) && (
+                  <div className="course-hero-reveal" onClick={(e) => e.stopPropagation()}>
+                    <div className="course-hero-reveal-head">
+                      <span className="course-hero-reveal-icon" aria-hidden="true">✓</span>
+                      <strong>Das bringt dir dieser Kurs konkret</strong>
+                    </div>
+                    {(cardCoveredGapLabels.length > 0 || cardOpenGapLabels.length > 0) && (
+                      <div className="course-hero-reveal-skills">
+                        {cardCoveredGapLabels.length > 0 && (
+                          <div>
+                            <div className="course-hero-reveal-label">DIESE SKILLS LERNST DU</div>
+                            <div className="course-hero-reveal-chip-row">
+                              {cardCoveredGapLabels.slice(0, 5).map((skill) => (
+                                <span className="course-hero-reveal-chip is-covered" key={skill}>✓ {skill}</span>
+                              ))}
+                              {cardCoveredGapLabels.length > 5 && (
+                                <span className="course-hero-reveal-chip is-more">
+                                  +{cardCoveredGapLabels.length - 5} weitere
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        {cardOpenGapLabels.length > 0 && (
+                          <div>
+                            <div className="course-hero-reveal-label course-hero-reveal-label-open">DANACH NOCH OFFEN</div>
+                            <div className="course-hero-reveal-chip-row">
+                              {cardOpenGapLabels.slice(0, 3).map((skill) => (
+                                <span className="course-hero-reveal-chip is-open" key={skill}>○ {skill}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {cardCurrentMatch != null && cardProjectedMatch != null && cardProjectedMatch > cardCurrentMatch && (
+                      <div className="course-hero-reveal-progress">
+                        <span className="course-hero-reveal-progress-icon" aria-hidden="true">🎯</span>
+                        <div>
+                          <strong>Damit kommst du {role} näher.</strong>
+                          <p>Dein Profil-Match steigt von {cardCurrentMatch}% auf ca. {cardProjectedMatch}%.</p>
+                        </div>
+                      </div>
+                    )}
+                    <div className="course-hero-reveal-next">
+                      Du musst dich jetzt noch nicht endgültig entscheiden — weiter unten kannst du diesen Kurs
+                      unverbindlich anfragen.
+                    </div>
+                  </div>
+                )}
+                <div className="course-hero-select">{isSelected ? "✓ Ausgewählt" : "Diesen Kurs auswählen"}</div>
                 {/* "Auch anfragen": unabhängig von der Favoriten-Auswahl oben —
                    stopPropagation, damit ein Klick auf die Checkbox nicht
                    gleichzeitig diese Karte als Favorit auswählt (siehe
@@ -4979,12 +5031,6 @@ function KursStep({
             );
             })}
           </div>
-          {selected && (
-            <PersonalizedPitch
-              gapSkillLabels={gapSkillLabels}
-              coveredGapSkillLabels={selectedCoveredGapSkillLabels}
-            />
-          )}
           {additionalCourseIds.size > 0 && (
             <div className="hint" style={{ marginTop: "12px" }}>
               ✓ {additionalCourseIds.size === 1 ? "1 weiterer Kurs wird" : `${additionalCourseIds.size} weitere Kurse werden`}{" "}
@@ -5093,7 +5139,7 @@ function KursStep({
           Handlungswahl. Das Kontaktformular bleibt damit trotzdem der klar
           erkennbare letzte Schritt. */}
       <div className="course-contact-divider" aria-hidden="true" />
-      <section id="dyd-course-contact" className="course-contact-panel" aria-label="Nächster Schritt">
+      <section className="course-contact-panel" aria-label="Nächster Schritt">
         <div className="contact-conversion-head">
           <div className="course-contact-eyebrow"><span aria-hidden="true">✦</span> DEIN NÄCHSTER SCHRITT</div>
           <h3 className="course-contact-title">Möchtest du mit dieser Weiterbildung weitermachen?</h3>
@@ -5167,72 +5213,6 @@ function SkillCoverageMeter({
   );
 }
 
-/** Kompaktes Lernfeld-Panel unterhalb der Kurskarten: zeigt nur noch, was
- * die vorher schon sichtbare course-hero-pitch-Karte (siehe course-hero-pitch
- * weiter oben) NICHT abdeckt — die konkreten, benannten Lernfelder, an denen
- * die Weiterbildung ansetzt bzw. die offen bleiben — plus eine kurze
- * Kein-Druck-Zusicherung vor dem Kontakt-Schritt. Alles andere (Ziel-/
- * Kurs-Karten, "Warum diese Empfehlung", die Kurzbeschreibung) stand bereits
- * redundant in course-hero-pitch UND war hier über pitch-conversion-* fast
- * ohne eigenes CSS (siehe journey.css) — daher bewusst entfernt statt nur
- * nachträglich gestylt. */
-function PersonalizedPitch({
-  gapSkillLabels,
-  coveredGapSkillLabels,
-}: {
-  gapSkillLabels: string[];
-  coveredGapSkillLabels: string[];
-}) {
-  const visibleCovered = coveredGapSkillLabels.slice(0, 4);
-  const visibleOpen = gapSkillLabels.filter((skill) => !coveredGapSkillLabels.includes(skill)).slice(0, 3);
-  const extraCovered = Math.max(0, coveredGapSkillLabels.length - visibleCovered.length);
-
-  if (visibleCovered.length === 0 && visibleOpen.length === 0) {
-    return null;
-  }
-
-  return (
-    <section className="skill-focus-panel" aria-label="Deine Lernfelder mit dieser Weiterbildung">
-      <div className="skill-focus-kicker">
-        <span aria-hidden="true">✦</span> DEIN LERNWEG MIT DIESER WEITERBILDUNG
-      </div>
-      <div className="skill-focus-groups">
-        {visibleCovered.length > 0 && (
-          <div>
-            <div className="skill-focus-label">DARAN ARBEITEST DU MIT DER WEITERBILDUNG</div>
-            <div className="skill-focus-chip-row">
-              {visibleCovered.map((skill) => (
-                <span className="skill-focus-chip is-covered" key={skill}>✓ {skill}</span>
-              ))}
-              {extraCovered > 0 && <span className="skill-focus-chip is-more">+{extraCovered} weitere</span>}
-            </div>
-          </div>
-        )}
-        {visibleOpen.length > 0 && (
-          <div>
-            <div className="skill-focus-label skill-focus-label-open">NOCH OFFEN</div>
-            <div className="skill-focus-chip-row">
-              {visibleOpen.map((skill) => (
-                <span className="skill-focus-chip is-open" key={skill}>○ {skill}</span>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-      <div className="skill-focus-next">
-        <div className="skill-focus-next-icon" aria-hidden="true">→</div>
-        <div>
-          <strong>Du musst dich jetzt noch nicht endgültig entscheiden.</strong>
-          <p>
-            Wenn sich die Empfehlung für dich richtig anhört, kannst du im nächsten Schritt unverbindlich
-            Kontakt aufnehmen. Dein Bildungsträger kann deine Auswertung direkt einordnen und mit dir die
-            nächsten Schritte besprechen.
-          </p>
-        </div>
-      </div>
-    </section>
-  );
-}
 
 function LeadStep({
   leadName,

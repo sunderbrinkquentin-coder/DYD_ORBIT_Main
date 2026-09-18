@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { readingDurationMs, TourAutoplayBar, TourAutoplayToggle, TourDemoToast, useTourAutoplay } from "./tourAutoplay";
+import { readingDurationMs, TourAutoplayBar, TourAutoplayToggle, TourDemoToast, TourStepDots, useTourAutoplay } from "./tourAutoplay";
 
 /**
  * Gefuehrter Rundgang durch die Endnutzer-Journey — fuer Demos/Praesentationen
@@ -401,10 +401,12 @@ export function JourneyTour({
         <div className="tour-card tour-card-dock tour-card-preparing" style={{ width: CARD_WIDTH }}>
           <div className="tour-card-head">
             <span className="tour-step-count">Rundgang wird vorbereitet</span>
-            <TourAutoplayToggle active={autoplay} onToggle={() => setAutoplay((a) => !a)} />
             <button className="tour-close" onClick={onClose} aria-label="Rundgang beenden" title="Beenden (Esc)">
               ×
             </button>
+          </div>
+          <div className="tour-autoplay-row">
+            <TourAutoplayToggle active={autoplay} onToggle={() => setAutoplay((a) => !a)} />
           </div>
           <div className="tour-preparing-spinner" aria-hidden="true" />
           <p className="tour-desc">
@@ -435,20 +437,35 @@ export function JourneyTour({
           <span className="tour-step-count">
             {stepIdx + 1} / {steps.length}
           </span>
-          <TourAutoplayToggle active={autoplay} onToggle={() => setAutoplay((a) => !a)} />
           <button className="tour-close" onClick={onClose} aria-label="Rundgang beenden" title="Beenden (Esc)">
             ×
           </button>
+        </div>
+        {/* Eigene, auffällige Zeile statt im engen Kopf (siehe Kommentar an
+           TourAutoplayToggle in tourAutoplay.tsx) — vorher zwischen
+           Schrittzähler und ×-Button eingeklemmt und dadurch leicht zu
+           übersehen. */}
+        <div className="tour-autoplay-row">
+          <TourAutoplayToggle active={autoplay} onToggle={() => setAutoplay((a) => !a)} />
         </div>
         <TourAutoplayBar active={autoplay && !isLast} progress={autoplayProgress} />
         <h3 className="tour-title">{step.title}</h3>
         <p className="tour-desc">{step.description}</p>
         {step.benefit && <p className="tour-benefit">{step.benefit}</p>}
-        <div className="tour-progress">
-          {steps.map((_, i) => (
-            <span key={i} className={`tour-dot ${i === stepIdx ? "active" : i < stepIdx ? "done" : ""}`} />
-          ))}
-        </div>
+        {/* Klickbare Punkte statt reiner Anzeige (NEU, 18.09., "es soll
+           interaktiver sein") — direkter Sprung zu jedem Schritt, stoppt
+           dabei die Automatik wie ein manueller Zurück-Klick. Die
+           bestehende Navigations-/Mess-Logik oben reagiert bereits allein
+           auf `stepIdx`, ein Sprung über mehrere Schritte hinweg
+           funktioniert also genauso wie ein einzelner Weiter-/Zurück-Klick. */}
+        <TourStepDots
+          count={steps.length}
+          currentIndex={stepIdx}
+          onJump={(i) => {
+            setAutoplay(false);
+            setStepIdx(i);
+          }}
+        />
         <div className="tour-actions">
           <button className="tour-btn tour-btn-ghost" onClick={onClose}>
             Beenden

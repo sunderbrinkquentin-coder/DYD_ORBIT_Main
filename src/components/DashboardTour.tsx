@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { readingDurationMs, TourAutoplayBar, TourAutoplayToggle, TourDemoToast, useTourAutoplay } from "./tourAutoplay";
 
 /**
  * Gefuehrter Rundgang durch das Dashboard, ueber den Button "🎓 Rundgang
@@ -22,6 +23,10 @@ interface TourStep {
   selector: string | null;
   title: string;
   description: string;
+  /** Optionaler, rein simulierter "Live-Hinweis" (siehe tourAutoplay.tsx) —
+   *  blendet kurz ein, waehrend die automatische Wiedergabe diesen Schritt
+   *  zeigt. Erzeugt nichts Echtes, nur fuers Bild bei einer Aufzeichnung. */
+  demoEvent?: string;
 }
 
 const STEPS: TourStep[] = [
@@ -30,7 +35,7 @@ const STEPS: TourStep[] = [
     selector: null,
     title: "Willkommen im DYD ORBIT Dashboard",
     description:
-      "Ein ausführlicherer Rundgang durch alle Bereiche des Dashboards — mit den Hintergründen, nicht nur den Klicks. Du kannst jederzeit mit „Beenden“ aussteigen und über den Button oben rechts wieder einsteigen.",
+      "Ein ausführlicherer Rundgang durch alle Abschnitte des Dashboards — mit den Hintergründen, nicht nur den Klicks. Du kannst jederzeit mit „Beenden“ aussteigen und über den Button oben rechts wieder einsteigen. Tipp für eine Bildschirmaufzeichnung: „▶ Automatisch abspielen“ oben rechts in dieser Karte lässt den Rundgang von selbst weiterlaufen, ganz ohne eigenes Klicken.",
   },
   {
     tab: "leads",
@@ -42,7 +47,7 @@ const STEPS: TourStep[] = [
   {
     tab: "leads",
     selector: '[data-tour="nav"]',
-    title: "Drei Bereiche",
+    title: "Drei Tabs",
     description:
       "Leads zeigt eingehende Interessenten, Kurse verwaltet den eigenen Kurskatalog (inkl. drei verschiedener Wege, Kurse anzulegen), Reports fasst alle Kennzahlen zusammen. „Matching“ ist bewusst als vierter Tab schon sichtbar, aber noch nicht aktiv — folgt später.",
   },
@@ -52,13 +57,15 @@ const STEPS: TourStep[] = [
     title: "Kennzahlen auf einen Blick",
     description:
       "Anzahl der Tests, identifizierte Skill-Gaps, ausgesprochene Kursempfehlungen und tatsächlich gebuchte Weiterbildungen. Wichtig: „Tests“ zählt JEDEN abgeschlossenen Skill-Check aus der Journey mit, auch wenn die Person danach abspringt und nie ein Kontaktformular abschickt — so siehst du auch die Abbrecher, nicht nur die fertigen Leads.",
+    demoEvent: "🆕 Neuer Lead eingegangen — Sofia K., Zielrolle: Data Analyst",
   },
   {
     tab: "leads",
     selector: '[data-tour="lead-list"]',
     title: "Qualifizierte Leads",
     description:
-      "Jeder Lead zeigt Zielrolle, Match-Status und Kontaktdaten — alle verlinkten Weiterbildungen direkt auf der Kachel, nicht erst nach dem Öffnen. Ein Klick auf die Kachel zeigt weitere Details: Bearbeiter zuweisen, Beratungsgespräch anfragen, Kurse nachträglich ändern, die im Journey-„Präferenzen“-Schritt genannten Rahmenbedingungen (Beschäftigungsart/Arbeitsort/Wunschstart/Förderung) sowie einen eigenen „Datenschutz“-Bereich: dort steht der DSGVO-Einwilligungsnachweis (wann/welcher Text) und ein „Lead endgültig löschen“-Button für das Recht auf Löschung (Art. 17 DSGVO). Sobald die Buchung im eigenen System erfolgt ist, markierst du sie hier manuell — das speist die Kennzahl „Gebuchte Weiterbildungen“.",
+      "Jeder Lead zeigt Zielrolle, Match-Status und Kontaktdaten — alle verlinkten Weiterbildungen direkt auf der Kachel, nicht erst nach dem Öffnen. Ein Klick auf die Kachel zeigt weitere Details: Bearbeiter zuweisen, Beratungsgespräch anfragen, Kurse nachträglich ändern, die im Journey-„Präferenzen“-Schritt genannten Rahmenbedingungen (Beschäftigungsart/Arbeitsort/Wunschstart/Förderung) sowie einen eigenen „Datenschutz“-Bereich: dort steht der DSGVO-Einwilligungsnachweis (wann/welcher Text) und ein „Lead endgültig löschen“-Button für das Recht auf Löschung (Art. 17 DSGVO). Sobald die Buchung im eigenen System erfolgt ist, markierst du sie hier manuell — das speist die Kennzahl „Gebuchte Weiterbildungen“. Über den Bereich/die Branche des empfohlenen Kurses lässt sich die Liste außerdem gezielt filtern (siehe Filterleiste oben) — praktisch, um z.B. nur Leads für „IT“ oder „Wirtschaft & Verwaltung“ zu sehen.",
+    demoEvent: "✅ Lead automatisch qualifiziert — Match 88 %",
   },
   {
     tab: "leads",
@@ -72,7 +79,7 @@ const STEPS: TourStep[] = [
     selector: '[data-tour="kurse-manual-form"]',
     title: "Kurse anlegen — drei Wege",
     description:
-      "Drei Wege zum selben Ziel, gleich unten im Detail: von Hand eintragen, per CSV-Liste importieren, oder direkt von der eigenen Website importieren. Gemeinsamer Kern aller drei: ohne Skill-Zuordnung erscheint ein Kurs NIE als persönliche Empfehlung in der Journey — das Matching kennt nur Skills, keine Kurstitel. Hier zunächst die manuelle Eingabe: Kurs-ID, Name, Anbieter, Dauer, Zielrolle(n).",
+      "Drei Wege zum selben Ziel, gleich unten im Detail: von Hand eintragen, per CSV-Liste importieren, oder direkt von der eigenen Website importieren. Gemeinsamer Kern aller drei: ohne Skill-Zuordnung erscheint ein Kurs NIE als persönliche Empfehlung in der Journey — das Matching kennt nur Skills, keine Kurstitel. Hier zunächst die manuelle Eingabe: Kurs-ID, Name, Anbieter, Dauer, Zielrolle(n). Genauso wichtig wie die Skills: der Bereich/die Branche (z.B. „IT“, „Wirtschaft & Verwaltung“, „Handwerk“) — ein Pflichtfeld, weil er direkt entscheidet, ob dieser Kurs auch Personen erreicht, die ihre Zielrolle noch nicht kennen und in der Journey stattdessen nur einen Bereich auswählen (siehe „Passende Rolle vorschlagen“). Ohne Bereich verpasst du genau diese Zielgruppe.",
   },
   {
     tab: "kurse",
@@ -87,6 +94,7 @@ const STEPS: TourStep[] = [
     title: "Skills automatisch erkennen",
     description:
       "Zwei Erkennungs-Stufen aus derselben Kursbeschreibung: die schnelle, kostenlose Fuzzy-Erkennung läuft automatisch im Hintergrund; „🤖 Skills per KI vertiefen“ liest zusätzlich inhaltlich gegen die Kern-Skills der ausgewählten Zielrolle(n) — findet auch umschriebene Skills, die die schnelle Erkennung verpasst, braucht dafür aber eine gewählte Zielrolle. Beides liefert nur Vorschläge zum Prüfen („Alle übernehmen“ oder einzeln per „✓“/„×“) — nichts wird automatisch als Skill gesetzt.",
+    demoEvent: "🤖 3 Skills automatisch erkannt: SQL, Power BI, Excel",
   },
   {
     tab: "kurse",
@@ -114,7 +122,8 @@ const STEPS: TourStep[] = [
     selector: '[data-tour="kurse-catalog"]',
     title: "Kurskatalog pflegen",
     description:
-      "Hier siehst du alle angelegten Kurse — egal auf welchem der drei Wege angelegt — inklusive Preis/UE/Förderfähig-Badges, und markierst einzelne als „Top“: die erscheinen dann zusätzlich zur individuellen Empfehlung in der Endnutzer-Journey, unabhängig vom persönlichen Skill-Match. Skills lassen sich hier jederzeit über „✎ Bearbeiten“ nachträglich prüfen oder ergänzen.",
+      "Hier siehst du alle angelegten Kurse — egal auf welchem der drei Wege angelegt — inklusive Preis/UE/Förderfähig-Badges, und markierst einzelne als „Top“: die erscheinen dann zusätzlich zur individuellen Empfehlung in der Endnutzer-Journey, unabhängig vom persönlichen Skill-Match. Skills lassen sich hier jederzeit über „✎ Bearbeiten“ nachträglich prüfen oder ergänzen. Der Bereich steht bei jedem Kurs bewusst ganz oben auf der Kachel als eigene, farbige Kennzeichnung — nicht als beiläufige Randnotiz — damit auf einen Blick klar ist, welcher Branche ein Kurs zugeordnet ist, und Altkurse ohne Bereich sofort als nachpflegebedürftig auffallen.",
+    demoEvent: "⭐ Kurs als Top-Empfehlung markiert",
   },
   {
     tab: "kurse",
@@ -135,21 +144,22 @@ const STEPS: TourStep[] = [
     selector: '[data-tour="report-skill-gaps"]',
     title: "Größte Skill-Gaps",
     description:
-      "Die Skills, die Nutzern am häufigsten fehlen — zugleich ein Signal, wofür am meisten Nachfrage besteht. Gute Grundlage für neue Kursangebote: fehlt hier ein Skill, für den es im eigenen Katalog noch gar keinen passenden Kurs gibt, ist das ein sehr konkreter Hinweis, was sich lohnen würde.",
+      "Die Skills, die Nutzern am häufigsten fehlen — zugleich ein Signal, wofür am meisten Nachfrage besteht. Gute Grundlage für neue Kursangebote: fehlt hier ein Skill, für den es im eigenen Katalog noch gar keinen passenden Kurs gibt, ist das ein sehr konkreter Hinweis, was sich lohnen würde. Auch hier lässt sich die Auswertung über die Filterleiste gezielt auf einen Zeitraum oder Bereich eingrenzen, statt immer alle Daten auf einmal zu sehen.",
+    demoEvent: "📊 Größter Skill-Gap aktualisiert: Cloud/DevOps",
   },
   {
     tab: "reports",
     selector: '[data-tour="report-top-courses"]',
     title: "Top-Kurse",
     description:
-      "Die am häufigsten empfohlenen Kurse über alle Leads hinweg, nach Empfehlungshäufigkeit sortiert — zeigt, welche Kurse im eigenen Katalog tatsächlich am besten zu den ankommenden Zielrollen/Skill-Lücken passen.",
+      "Die am häufigsten empfohlenen Kurse über alle Leads hinweg, nach Empfehlungshäufigkeit sortiert — zeigt, welche Kurse im eigenen Katalog tatsächlich am besten zu den ankommenden Zielrollen/Skill-Lücken passen, und je Bereich gefiltert auch, welche Branche bei dir am meisten Nachfrage erzeugt.",
   },
   {
     tab: "reports",
     selector: null,
     title: "Das war der Rundgang",
     description:
-      "Du findest den Button „🎓 Rundgang starten“ jederzeit oben rechts wieder, falls du ihn nochmal brauchst — z.B. direkt vor einer Präsentation.",
+      "Du findest den Button „🎓 Rundgang starten“ jederzeit oben rechts wieder, falls du ihn nochmal brauchst — z.B. direkt vor einer Präsentation oder Bildschirmaufzeichnung. Beim erneuten Start läuft eine laufende automatische Wiedergabe wieder von vorne los.",
   },
 ];
 
@@ -182,15 +192,32 @@ export function DashboardTour({ open, onClose, activeTab, onChangeTab, onStepCha
   const [stepIndex, setStepIndex] = useState(0);
   const [rect, setRect] = useState<Rect | null>(null);
   const pulsedElRef = useRef<Element | null>(null);
+  // Automatische Wiedergabe (NEU, 18.09. — siehe tourAutoplay.tsx): rein
+  // clientseitiger An/Aus-Schalter, ausschliesslich fuers Bild bei einer
+  // Bildschirmaufzeichnung, kein Einfluss auf echte Daten.
+  const [autoplay, setAutoplay] = useState(false);
 
   const step = STEPS[stepIndex];
   const isLast = stepIndex === STEPS.length - 1;
   const isFirst = stepIndex === 0;
 
-  // Beim Öffnen immer bei Schritt 1 starten.
+  // Beim Öffnen immer bei Schritt 1 starten, Automatik zurücksetzen.
   useEffect(() => {
-    if (open) setStepIndex(0);
+    if (open) {
+      setStepIndex(0);
+      setAutoplay(false);
+    }
   }, [open]);
+
+  // Läuft der letzte Schritt, bleibt die Automatik bewusst auf der
+  // Abschluss-Karte stehen statt die Tour selbst zu schliessen — bei einer
+  // Aufzeichnung soll Quentin selbst entscheiden, wann er "Fertig" klickt.
+  const autoplayProgress = useTourAutoplay(
+    autoplay && open && !isLast,
+    stepIndex,
+    readingDurationMs(step.description),
+    () => setStepIndex((i) => Math.min(i + 1, STEPS.length - 1)),
+  );
 
   /** Bugfix (14.09., "die Kachel von der Rundtour ist hinter den Infos, die
    *  muss irgendwo am Rand stehen, sodass man beides immer sieht" — siehe
@@ -294,13 +321,19 @@ export function DashboardTour({ open, onClose, activeTab, onChangeTab, onStepCha
     };
   }, [open, step.selector]);
 
-  // Esc schließt den Rundgang; Pfeiltasten blättern.
+  // Esc schließt den Rundgang; Pfeiltasten blättern. Ein manuelles
+  // Zurückblättern beendet die Automatik (siehe Kommentar am
+  // "← Zurück"-Button unten) — sonst würde der Timer kurz danach wieder
+  // ungefragt vorwärts springen.
   useEffect(() => {
     if (!open) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
       else if (e.key === "ArrowRight") setStepIndex((i) => Math.min(i + 1, STEPS.length - 1));
-      else if (e.key === "ArrowLeft") setStepIndex((i) => Math.max(i - 1, 0));
+      else if (e.key === "ArrowLeft") {
+        setAutoplay(false);
+        setStepIndex((i) => Math.max(i - 1, 0));
+      }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -347,15 +380,18 @@ export function DashboardTour({ open, onClose, activeTab, onChangeTab, onStepCha
        *  siehe ausfuehrlicher Kommentar in dashboard.css bei .tour-card-dock)
        *  jetzt IMMER an derselben festen Stelle (unten mittig) — identisches,
        *  bereits bewaehrtes Muster wie in JourneyTour.tsx. */}
+      <TourDemoToast text={autoplay ? step.demoEvent : null} toastKey={stepIndex} />
       <div className="tour-card tour-card-dock" style={{ width: CARD_WIDTH }}>
         <div className="tour-card-head">
           <span className="tour-step-count">
             {stepIndex + 1} / {STEPS.length}
           </span>
+          <TourAutoplayToggle active={autoplay} onToggle={() => setAutoplay((a) => !a)} />
           <button className="tour-close" onClick={onClose} aria-label="Rundgang beenden" title="Beenden (Esc)">
             ×
           </button>
         </div>
+        <TourAutoplayBar active={autoplay && !isLast} progress={autoplayProgress} />
         <h3 className="tour-title">{step.title}</h3>
         <p className="tour-desc">{step.description}</p>
         <div className="tour-progress">
@@ -370,7 +406,13 @@ export function DashboardTour({ open, onClose, activeTab, onChangeTab, onStepCha
           <div className="tour-nav-btns">
             <button
               className="tour-btn tour-btn-secondary"
-              onClick={() => setStepIndex((i) => Math.max(i - 1, 0))}
+              onClick={() => {
+                // Manuelles Zurückblättern beendet die Automatik (siehe
+                // Kommentar am ArrowLeft-Handler oben) — sonst würde der
+                // Timer kurz danach wieder ungefragt vorwärts springen.
+                setAutoplay(false);
+                setStepIndex((i) => Math.max(i - 1, 0));
+              }}
               disabled={isFirst}
             >
               ← Zurück

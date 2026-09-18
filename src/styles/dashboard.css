@@ -1561,6 +1561,65 @@
   padding: 6px 12px;
   font-size: 12px;
 }
+/* Round 21 (18.09., "auch bei der URL [ein Beispiel]") — statische
+   Beispiel-Vorschau im "Kurse per URL importieren"-Rundgang-Schritt (siehe
+   EXAMPLE_URL_IMPORT_URL/-_PREVIEW in DashboardPage.tsx). Gestrichelter statt
+   durchgezogener Rahmen + eigenes Badge grenzen die Vorschau bewusst deutlich
+   von einem echten, bereits geladenen Ergebnis ab (dessen Rahmen/Karten
+   überall sonst im Dashboard durchgezogen sind). */
+.url-import-example-preview {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1.5px dashed var(--dyd-blue);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(47, 143, 214, 0.07), rgba(47, 143, 214, 0.02));
+}
+.url-import-example-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--dyd-navy);
+  background: var(--dyd-mint);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+.url-import-example-fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 7px 16px;
+  margin: 10px 0 0;
+}
+.url-import-example-field {
+  display: contents;
+}
+.url-import-example-field dt {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin: 0;
+}
+.url-import-example-field dd {
+  font-size: 12.5px;
+  color: var(--text-primary);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.url-import-example-verified {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--green-text);
+  background: var(--green-bg);
+  border-radius: 6px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
 /* Mehrstufiger "Ladephase"-Fortschritt waehrend der URL-Extraktion (Version 2,
    14.09. — Nachfrage "Ladephase muss innovativer aussehen und was ist mit
    Skills/Zielrolle"): macht die ohnehin schon automatisch laufende Skill-

@@ -586,6 +586,26 @@ export function nextUpcomingSession(course: Pick<OrbitCourse, "sessions" | "star
   return upcoming[0] ?? null;
 }
 
+/**
+ * Die Branchen-/Bereichs-Label(s) eines Kurses — dieselbe Fallback-Kette wie
+ * bisher an mehreren Stellen einzeln nachgebaut (Kurskatalog-Listing in
+ * DashboardPage.tsx, Filter-Logik aus dem 17. Durchgang): Mehrfachauswahl
+ * (bereich_labels) zuerst, dann das ältere Einzelfeld (bereich_label), zuletzt
+ * der rohe Key (bereich_key) als letzter Ausweg für sehr alte Datensätze ohne
+ * gepflegtes Label. Leeres Array = kein Bereich zugeordnet.
+ *
+ * Zentral ausgelagert (18.09., "die angezeigten Bereiche müssen immer im
+ * Mittelpunkt stehen"), damit Dashboard UND Journey denselben Bereich für
+ * denselben Kurs anzeigen, statt zwei leicht unterschiedliche Kopien dieser
+ * Fallback-Logik zu pflegen.
+ */
+export function bereichLabelsOf(course: Pick<OrbitCourse, "bereich_labels" | "bereich_label" | "bereich_key">): string[] {
+  if (course.bereich_labels?.length) return course.bereich_labels;
+  if (course.bereich_label) return [course.bereich_label];
+  if (course.bereich_key) return [course.bereich_key];
+  return [];
+}
+
 /** "hybrid" = sowohl remote als auch vor Ort möglich. */
 export type LocationMode = "remote" | "vor_ort" | "hybrid";
 /** "beides" = Kurs passt sowohl für Vollzeit- als auch Teilzeit-Kräfte. */

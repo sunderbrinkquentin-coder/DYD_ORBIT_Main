@@ -2346,6 +2346,34 @@
   z-index: 201;
 }
 
+/* Rückmeldung 18.09. ("ich will bei der Dashboardtour immer den weißen
+   Hintergrund haben bei Schritt 10 und Schritt 8"): Schritt 8
+   (kurse-pricing-fields) kann je nach vorherigem Zustand einen gruenen
+   "✓ per URL-Import bestaetigt"-Hinweis (.url-import-verified-hint) oder
+   einen gelben Dauer-Hinweis (.url-import-duration-hint/.hint.warn) zeigen
+   -- beide mit farbigem Hintergrund statt Weiss, siehe deren Definition
+   weiter oben. Schritt 10 (kurse-handbook-upload) hat mit der
+   Upload-Dropzone (.handbook-dropzone) durchgaengig einen leichten
+   violetten Farbstich (rgba(109, 92, 246, 0.03)) als Teil seines normalen,
+   nicht tour-bezogenen Designs (Hinweis: "hier kann man Dateien
+   ablegen"). Ausserhalb der Tour bewusst unveraendert gelassen (beide
+   Farbgebungen sind an anderer Stelle im Formular gewollt) -- NUR
+   waehrend genau diese beiden Rundgang-Schritte aktiv sind, erzwingen die
+   folgenden Regeln einen durchgehend weissen Hintergrund, wie von Quentin
+   gewuenscht. */
+[data-tour="kurse-pricing-fields"].tour-highlight-active .url-import-verified-hint,
+[data-tour="kurse-pricing-fields"].tour-highlight-active .url-import-duration-hint,
+[data-tour="kurse-pricing-fields"].tour-highlight-active .hint.warn {
+  background: #fff;
+}
+[data-tour="kurse-handbook-upload"].tour-highlight-active .handbook-dropzone {
+  background: #fff;
+}
+[data-tour="kurse-handbook-upload"].tour-highlight-active .handbook-dropzone:hover,
+[data-tour="kurse-handbook-upload"].tour-highlight-active .handbook-dropzone.drag-over {
+  background: #fff;
+}
+
 /* Der "kurz groß werden"-Effekt: kurz auf das echte, hervorgehobene Element
    angewendet (nicht auf den Spotlight-Rahmen), damit der Bereich selbst
    spürbar reagiert statt nur umrahmt zu sein. Reine Animation -- die

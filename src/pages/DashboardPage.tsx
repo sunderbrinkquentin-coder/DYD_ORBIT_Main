@@ -5201,23 +5201,27 @@ export function DashboardPage({
                         value={courseForm.description}
                         onChange={(e) => setCourseForm((f) => ({ ...f, description: e.target.value }))}
                       />
-                      {/* Round 21, Fix (Rückmeldung "hier ist es nicht in der gleichen
+                      {/* Round 21/22, Fix (Rückmeldung "hier ist es nicht in der gleichen
                          Farbe hinterlegt bei der Tour"): "Beschreibung vorschlagen"
                          (lila, eigene KI-Textgenerierung — thematisch NICHT Teil der
-                         Skill-Erkennung) stand bisher zwischen den beiden teilfarbenen
-                         Skill-Erkennungs-Buttons und wurde dadurch vom
+                         Skill-Erkennung) stand urspruenglich zwischen den beiden
+                         tuerkisen Skill-Erkennungs-Buttons und wurde dadurch vom
                          "kurse-skill-suggest"-Rundgang-Schritt (Text nennt nur die
-                         beiden Erkennungs-Stufen) versehentlich mit-hervorgehoben —
-                         ein bunter Fremdkörper in einer eigentlich einfarbigen
-                         Gruppe. Jetzt VOR den beiden Skill-Buttons in einer eigenen
-                         Zeile, damit sie inhaltlich UND farblich sauber vom
-                         Rundgang-Ziel getrennt ist (macht nebenbei auch fachlich mehr
-                         Sinn: erst ggf. eine Beschreibung generieren, dann Skills
-                         daraus erkennen). */}
+                         beiden Erkennungs-Stufen) versehentlich mit-hervorgehoben.
+                         Runde 22 verschob ihn in eine eigene Zeile DAVOR — laut
+                         Rückmeldung ("du hast das Problem nicht behoben") aber nicht
+                         ausreichend: direkt darueber, in gleicher Groesse/Farbflaeche,
+                         liest er sich weiterhin wie ein dritter Button derselben
+                         Gruppe. Runde 23 setzt deshalb zusaetzlich ".btn-ai-subtle"
+                         (siehe dashboard.css) — nimmt ihm die Farbflaechen/CTA-Optik,
+                         damit er unabhaengig vom Abstand nicht mehr wie ein
+                         gleichwertiges drittes Skill-Tool wirkt (macht nebenbei auch
+                         fachlich mehr Sinn: erst ggf. eine Beschreibung generieren,
+                         dann Skills daraus erkennen). */}
                       <div className="import-file-row" style={{ marginTop: 8 }}>
                         <button
                           type="button"
-                          className={`btn-ai generate ${descSuggestBusy ? "busy" : ""}`}
+                          className={`btn-ai generate btn-ai-subtle ${descSuggestBusy ? "busy" : ""}`}
                           onClick={handleSuggestDescription}
                           disabled={descSuggestBusy || !courseForm.courseName.trim()}
                           title="Lässt eine KI einen fertigen, professionellen Beschreibungstext formulieren — bleibt danach frei editierbar."
@@ -5406,7 +5410,18 @@ export function DashboardPage({
                       )}
                       {handbookError && <div className="hint warn">{handbookError}</div>}
                     </div>
-                    <div className="lf-field">
+                    {/* Round 24 ("wenn Bereich vorgestellt werden, müssen die auch so
+                       hell sein wie die anderen — das klappt in der Dashboardtour noch
+                       nicht ganz"): Root Cause — dieses Feld hatte bisher ÜBERHAUPT kein
+                       eigenes data-tour-Attribut. Der "Kurse anlegen"-Schritt ERWÄHNT den
+                       Bereich zwar ausführlich als besonders wichtiges Pflichtfeld ("Genauso
+                       wichtig wie die Skills: der Bereich/die Branche ..."), spotlightet ihn
+                       dabei aber nie — anders als Preis/Skill-Erkennung/Modulhandbuch, die
+                       alle einen eigenen, hell hervorgehobenen Rundgang-Schritt haben. Der
+                       Bereich blieb dadurch während der GESAMTEN "Kurse anlegen"-Passage
+                       ungehellt/dunkel, obwohl der Text ihn als zentral beschreibt. Jetzt
+                       eigener data-tour-Anker + eigener Schritt (siehe DashboardTour.tsx). */}
+                    <div className="lf-field" data-tour="kurse-bereich-picker">
                       <label>Bereich * (Pflichtfeld, mehrere möglich — legt fest, wo dieser Kurs in der Journey auswählbar ist)</label>
                       {/* Der separate Hinweis-Kasten ("automatisch erkannt") ist wieder
                           weg (15.09., Rückmeldung "egal was ich eingebe, es kommt immer

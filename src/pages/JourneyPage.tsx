@@ -78,6 +78,67 @@ const DEMO_CV_TEXT =
   "Versionskontrolle im Team. Erste Erfahrung im Testing eigener " +
   "Funktionen, bevor sie ausgeliefert werden.";
 
+/**
+ * Round 21 (18.09., Rückmeldung "bei der Journey sollen konkrete Kurse mit
+ * allen vorhandenen Daten sichtbar sein"): Bewertet einen echten Kurs danach,
+ * WIE VIELE der optionalen Zusatzfelder (Preis, Förderung, Abschlussart, UE,
+ * Buchungslink, Standort, Beschäftigungsart, Start, Zielgruppe, Skills)
+ * tatsächlich gepflegt sind. Grundlage für pickShowcaseCourses() unten — für
+ * den Rundgang soll die Kurskarte im Schritt "Passende Weiterbildung"
+ * möglichst VIELE echte Datenfelder zeigen, nicht nur irgendeinen Treffer.
+ */
+function courseRichnessScore(course: OrbitCourse): number {
+  let score = 0;
+  if (course.description?.trim()) score += 1;
+  if (course.price_eur != null) score += 1;
+  if (course.teaching_units != null) score += 1;
+  if (course.funding_types && course.funding_types.length > 0) score += 1;
+  if (course.qualification_type) score += 1;
+  if (course.dqr_level != null) score += 1;
+  if (course.booking_url) score += 1;
+  if (course.location_mode || course.location) score += 1;
+  if (course.employment_mode) score += 1;
+  if (course.starts_at) score += 1;
+  if (course.seats_remaining != null) score += 1;
+  if (course.target_group?.trim()) score += 1;
+  if ((course.bereich_keys && course.bereich_keys.length > 0) || course.bereich_key) score += 1;
+  if (course.covered_skill_uris && course.covered_skill_uris.length > 0) score += 1;
+  return score;
+}
+
+/**
+ * Round 21 — Ersatz für den früheren, komplett erfundenen Kurs-Fallback in
+ * runDemoAnalysis() unten ("DYD Akademie", frei erfundene Match-Werte, dazu
+ * mit falschen Feldnamen (title/match_score/duration statt course_name/
+ * duration_weeks) befüllt — dadurch blieb der Kurstitel auf der Kurskarte im
+ * Rundgang schlicht LEER, weil KursStep course.course_name liest, siehe
+ * course-hero-name weiter unten). Wählt stattdessen bis zu `limit` ECHTE
+ * Kurse aus dem eigenen Katalog (allCourses), sortiert nach
+ * courseRichnessScore() statt nach Aktualität/Top-Markierung wie beim echten
+ * "Nie leer"-Sicherheitsnetz in goToKurs() — dort geht es um Verfügbarkeit,
+ * hier bewusst um die vollständigste Demo-Ansicht. covers_gap_count/
+ * -percentage bleiben wie beim echten Sicherheitsnetz bei 0, um keine
+ * Lücken-Abdeckung vorzutäuschen, die es nicht gibt (Projekt-Prinzip "keine
+ * erfundenen Zahlen/Fakten" / "Never fabricate a course", siehe Kommentar
+ * beim echten Sicherheitsnetz).
+ */
+function pickShowcaseCourses(allCourses: OrbitCourse[], limit: number): CourseRecommendation[] {
+  return allCourses
+    .filter((course) => Boolean(course.course_id && course.course_name))
+    .slice()
+    .sort((a, b) => courseRichnessScore(b) - courseRichnessScore(a))
+    .slice(0, limit)
+    .map((course) => ({
+      course_id: course.course_id,
+      course_name: course.course_name,
+      provider: course.provider,
+      duration_weeks: course.duration_weeks,
+      covers_gap_count: 0,
+      covers_gap_percentage: 0,
+      is_role_fallback: true,
+    }));
+}
+
 /** Der Teil der Journey, der in beiden Pfaden identisch ist, sobald die
  * Zielrolle feststeht. */
 const CORE_STEPS: { key: StepKey; label: string }[] = [
@@ -1153,38 +1214,30 @@ async function runDemoAnalysis() {
         if (demoRunIdRef.current !== runId) return;
 
         if (!courses || !courses.recommended_courses?.length) {
+          // Round 21, Bugfix ("bei der Journey sollen konkrete Kurse mit
+          // allen vorhandenen Daten sichtbar sein"): hier stand vorher eine
+          // komplett erfundene "DYD Akademie"-Kursliste mit falschen
+          // Feldnamen (title/match_score/duration statt course_name/
+          // duration_weeks) — dadurch blieb der Kurstitel auf der Kurskarte
+          // im Rundgang leer (KursStep liest course.course_name, siehe
+          // course-hero-name), UND es gab nie einen echten fullCourse-Treffer
+          // im eigenen Katalog, wodurch Preis/Förderung/UE/Abschluss/
+          // Buchungslink komplett fehlten. pickShowcaseCourses() greift
+          // stattdessen auf ECHTE Kurse aus dem eigenen Katalog zurück, die
+          // eigenen Fallback greift genau dann, wenn die echte
+          // Matching-API für die Demo-Rolle (DEMO_ROLE_ID) keinen Treffer
+          // liefert — z.B. wenn eigene Kurse noch keine passende Zielrolle
+          // gepflegt haben, oder die in add-demo-courses.sql angelegten
+          // Demo-Kurse noch auf der alten role_id stehen (siehe Kommentar an
+          // DEMO_ROLE_ID oben).
+          const showcase = pickShowcaseCourses(allCourses, 3);
           courses = {
-            recommended_courses: [
-              {
-                course_id: "demo-course-de-1",
-                title: "Cloud-Technologien: Grundlagen für Dateningenieure",
-                provider: "DYD Akademie",
-                match_score: 25,
-                duration: "6 Wochen",
-                matched_skills: [],
-                missing_skills: ["Cloud-Technologien"]
-              }
-            ],
-            other_courses: [
-              {
-                course_id: "demo-course-de-2",
-                title: "DevOps Engineering: CI/CD & Infrastructure as Code",
-                provider: "DYD Akademie",
-                match_score: 25,
-                duration: "8 Wochen",
-                matched_skills: [],
-                missing_skills: ["DevOps"]
-              },
-              {
-                course_id: "demo-course-de-3",
-                title: "Datenanalyse für Data Engineers: Von Rohdaten zu Insights",
-                provider: "DYD Akademie",
-                match_score: 25,
-                duration: "6 Wochen",
-                matched_skills: [],
-                missing_skills: ["Datenanalyse"]
-              }
-            ]
+            tenant_id: "demo-tenant",
+            target_role_id: roleId,
+            target_role_name: roleName,
+            match_percentage: gap?.match_percentage ?? 0,
+            gap_skill_count: gap?.gap_skills?.length ?? 0,
+            recommended_courses: showcase,
           };
         }
 

@@ -52,6 +52,17 @@ interface RawStep {
    *  (z.B. "bereich" im "kennt Zielrolle bereits"-Pfad) oder eine der
    *  optionalen requires-Bedingungen nicht erfuellt ist. */
   requires?: "gapResult" | "courseResult";
+  /** Round 24 ("der Schritt mit der Zielrolle soll nicht separat genannt
+   *  werden, sondern der Fokus soll mehr auf den Bereichen/dem Schritt davor
+   *  liegen"): ist dieser andere Schluessel ebenfalls in availableKeys (d.h.
+   *  sein Tour-Schritt wird tatsaechlich gezeigt), wird DIESER Schritt hier
+   *  uebersprungen — sein Inhalt ist dann bereits in den vorherigen Schritt
+   *  eingearbeitet. Nur "zielrolle" nutzt das aktuell (uebersprungen, wenn
+   *  "bereich" gezeigt wird) — im "kennt Zielrolle bereits"-Pfad, wo es
+   *  keinen "bereich"-Schritt gibt, bleibt "zielrolle" weiterhin ein
+   *  eigener, vollwertiger Schritt (sonst gaebe es dort gar keine
+   *  Rollen-Auswahl im Rundgang mehr). */
+  hideIfKeyPresent?: JourneyStepKey;
   selector: string | null;
   title: string;
   description: string;
@@ -115,20 +126,28 @@ const RAW_STEPS: RawStep[] = [
     selector: '[data-tour="tour-panel"]',
     title: "Bereich vorschlagen lassen",
     description:
-      "Wer die eigene Zielrolle noch nicht kennt, klickt hier einfach an, was er/sie schon kann oder gerne macht — kein Text nötig. Daraus errechnen wir echte, prozentuale Rollen-Vorschläge statt nur eine Branche raten zu lassen. Eine konkrete Rolle muss dabei nicht aktiv angeklickt werden: ein einfaches „Weiter“ wählt automatisch die am besten passende. Die angeklickten Skills sind im Fragebogen-Schritt danach schon vorausgewählt.",
-    benefit: "Dieser Weg fängt genau die Personen auf, die sonst ohne konkrete Zielrolle abgesprungen wären — der hier ermittelte Bereich taucht danach direkt im Dashboard wieder auf (Filterleiste in Leads, Kurse und Reports, siehe Branche/Bereich-Filter) und entscheidet mit, welche deiner Kurse überhaupt als Empfehlung infrage kommen. Ein Kurs ohne gepflegten Bereich bleibt für genau diese Zielgruppe unsichtbar.",
+      // Round 24 ("der Schritt mit der Zielrolle soll nicht separat genannt
+      // werden, sondern der Fokus soll mehr auf den Bereichen/dem Schritt
+      // davor liegen"): der bisher eigene "Zielrolle waehlen"-Schritt wird
+      // im Bereichs-Pfad jetzt uebersprungen (siehe hideIfKeyPresent am
+      // "zielrolle"-Schritt unten) — sein Kern (automatische Rollenauswahl,
+      // anlaufende Kette) steht deshalb jetzt HIER, direkt im Anschluss an
+      // die Bereichs-Erklaerung, statt als eigener, separat betitelter
+      // Tour-Schritt danach.
+      "Wer die eigene Zielrolle noch nicht kennt, klickt hier einfach an, was er/sie schon kann oder gerne macht — kein Text nötig. Daraus errechnen wir echte, prozentuale Rollen-Vorschläge statt nur eine Branche raten zu lassen. Eine konkrete Rolle muss dabei nicht aktiv angeklickt werden: ein einfaches „Weiter“ wählt automatisch die am besten passende, direkt aus diesem Bereich. Ab hier läuft der komplette weitere Ablauf entlang derselben Kette automatisch: Bereich → Zielrolle → Skill-Abgleich → Lücken-Berechnung → passende Kursempfehlung — die angeklickten Skills sind im Fragebogen-Schritt danach schon vorausgewählt.",
+    benefit: "Dieser Weg fängt genau die Personen auf, die sonst ohne konkrete Zielrolle abgesprungen wären — der hier ermittelte Bereich taucht danach direkt im Dashboard wieder auf (Filterleiste in Leads, Kurse und Reports, siehe Branche/Bereich-Filter) und entscheidet mit, welche deiner Kurse überhaupt als Empfehlung infrage kommen. Ein Kurs ohne gepflegten Bereich bleibt für genau diese Zielgruppe unsichtbar. Die daraus automatisch gewählte Zielrolle steht danach genauso fest im Lead wie bei einer manuellen Auswahl — du siehst im Dashboard exakt, wofür sich jemand qualifizieren möchte.",
     demoEvent: "🧭 Bereich erkannt: Wirtschaft & Verwaltung",
   },
   {
     key: "zielrolle",
+    // Round 24: im Bereichs-Pfad (der Regelfall bei einer Demo/Aufzeichnung)
+    // jetzt uebersprungen — sein Inhalt steckt seitdem im "bereich"-Schritt
+    // oben. Im "kennt Zielrolle bereits"-Pfad gibt es keinen "bereich"-Schritt,
+    // dort bleibt dies weiterhin der einzige, vollwertige Rollen-Auswahl-Schritt.
+    hideIfKeyPresent: "bereich",
     selector: '[data-tour="tour-panel"]',
     title: "Zielrolle waehlen",
     description:
-      // Round 21 ("bei der Journey soll nicht so auf die Zielrolle
-      // eingegangen werden, sondern der Prozess soll erklärt werden"):
-      // statt die gewählte Rolle selbst zu betonen, jetzt der Ablauf, der ab
-      // hier automatisch anläuft — bewusst unabhängig davon, welche
-      // konkrete Rolle/welcher Kurs im Rundgang gerade zu sehen ist.
       "Freitextsuche plus Karten-Auswahl. Ab hier läuft der komplette weitere Ablauf entlang derselben Kette automatisch: Zielrolle → Skill-Abgleich → Lücken-Berechnung → passende Kursempfehlung.",
     benefit: "Die Zielrolle steht danach fest im Lead — du siehst im Dashboard exakt, wofür sich jemand qualifizieren möchte, statt nur vager „Interesse an Weiterbildung“.",
   },
@@ -146,9 +165,23 @@ const RAW_STEPS: RawStep[] = [
     selector: '[data-tour="tour-panel"]',
     title: "Skill-Gap-Ergebnis",
     description:
-      "Match-Prozentsatz sowie bereits vorhandene und noch fehlende Kern-Skills fuer die Zielrolle — jeder Skill mit einer echten Begruendung statt einer abstrakten Prozentzahl: ein woertliches Zitat aus dem Lebenslauf (per Ueberschriften-Erkennung sogar mit Abschnitt wie „Berufserfahrung“ oder „Ausbildung“), oder sobald verfuegbar die Einschaetzung der KI-Tiefenanalyse. Zusaetzlich waehlbar: das eigene Erfahrungslevel je Skill (Grundkenntnisse/Fortgeschritten/Experte, mit KI-Vorschlag vorbelegt) sowie eine manuelle Korrektur („✕ Entfernen“/„+ Als vorhanden markieren“) — geht ein Skill falsch in die eine oder andere Richtung, kann die Person das selbst richtigstellen, das wirkt sich direkt auf Match-Prozent UND die folgende Kursempfehlung aus.",
+      // Round 23 ("du hast das Problem nicht behoben" — Round 21 hatte den
+      // Zielrollen-Fokus bewusst nur bei "Zielrolle waehlen" und "Passende
+      // Weiterbildung" entschärft und diesen Schritt hier explizit
+      // ausgenommen, siehe alter Kommentar unten bzw. Projekt-Doku
+      // "Nicht Teil dieses Durchgangs". Das war die Lücke: gerade dieser
+      // Schritt klang mit "fuer die Zielrolle" am staerksten nach
+      // Einzelfall-Bezug statt Mechanismus. Jetzt vorne der ALLGEMEINE
+      // Abgleichs-Mechanismus, die aktive Rolle liefert nur die
+      // Vergleichsbasis, ist aber nicht mehr der rhetorische Aufhaenger.
+      "So entsteht das Ergebnis: die erkannten Skills werden automatisch gegen die Kern-Anforderungen der gewählten Rolle abgeglichen — jeder Treffer und jede Lücke mit einer echten Begründung statt einer abstrakten Prozentzahl: ein woertliches Zitat aus dem Lebenslauf (per Ueberschriften-Erkennung sogar mit Abschnitt wie „Berufserfahrung“ oder „Ausbildung“), oder sobald verfuegbar die Einschaetzung der KI-Tiefenanalyse. Zusaetzlich waehlbar: das eigene Erfahrungslevel je Skill (Grundkenntnisse/Fortgeschritten/Experte, mit KI-Vorschlag vorbelegt) sowie eine manuelle Korrektur („✕ Entfernen“/„+ Als vorhanden markieren“) — jede Anpassung wirkt sich sofort auf Match-Prozent UND die anschliessende Kursempfehlung aus, der Prozess reagiert live auf jede Aenderung.",
     benefit: "Ein nachvollziehbar begründetes Ergebnis schafft an genau diesem kritischen Punkt Vertrauen — und erhöht die Wahrscheinlichkeit, dass die Person danach wirklich einen Kurs auswählt statt abzuspringen.",
-    demoEvent: "✨ Skill-Gap live berechnet — 82 % Match",
+    // Round 23: feste "82 % Match"-Zahl entfernt — derselbe Grund wie beim
+    // Kursempfehlungs-Toast in Runde 21 (siehe unten): der tatsaechliche
+    // Demo-Gap-Fallback in runDemoAnalysis() (JourneyPage.tsx) liefert einen
+    // anderen, ebenfalls variablen Wert, eine fest im Code stehende Prozentzahl
+    // im Toast waere eine erfundene Zahl statt einer echten Berechnung.
+    demoEvent: "✨ Skill-Gap live berechnet",
   },
   {
     key: "kurs",
@@ -242,6 +275,10 @@ export function JourneyTour({
         if (!availableKeys.includes(s.key)) return false;
         if (s.requires === "gapResult" && !hasGapResult) return false;
         if (s.requires === "courseResult" && !hasCourseResult) return false;
+        // Round 24: "zielrolle" bekommt keinen eigenen Schritt, wenn "bereich"
+        // in dieser Session ohnehin gezeigt wird (siehe hideIfKeyPresent-Kommentar
+        // an RawStep) — sein Inhalt steckt dann bereits im "bereich"-Schritt.
+        if (s.hideIfKeyPresent && availableKeys.includes(s.hideIfKeyPresent)) return false;
         return true;
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

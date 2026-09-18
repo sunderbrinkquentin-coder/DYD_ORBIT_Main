@@ -594,14 +594,45 @@
 }
 
 /* ---------- Cards ---------- */
+/* Der ECHTE Grund fuer "Bereich ist immer noch dunkler hinterlegt" (18.09.,
+   nach Runde 24 UND 25 immer noch gemeldet): "animation: ... both" haelt den
+   End-Keyframe (transform: translateY(0)) PERMANENT auf diesem Element aktiv
+   -- nicht nur waehrend der 0.45s Einblendung. Ein "transform"-Wert ungleich
+   "none" erzeugt laut CSS-Spec IMMER einen eigenen Stacking-Context, auch
+   wenn er visuell wirkungslos ist (0px Verschiebung). Jedes Kind-Element,
+   auf das die Tour per ".tour-highlight-active { position: relative;
+   z-index: 201 }" reagiert (z.B. der Bereich-Picker, die Preis-/Skill-
+   Erkennung-/Modulhandbuch-Felder in .kurse-manual-form, dieselben Felder im
+   Leads-Formular), kann diesen z-index NUR innerhalb des von .app-card
+   erzeugten Stacking-Contexts ausspielen -- niemals gegen das dunkle
+   ".tour-scrim"/".tour-spotlight"-Overlay (siehe weiter unten), das in einem
+   HOEHEREN, unabhaengigen Stacking-Context liegt. Das Feld bleibt dadurch
+   IMMER unter dem 62%-dunklen Overlay sichtbar, egal wie hoch sein eigener
+   z-index innerhalb der Karte gesetzt wird -- exakt das gemeldete "dunkler
+   hinterlegt". Betrifft nur Ziele, die INNERHALB einer .app-card liegen
+   (kurse-bereich-picker, kurse-pricing-fields, kurse-skill-suggest,
+   kurse-handbook-upload, leads-manual-form-Felder); Ziele, die die .app-card
+   selbst SIND (z.B. kurse-catalog, lead-list -- data-tour sitzt dort direkt
+   auf dem .app-card-Element), sind NICHT betroffen, weil dort dieselbe
+   Karte als GANZE Einheit im Stacking-Context IHRES Elternelements steht.
+   Fix: "both" entfernt -- nach Ablauf der Animation faellt "transform"
+   zurueck auf den nicht-animierten Basiswert (hier: gar nicht gesetzt, also
+   "none"), wodurch der Stacking-Context wieder verschwindet. Visuell exakt
+   identisch (der Endzustand der Animation, transform: translateY(0), UND
+   der Basiswert ohne Animation, transform: none, sehen identisch aus -- 0px
+   Verschiebung so oder so), nur die permanente Stacking-Context-Falle
+   entfaellt. .tile/.lead-card haben dasselbe "animation: ... both"-Muster,
+   sind aber aktuell nicht betroffen, weil die Dashboard-Tour dort bisher nur
+   auf die jeweilige Eltern-Zeile/-Karte selbst zielt, nie auf ein einzelnes
+   Kind-Element darin -- bewusst nicht mitgeaendert, da kein gemeldeter Fall. */
 .app-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 18px;
   box-shadow: var(--shadow-sm);
   overflow: hidden;
   margin-bottom: 18px;
-  animation: fadeInUp 0.45s ease both;
+  border-radius: 18px;
+  animation: fadeInUp 0.45s ease;
 }
 .app-card-header {
   display: flex;
@@ -3021,6 +3052,37 @@ button.course-skill-chip:disabled {
 }
 .btn-ai.match:hover:not(:disabled) {
   box-shadow: 0 4px 14px rgba(14, 165, 183, 0.45);
+}
+
+/* Round 23 ("hier ist es nicht in der gleichen Farbe hinterlegt bei der
+   Tour" — Runde 21/22 hatten "Beschreibung vorschlagen" nur an eine ANDERE
+   Stelle verschoben, nicht optisch abgesetzt. Reine Umsortierung reicht
+   nicht: direkt ueber den beiden tuerkisen ".match"-Buttons sitzend, in
+   gleicher Groesse/Bauart als solide Farbflaeche, liest sich der volle
+   ".btn-ai"-Lila-Verlauf optisch weiter wie ein dritter Button derselben
+   Gruppe. ".btn-ai-subtle" nimmt dem Button bewusst das Gewicht einer
+   gleichwertigen CTA (kein Verlauf/Schatten, nur schwacher Rahmen) — er
+   bleibt an der lila KI-Generieren-Farbfamilie erkennbar, konkurriert aber
+   nicht mehr optisch mit den beiden soliden Erkennungs-Buttons, egal wie
+   nah er im Layout an ihnen steht. */
+.btn-ai-subtle {
+  background: transparent;
+  border: 1.5px dashed rgba(139, 92, 246, 0.55);
+  color: #c4b5fd;
+  box-shadow: none;
+}
+.btn-ai-subtle:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.12);
+  border-color: rgba(139, 92, 246, 0.85);
+  color: #fff;
+  transform: none;
+  box-shadow: none;
+}
+.btn-ai-subtle:disabled {
+  box-shadow: none;
+}
+.btn-ai-subtle .btn-ai-sub {
+  opacity: 0.7;
 }
 
 /* ---------- Modulhandbuch-Dropzone (ersetzt den unschönen nativen

@@ -1315,6 +1315,41 @@
   border-radius: 999px;
   white-space: nowrap;
 }
+
+/* Bereich-Badge (NEU, 18.09.) — bewusst eigene, kräftigere Farbgebung als
+   .course-banner (Status-/Verfügbarkeitshinweise): der Bereich soll auf der
+   Kurskatalog- und Lead-Karte auf den ersten Blick auffallen ("die
+   angezeigten Bereiche müssen immer im Mittelpunkt stehen"), statt wie ein
+   weiterer beiläufiger Meta-Hinweis zu wirken. Siehe BereichBadges in
+   src/data/courseBadges.tsx (geteilt mit journey.css/JourneyPage.tsx). */
+.bereich-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+.bereich-badge {
+  display: inline-block;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  padding: 4px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: linear-gradient(90deg, var(--dyd-navy), var(--dyd-violet));
+  color: #fff;
+}
+/* Kompaktere Variante auf der Lead-Karte (DashboardPage.tsx) — dort steht
+   der Bereich nur ergänzend neben Name/Zielrolle, nicht als Hauptelement
+   wie auf der Kurskatalog-Karte. */
+.bereich-badge-row-inline {
+  margin: 2px 0 4px;
+}
+.bereich-badge-row-inline .bereich-badge {
+  font-size: 10.5px;
+  padding: 3px 9px;
+}
+
 /* Bugfix/Erweiterung (14.09., "Kursangebot ... visuell ansprechend ...
  * startet in x Wochen/Tagen"): course-banner-soon nutzte bisher schlicht
  * blue-bg/dyd-blue-dark wie ein normales Info-Pill — hier auf denselben
@@ -2328,6 +2363,82 @@
 .tour-close:hover {
   background: var(--border-soft);
   color: var(--text-primary);
+}
+
+/* NEU (18.09.) — Auto-Advance-Umschalter, Fortschrittsleiste, simulierte
+   Live-Hinweise (Toast) und Bildungsträger-Nutzen-Zeile; siehe
+   tourAutoplay.tsx sowie DashboardTour.tsx/JourneyTour.tsx. */
+.tour-autoplay-toggle {
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.tour-autoplay-toggle:hover {
+  border-color: var(--dyd-blue);
+  color: var(--dyd-blue-dark);
+}
+.tour-autoplay-toggle.active {
+  border-color: var(--dyd-blue);
+  background: var(--blue-bg);
+  color: var(--dyd-blue-dark);
+}
+
+.tour-autoplay-bar {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--border-soft);
+  margin: 0 0 12px;
+  overflow: hidden;
+}
+.tour-autoplay-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  transition: width 0.1s linear;
+}
+
+/* Bildungsträger-Nutzen-Satz je Schritt — bewusst optisch von .tour-desc
+   abgesetzt (eigener Kasten statt Fliesstext), damit der Nutzen für den
+   Bildungsträger selbst nicht im allgemeinen Beschreibungstext untergeht. */
+.tour-benefit {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--dyd-blue-dark);
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+  border-left: 3px solid var(--dyd-blue);
+  border-radius: 8px;
+  padding: 9px 12px;
+  margin: -4px 0 14px;
+}
+
+.tour-demo-toast {
+  position: fixed;
+  top: 22px;
+  right: 22px;
+  z-index: 203;
+  background: var(--dyd-navy);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: none;
+  max-width: 320px;
+}
+.tour-demo-toast.visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .tour-title {

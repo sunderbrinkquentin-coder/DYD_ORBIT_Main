@@ -64,8 +64,14 @@ export function useTourAutoplay(active: boolean, resetKey: string | number, dura
 }
 
 /**
- * Kleiner Umschalt-Button "▶ Automatisch abspielen" / "⏸ Pause" fürs
- * Tour-Kopfzeile — identisch in DashboardTour/JourneyTour verwendet.
+ * Prominenter, ganzzeiliger Umschalt-Button "▶ Automatisch abspielen" /
+ * "⏸ Läuft automatisch — Pause" — bewusst als eigene, auffällige Zeile
+ * UNTER dem Tour-Kopf statt als kleines, unauffälliges Pill-Element DARIN
+ * (NEU, 18.09., Rückmeldung "ich finde das Autoplay nicht" — der Button war
+ * vorher eine schmale, grau umrandete Pille, die sich neben Schrittzähler
+ * und ×-Button im engen Kopf-Bereich kaum vom Rest abhob). Voller
+ * Farbverlauf statt Rahmen, gepulster Schein im AUS-Zustand als "Hier
+ * klicken"-Hinweis (respektiert prefers-reduced-motion, siehe CSS).
  */
 export function TourAutoplayToggle({ active, onToggle }: { active: boolean; onToggle: () => void }) {
   return (
@@ -75,8 +81,42 @@ export function TourAutoplayToggle({ active, onToggle }: { active: boolean; onTo
       onClick={onToggle}
       title={active ? "Automatische Wiedergabe anhalten" : "Automatisch abspielen (für Bildschirmaufzeichnungen)"}
     >
-      {active ? "⏸ Pause" : "▶ Automatisch abspielen"}
+      <span className="tour-autoplay-toggle-dot" aria-hidden="true" />
+      {active ? "⏸ Läuft automatisch — Pause" : "▶ Automatisch abspielen"}
     </button>
+  );
+}
+
+/**
+ * Klickbare Fortschritts-Punkte statt reiner Anzeige (NEU, 18.09.,
+ * Rückmeldung "es soll interaktiver sein") — jeder Punkt springt direkt zum
+ * jeweiligen Schritt, statt nur den Fortschritt passiv darzustellen. Ruft
+ * `onJump` NICHT selbst mit einer Autoplay-Stopp-Logik auf — das entscheidet
+ * die aufrufende Tour-Komponente (siehe `setAutoplay(false)` an den
+ * bestehenden Zurück-/Pfeiltasten-Stellen in DashboardTour/JourneyTour).
+ */
+export function TourStepDots({
+  count,
+  currentIndex,
+  onJump,
+}: {
+  count: number;
+  currentIndex: number;
+  onJump: (index: number) => void;
+}) {
+  return (
+    <div className="tour-progress">
+      {Array.from({ length: count }, (_, i) => (
+        <button
+          key={i}
+          type="button"
+          className={`tour-dot ${i === currentIndex ? "active" : i < currentIndex ? "done" : ""}`}
+          onClick={() => onJump(i)}
+          aria-label={`Zu Schritt ${i + 1} von ${count} springen`}
+          aria-current={i === currentIndex ? "step" : undefined}
+        />
+      ))}
+    </div>
   );
 }
 

@@ -5201,28 +5201,20 @@ export function DashboardPage({
                         value={courseForm.description}
                         onChange={(e) => setCourseForm((f) => ({ ...f, description: e.target.value }))}
                       />
-                      {/* data-tour jetzt auf diesem äußeren, IMMER gerenderten Wrapper statt
-                         auf der Vorschlagsbox weiter unten (NEU, 18.09. — Bugfix: die Box
-                         erscheint erst NACH einem Klick auf "Skills automatisch erkennen",
-                         war also bei einem frischen Rundgang/einer Aufzeichnung ohne vorherige
-                         Interaktion schlicht nicht im DOM vorhanden → kein Spotlight, "manche
-                         Bereiche nicht hell hervorgehoben"). Deckt jetzt Buttons UND Ergebnis
-                         gemeinsam ab, ist also immer ein gültiges Rundgang-Ziel. */}
-                      <div data-tour="kurse-skill-suggest">
+                      {/* Round 21, Fix (Rückmeldung "hier ist es nicht in der gleichen
+                         Farbe hinterlegt bei der Tour"): "Beschreibung vorschlagen"
+                         (lila, eigene KI-Textgenerierung — thematisch NICHT Teil der
+                         Skill-Erkennung) stand bisher zwischen den beiden teilfarbenen
+                         Skill-Erkennungs-Buttons und wurde dadurch vom
+                         "kurse-skill-suggest"-Rundgang-Schritt (Text nennt nur die
+                         beiden Erkennungs-Stufen) versehentlich mit-hervorgehoben —
+                         ein bunter Fremdkörper in einer eigentlich einfarbigen
+                         Gruppe. Jetzt VOR den beiden Skill-Buttons in einer eigenen
+                         Zeile, damit sie inhaltlich UND farblich sauber vom
+                         Rundgang-Ziel getrennt ist (macht nebenbei auch fachlich mehr
+                         Sinn: erst ggf. eine Beschreibung generieren, dann Skills
+                         daraus erkennen). */}
                       <div className="import-file-row" style={{ marginTop: 8 }}>
-                        <button
-                          type="button"
-                          className={`btn-ai match ${manualSkillDetectBusy ? "busy" : ""}`}
-                          onClick={handleDetectManualSkills}
-                          disabled={manualSkillDetectBusy || courseForm.description.trim().length < MIN_DESCRIPTION_FOR_SKILL_DETECT}
-                          title="Fuzzy-Abgleich gegen die echte ESCO-Skill-Datenbank — schnell, kein KI-Aufruf."
-                        >
-                          <span className="btn-ai-icon">🔍</span>
-                          <span className="btn-ai-text">
-                            <span className="btn-ai-label">{manualSkillDetectBusy ? "Ermittle Skills…" : "Skills automatisch erkennen"}</span>
-                            <span className="btn-ai-sub">Sofort · ESCO-Datenbank</span>
-                          </span>
-                        </button>
                         <button
                           type="button"
                           className={`btn-ai generate ${descSuggestBusy ? "busy" : ""}`}
@@ -5234,6 +5226,30 @@ export function DashboardPage({
                           <span className="btn-ai-text">
                             <span className="btn-ai-label">{descSuggestBusy ? "Formuliere…" : "Beschreibung vorschlagen"}</span>
                             <span className="btn-ai-sub">KI-generiert</span>
+                          </span>
+                        </button>
+                      </div>
+                      {descSuggestError && <div className="hint warn">{descSuggestError}</div>}
+                      {/* data-tour jetzt auf diesem äußeren, IMMER gerenderten Wrapper statt
+                         auf der Vorschlagsbox weiter unten (NEU, 18.09. — Bugfix: die Box
+                         erscheint erst NACH einem Klick auf "Skills automatisch erkennen",
+                         war also bei einem frischen Rundgang/einer Aufzeichnung ohne vorherige
+                         Interaktion schlicht nicht im DOM vorhanden → kein Spotlight, "manche
+                         Bereiche nicht hell hervorgehoben"). Deckt jetzt Buttons UND Ergebnis
+                         gemeinsam ab, ist also immer ein gültiges Rundgang-Ziel. */}
+                      <div data-tour="kurse-skill-suggest" style={{ marginTop: 8 }}>
+                      <div className="import-file-row">
+                        <button
+                          type="button"
+                          className={`btn-ai match ${manualSkillDetectBusy ? "busy" : ""}`}
+                          onClick={handleDetectManualSkills}
+                          disabled={manualSkillDetectBusy || courseForm.description.trim().length < MIN_DESCRIPTION_FOR_SKILL_DETECT}
+                          title="Fuzzy-Abgleich gegen die echte ESCO-Skill-Datenbank — schnell, kein KI-Aufruf."
+                        >
+                          <span className="btn-ai-icon">🔍</span>
+                          <span className="btn-ai-text">
+                            <span className="btn-ai-label">{manualSkillDetectBusy ? "Ermittle Skills…" : "Skills automatisch erkennen"}</span>
+                            <span className="btn-ai-sub">Sofort · ESCO-Datenbank</span>
                           </span>
                         </button>
                         <button
@@ -5263,7 +5279,6 @@ export function DashboardPage({
                             <span className="hint">Noch etwas kurz für eine zuverlässige Erkennung.</span>
                           )}
                       </div>
-                      {descSuggestError && <div className="hint warn">{descSuggestError}</div>}
                       {manualSkillDetectError && <div className="hint warn">{manualSkillDetectError}</div>}
                       {aiSkillDetectError && <div className="hint warn">{aiSkillDetectError}</div>}
                       {manualSuggestedSkills.length > 0 && (

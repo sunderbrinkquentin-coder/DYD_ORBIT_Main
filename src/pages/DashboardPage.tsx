@@ -5162,6 +5162,14 @@ export function DashboardPage({
                         value={courseForm.description}
                         onChange={(e) => setCourseForm((f) => ({ ...f, description: e.target.value }))}
                       />
+                      {/* data-tour jetzt auf diesem äußeren, IMMER gerenderten Wrapper statt
+                         auf der Vorschlagsbox weiter unten (NEU, 18.09. — Bugfix: die Box
+                         erscheint erst NACH einem Klick auf "Skills automatisch erkennen",
+                         war also bei einem frischen Rundgang/einer Aufzeichnung ohne vorherige
+                         Interaktion schlicht nicht im DOM vorhanden → kein Spotlight, "manche
+                         Bereiche nicht hell hervorgehoben"). Deckt jetzt Buttons UND Ergebnis
+                         gemeinsam ab, ist also immer ein gültiges Rundgang-Ziel. */}
+                      <div data-tour="kurse-skill-suggest">
                       <div className="import-file-row" style={{ marginTop: 8 }}>
                         <button
                           type="button"
@@ -5220,7 +5228,7 @@ export function DashboardPage({
                       {manualSkillDetectError && <div className="hint warn">{manualSkillDetectError}</div>}
                       {aiSkillDetectError && <div className="hint warn">{aiSkillDetectError}</div>}
                       {manualSuggestedSkills.length > 0 && (
-                        <div className="skill-suggest-box" data-tour="kurse-skill-suggest">
+                        <div className="skill-suggest-box">
                           <div className="skill-suggest-head">
                             <span className="hint">
                               🔍 Automatisch erkannt — bitte prüfen und übernehmen ({manualSuggestedSkills.length})
@@ -5261,6 +5269,7 @@ export function DashboardPage({
                           </div>
                         </div>
                       )}
+                      </div>
                     </div>
                     <div className="lf-field handbook-upload-field" data-tour="kurse-handbook-upload">
                       <label>Oder: Modulhandbuch/Kursplan hochladen</label>
@@ -6009,8 +6018,14 @@ export function DashboardPage({
                               {preview.length > 12 && (
                                 <div className="hint">… und {preview.length - 12} weitere Zeile{preview.length - 12 === 1 ? "" : "n"} (werden mit importiert, hier nur nicht angezeigt).</div>
                               )}
+                              {/* Kein eigenes data-tour hier — dieselbe Vorschlagsbox wie beim
+                                 manuellen Formular, aber im CSV-Import-Kontext; der Rundgang-
+                                 Schritt "Skills automatisch erkennen" zielt jetzt auf den immer
+                                 vorhandenen Wrapper im manuellen Formular (siehe dort), ein
+                                 zweites Element mit demselben data-tour-Wert hätte hier nur zu
+                                 einem mehrdeutigen `querySelector`-Treffer geführt. */}
                               {Object.keys(importSkillSuggestions).length > 0 && (
-                                <div className="skill-suggest-box" data-tour="kurse-skill-suggest">
+                                <div className="skill-suggest-box">
                                   <div className="hint">
                                     🔍 Automatisch erkannte Skills — bitte prüfen, falsche Vorschläge mit „×" entfernen
                                   </div>

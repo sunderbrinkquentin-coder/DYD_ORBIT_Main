@@ -3293,49 +3293,109 @@ button.course-skill-chip:disabled {
 
 /* ---------- Zeitraum-/Bereichs-Filterleiste (NEU, 18.09. — "nach Zeitraum
    ordnen ... und will dort eine Filteroption haben"), wiederverwendet in
-   Leads/Kurse/Reports ---------- */
+   Leads/Kurse/Reports.
+   Update 18.09.: ursprünglich mit rgba(255,255,255,...)-Werten aus einem
+   dunklen Theme gestylt, obwohl das Dashboard tatsächlich hell ist
+   (--surface: #ffffff, --page: #eef2f9, siehe theme.css) — dadurch wirkte
+   die Leiste fast unsichtbar/blass, und die <select>/<input type="date">
+   darin blieben komplett ungestylte Browser-Standardelemente (kein Rahmen,
+   Systemschrift), im Kontrast zu den sonst überall im Dashboard
+   individuell gestylten Formularfeldern (siehe .lf-field select oben).
+   Jetzt an dieselben Design-Tokens angeglichen (Karten-Look mit
+   --surface/--border/--shadow-sm, eigene Pfeil-Icons statt
+   Browser-Default, Fokus-Glow in --dyd-blue) — "Buttons von den Filtern
+   sollen attraktiver aussehen". ---------- */
 .dashboard-filter-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 12px;
-  padding: 12px 14px;
-  margin-bottom: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
+  gap: 14px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 .dashboard-filter-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  min-width: 150px;
+  gap: 5px;
+  min-width: 168px;
 }
 .dashboard-filter-field label {
-  font-size: 10px;
+  font-size: 10.5px;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #8494ac;
+  color: var(--text-secondary);
+}
+.dashboard-filter-field select,
+.dashboard-filter-field input[type="date"] {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  background: #fbfcfe;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.dashboard-filter-field select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%235B6779' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+.dashboard-filter-field select:hover,
+.dashboard-filter-field input[type="date"]:hover {
+  border-color: var(--dyd-blue);
+}
+.dashboard-filter-field select:focus,
+.dashboard-filter-field input[type="date"]:focus {
+  outline: none;
+  border-color: var(--dyd-blue);
+  box-shadow: 0 0 0 3px rgba(47, 143, 214, 0.14);
+  background: #fff;
 }
 .dashboard-filter-custom-dates {
   display: flex;
   gap: 8px;
 }
+.dashboard-filter-custom-dates input {
+  min-width: 0;
+}
 .dashboard-filter-reset {
-  border: none;
-  background: none;
-  padding: 0;
-  font-size: 11.5px;
-  color: #8494ac;
-  text-decoration: underline;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  padding: 9px 16px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
   cursor: pointer;
   margin-left: auto;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
 .dashboard-filter-reset:hover {
-  color: #dce6f5;
+  border-color: var(--red-border);
+  background: var(--red-bg);
+  color: var(--red-text);
 }
 .dashboard-filter-result-count {
-  font-size: 11.5px;
-  color: #8494ac;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--dyd-blue-dark);
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+  padding: 8px 14px;
+  border-radius: 999px;
   align-self: center;
+  white-space: nowrap;
 }

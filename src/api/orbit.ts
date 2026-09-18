@@ -495,6 +495,95 @@ export interface OrbitCourse {
    * kategorisiert" statt mit einer erfundenen Zuordnung.
    */
   course_category?: CourseCategory | null;
+  /**
+   * Mehrere Durchführungstermine/Standorte pro Kurs (NEU, 18.09. — Rückmeldung
+   * "Kurse auch mehrere Standorte und Startzeitpunkte haben können"). Additiv
+   * ZUSÄTZLICH zu starts_at/location/location_mode oben (Backward-Compat für
+   * ein Backend, das nur die Einzelfelder kennt — sessions[0] spiegelt beim
+   * Speichern immer in starts_at/location/location_mode, siehe Kommentar an
+   * courseFormToSessions() in DashboardPage.tsx), exakt dasselbe Muster wie
+   * bereich_key vs. bereich_keys weiter oben. Ein Kurs OHNE sessions gilt als
+   * terminlos/dauerhaft buchbar (immer "aktiv", siehe isCourseActive()). Ein
+   * Backend, das dieses Feld noch nicht kennt, ignoriert es einfach — der
+   * Kurs verhält sich dann wie bisher (ein einzelner Termin aus starts_at).
+   */
+  sessions?: CourseSession[] | null;
+}
+
+/**
+ * Ein einzelner Durchführungstermin eines Kurses — Startdatum + Standort,
+ * unabhängig von anderen Terminen desselben Kurses (z.B. "Modul A" startet
+ * im Januar in Köln remote, im März in Hamburg vor Ort). Siehe sessions an
+ * OrbitCourse/CourseUpsertRequest.
+ */
+export interface CourseSession {
+  /** ISO-Datum (YYYY-MM-DD). Fehlt es, gilt der Termin als terminlos/immer aktuell. */
+  starts_at?: string | null;
+  location?: string | null;
+  is_remote?: boolean | null;
+  location_mode?: LocationMode | null;
+  seats_remaining?: number | null;
+  /**
+   * Tatsächliche Teilnehmerzahl NACH Kursstart (NEU, 18.09. — Rückmeldung
+   * "wenn der Kurs gestartet ist, soll man auch die Möglichkeit haben die
+   * finalen Kursteilnehmen ... einzutragen"). Rein manuell vom Bildungsträger
+   * gepflegt, ähnlich wie booked/booked_at bei Leads — null/undefined =
+   * noch nicht eingetragen (auch bei bereits gestarteten Terminen möglich,
+   * z.B. wenn die Zahl noch nicht final feststeht).
+   */
+  final_participants?: number | null;
+}
+
+/** Prüft, ob ein Termin heute oder in der Zukunft liegt (oder terminlos ist). */
+export function isSessionUpcoming(session: Pick<CourseSession, "starts_at">, today: Date = new Date()): boolean {
+  if (!session.starts_at) return true;
+  const d = new Date(session.starts_at);
+  if (Number.isNaN(d.getTime())) return true;
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return d >= startOfToday;
+}
+
+/**
+ * Liefert die Termine eines Kurses — aus sessions, falls vorhanden, sonst
+ * (Backward-Compat) ein synthetischer Einzeltermin aus den alten
+ * starts_at/location/location_mode/seats_remaining-Einzelfeldern. Ein Kurs
+ * ganz ohne jede Terminangabe liefert ein leeres Array (= terminlos/immer aktiv,
+ * siehe isCourseActive()).
+ */
+export function getCourseSessions(course: Pick<OrbitCourse, "sessions" | "starts_at" | "location" | "is_remote" | "location_mode" | "seats_remaining">): CourseSession[] {
+  if (course.sessions && course.sessions.length > 0) return course.sessions;
+  if (course.starts_at || course.location || course.location_mode) {
+    return [
+      {
+        starts_at: course.starts_at ?? null,
+        location: course.location ?? null,
+        is_remote: course.is_remote ?? null,
+        location_mode: course.location_mode ?? null,
+        seats_remaining: course.seats_remaining ?? null,
+      },
+    ];
+  }
+  return [];
+}
+
+/**
+ * Ein Kurs gilt als aktiv, wenn er entweder gar keine Termine hat (terminlos/
+ * dauerhaft buchbar) oder mindestens EIN Termin noch bevorsteht — erst wenn
+ * ALLE Termine in der Vergangenheit liegen, gilt er als abgeschlossen/
+ * vergangen (siehe "Aufteilung von aktiven und vergangenen Kursen", 18.09.).
+ */
+export function isCourseActive(course: Pick<OrbitCourse, "sessions" | "starts_at" | "location" | "is_remote" | "location_mode" | "seats_remaining">, today: Date = new Date()): boolean {
+  const sessions = getCourseSessions(course);
+  if (sessions.length === 0) return true;
+  return sessions.some((s) => isSessionUpcoming(s, today));
+}
+
+/** Der nächste bevorstehende Termin eines Kurses (frühestes Datum), oder null bei terminlosen/nur-vergangenen Kursen. */
+export function nextUpcomingSession(course: Pick<OrbitCourse, "sessions" | "starts_at" | "location" | "is_remote" | "location_mode" | "seats_remaining">, today: Date = new Date()): CourseSession | null {
+  const upcoming = getCourseSessions(course)
+    .filter((s) => isSessionUpcoming(s, today) && s.starts_at)
+    .sort((a, b) => (a.starts_at! < b.starts_at! ? -1 : 1));
+  return upcoming[0] ?? null;
 }
 
 /** "hybrid" = sowohl remote als auch vor Ort möglich. */
@@ -558,6 +647,8 @@ export interface CourseUpsertRequest {
   booking_url?: string | null;
   /** Siehe course_category in OrbitCourse oben. */
   course_category?: CourseCategory | null;
+  /** Siehe sessions/CourseSession in OrbitCourse oben. */
+  sessions?: CourseSession[] | null;
 }
 
 // ---------- Test-Tracking (POST /api/v1/orbit/tests, .../recommendation) ----------

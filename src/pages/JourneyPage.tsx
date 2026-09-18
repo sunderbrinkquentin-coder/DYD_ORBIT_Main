@@ -45,7 +45,7 @@ import {
   describePreferenceMismatches,
   rankCoursesForGap,
 } from "../data/courseMatcher";
-import { CourseBadgeRow, daysUntilCourseStart } from "../data/courseBadges";
+import { BereichBadges, CourseBadgeRow, daysUntilCourseStart } from "../data/courseBadges";
 import { AnimatedNumber } from "../components/AnimatedNumber";
 import { JourneyTour, type JourneyStepKey } from "../components/JourneyTour";
 import "../styles/journey.css";
@@ -4897,6 +4897,7 @@ function KursStep({
     return (
       <div className={`popular-course-card ${isAlsoRequested ? "selected" : ""}`} key={c.course_id}>
         <CourseBadgeRow course={c} alwaysShow />
+        <BereichBadges course={c} />
         <div className="popular-course-name">{c.course_name}</div>
         <div className="popular-course-meta">
           {c.provider} · {formatCourseDuration(c)}
@@ -5197,6 +5198,12 @@ function KursStep({
                   alwaysShow
                   isBestMatch={i === 0 && !isGenericFallback}
                 />
+                {/* Bereich (NEU, 18.09. — "die angezeigten Bereiche müssen immer im
+                    Mittelpunkt stehen"): direkt auf der Kurskarte selbst sichtbar,
+                    nicht nur weiter oben im "Bereich"-Journey-Schritt. Zeigt exakt
+                    denselben Bereich, den ein Bildungsträger im Kurskatalog pflegt
+                    (siehe BereichBadges in DashboardPage.tsx). */}
+                <BereichBadges course={courseById(course.course_id)} />
                 <div className="course-hero-top">
                   <span className={`course-hero-badge ${i === 0 ? "" : "alt"}`}>
                     {isGenericFallback

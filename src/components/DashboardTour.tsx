@@ -145,8 +145,14 @@ const STEPS: TourStep[] = [
     demoEvent: "⭐ Kurs als Top-Empfehlung markiert",
   },
   {
+    // Bugfix (18.09.): war ".banner-quickpick" (Klassen-Selektor, traf
+    // irgendein Vorkommen im DOM — im schlechtesten Fall eine ausgegraute
+    // ".past"-Kurskachel). Jetzt ein eigener data-tour-Anker, den
+    // DashboardPage.tsx bewusst nur auf die ERSTE Kachel setzt, die dank
+    // courseCatalogSorted (aktive Kurse zuerst) zuverlässig ein aktiver,
+    // voll sichtbarer Kurs ist, falls einer existiert.
     tab: "kurse",
-    selector: ".banner-quickpick",
+    selector: '[data-tour="kurse-banner-quickpick"]',
     title: "Konversions-Banner direkt auf der Kachel",
     description:
       "Ohne den Kurs erst zu bearbeiten: Start-Datum und verbleibende Plätze eintragen oder einen eigenen Text wählen — daraus entstehen automatisch Banner wie „Startet in Kürze“ oder „Nur noch wenige Plätze“, die der Nutzer später in der Journey sieht. Bewusst nur aus echten, hier gepflegten Werten berechnet, nie frei erfunden — ein Kurs ohne Start-Datum zeigt schlicht kein Banner.",
@@ -290,17 +296,31 @@ export function DashboardTour({ open, onClose, activeTab, onChangeTab, onStepCha
         setRect(null);
         return;
       }
-      // Zielt der Schritt auf ein eingeklapptes <details> (z.B. die
-      // "Kurs manuell anlegen"-/"CSV importieren"-Karten), klappt die Tour es
-      // auf — sonst waere im Spotlight nur die Kopfzeile zu sehen, waehrend
-      // die Beschreibung vom Inhalt darunter spricht. Manche <details> in
-      // DashboardPage.tsx sind React-kontrolliert (open-Prop + onToggle) --
-      // ein "toggle"-Event nach dem Setzen von .open stellt sicher, dass ein
-      // per onToggle angebundener React-State (z.B. courseFormOpen) mitzieht
-      // und das Element beim naechsten Render nicht wieder zuklappt.
-      if (el instanceof HTMLDetailsElement && !el.open) {
-        el.open = true;
-        el.dispatchEvent(new Event("toggle", { bubbles: false }));
+      // Zielt der Schritt auf ein eingeklapptes <details> ODER liegt einfach
+      // INNERHALB eines eingeklappten <details> (z.B. die Felder "Preis",
+      // "Skills automatisch erkennen", "Modulhandbuch" und "Bereich
+      // zuordnen" — alle vier liegen im selben "Kurs manuell anlegen"-
+      // <details>), klappt die Tour es auf — sonst waere im Spotlight gar
+      // nichts zu sehen (ein Kind eines geschlossenen <details> hat keine
+      // Layout-Box, getBoundingClientRect() liefert 0/0/0/0, das Spotlight
+      // rendert dadurch als kaputtes Mini-Rechteck an einer Zufallsposition).
+      //
+      // Bugfix (18.09., "Schritt 8 bis 11 ... ist falsch formatiert"): die
+      // bisherige Pruefung oeffnete NUR ein <details>, wenn es SELBST das
+      // Rundgang-Ziel war (z.B. der "Kurse anlegen"-Schritt) — ein <details>,
+      // das nur zufaellig ein VORFAHRE des eigentlichen Ziels ist (z.B. beim
+      // Kurs-Anlegen ein Feld anspringen OHNE vorher ueber den "Kurse
+      // anlegen"-Schritt zu gehen, etwa per Klick auf einen Fortschritts-Punkt
+      // oder beim erneuten Oeffnen der Tour), wurde nie geoeffnet. Jetzt wird
+      // die GESAMTE Vorfahrenkette nach geschlossenen <details> durchsucht,
+      // nicht nur das Zielelement selbst.
+      let detailsAncestor: HTMLElement | null = el instanceof HTMLElement ? el : null;
+      while (detailsAncestor) {
+        if (detailsAncestor instanceof HTMLDetailsElement && !detailsAncestor.open) {
+          detailsAncestor.open = true;
+          detailsAncestor.dispatchEvent(new Event("toggle", { bubbles: false }));
+        }
+        detailsAncestor = detailsAncestor.parentElement;
       }
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       // kurz warten, bis der Scroll (grob) angekommen ist, dann messen, das

@@ -16,9 +16,14 @@ import {
   fetchCourseMatch,
   fetchCourses,
   fetchDepthAnalysis,
+  getCourseSessions,
+  isCourseActive,
+  isSessionUpcoming,
+  nextUpcomingSession,
   setLeadLinkedCourses,
   type CourseMatchResponse,
   type CourseRecommendation,
+  type CourseSession,
   type DepthSkillAssessment,
   type OrbitCourse,
 } from "../api/orbit";
@@ -767,8 +772,29 @@ function courseCostText(course: {
 }): string {
   return formatCoursePrice(course) ?? RAHMENDATEN_FALLBACK;
 }
-function courseLocationText(course: { location_mode?: string | null }): string {
-  return (course.location_mode && COURSE_LOCATION_LABELS[course.location_mode]) || RAHMENDATEN_FALLBACK;
+/**
+ * Session-bewusst (NEU, 18.09. — "Kurse auch mehrere Standorte ... haben
+ * können"): ein Kurs mit mehreren bevorstehenden Terminen an
+ * unterschiedlichen Standorten zeigt "Mehrere Standorte" statt eines
+ * einzelnen, womöglich veralteten Formats — ein Kurs mit nur einem
+ * bevorstehenden Termin (der Normalfall, auch bei bestehenden Kursen ohne
+ * sessions) verhält sich unverändert.
+ */
+function courseLocationText(course: {
+  location_mode?: string | null;
+  sessions?: CourseSession[] | null;
+  starts_at?: string | null;
+  location?: string | null;
+  is_remote?: boolean | null;
+  seats_remaining?: number | null;
+}): string {
+  const upcoming = getCourseSessions(course).filter((s) => isSessionUpcoming(s));
+  const distinctModes = new Set(upcoming.map((s) => s.location_mode).filter((m): m is string => Boolean(m)));
+  if (upcoming.length > 1 && distinctModes.size > 1) {
+    return "Mehrere Standorte";
+  }
+  const mode = upcoming[0]?.location_mode ?? course.location_mode ?? null;
+  return (mode && COURSE_LOCATION_LABELS[mode]) || RAHMENDATEN_FALLBACK;
 }
 function courseQualificationText(course: { qualification_type?: string | null; dqr_level?: number | null }): string {
   if (course.qualification_type && QUALIFICATION_TYPE_LABELS[course.qualification_type]) {
@@ -786,8 +812,21 @@ function courseFundingText(course: { funding_types?: string[] | null }): string 
   }
   return RAHMENDATEN_FALLBACK;
 }
-function courseStartText(course: { starts_at?: string | null }): string {
-  return formatCourseStartDate(course.starts_at ?? null) ?? RAHMENDATEN_FALLBACK;
+/** Session-bewusst wie courseLocationText oben: zeigt den NÄCHSTEN
+ *  bevorstehenden Termin statt eines fixen starts_at, plus einen Hinweis auf
+ *  weitere Termine, falls vorhanden. */
+function courseStartText(course: {
+  starts_at?: string | null;
+  sessions?: CourseSession[] | null;
+  location?: string | null;
+  location_mode?: string | null;
+  is_remote?: boolean | null;
+  seats_remaining?: number | null;
+}): string {
+  const next = nextUpcomingSession(course);
+  const base = formatCourseStartDate((next?.starts_at ?? course.starts_at) ?? null) ?? RAHMENDATEN_FALLBACK;
+  const upcomingWithDate = getCourseSessions(course).filter((s) => isSessionUpcoming(s) && s.starts_at).length;
+  return upcomingWithDate > 1 ? `${base} (+${upcomingWithDate - 1} weitere Termine)` : base;
 }
 /** Rechnet, wie in lead_service.py/index.ts (Backend), den projizierten
  * Match-Score aus: "wenn diese Person den empfohlenen Kurs abschließt, wie
@@ -1464,7 +1503,13 @@ async function runDemoAnalysis() {
       });
 
       const res = await fetchCourses(baseUrl, apiKey);
-      const catalog = Array.isArray(res?.courses) ? res.courses : [];
+      const rawCatalog = Array.isArray(res?.courses) ? res.courses : [];
+      // NEU (18.09., Rückmeldung "wenn der Startzeitpunkt überschritten ist,
+      // sollen die Kurse nicht angezeigt werden"): ein Kurs, bei dem ALLE
+      // Termine bereits gestartet sind, taucht in der Endnutzer-Journey
+      // konsequent gar nicht mehr auf (siehe isCourseActive() in orbit.ts).
+      // Ein Kurs ohne jede Terminangabe gilt weiterhin als dauerhaft aktiv.
+      const catalog = rawCatalog.filter((c) => isCourseActive(c));
 
       setFeaturedCourses(catalog.filter((c) => c.is_featured));
       setAllCourses(catalog);
@@ -1473,6 +1518,7 @@ async function runDemoAnalysis() {
       console.info("[JourneyPage] course_catalog_loaded", {
         course_count: catalog.length,
         featured_count: catalog.filter((c) => c.is_featured).length,
+        hidden_past_count: rawCatalog.length - catalog.length,
       });
 
       if (catalog.length === 0) {

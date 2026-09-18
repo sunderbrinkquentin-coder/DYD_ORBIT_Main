@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { readingDurationMs, TourAutoplayBar, TourAutoplayToggle, TourDemoToast, useTourAutoplay } from "./tourAutoplay";
+import { readingDurationMs, TourAutoplayBar, TourAutoplayToggle, TourDemoToast, TourStepDots, useTourAutoplay } from "./tourAutoplay";
 
 /**
  * Gefuehrter Rundgang durch das Dashboard, ueber den Button "🎓 Rundgang
@@ -386,19 +386,31 @@ export function DashboardTour({ open, onClose, activeTab, onChangeTab, onStepCha
           <span className="tour-step-count">
             {stepIndex + 1} / {STEPS.length}
           </span>
-          <TourAutoplayToggle active={autoplay} onToggle={() => setAutoplay((a) => !a)} />
           <button className="tour-close" onClick={onClose} aria-label="Rundgang beenden" title="Beenden (Esc)">
             ×
           </button>
         </div>
+        {/* Eigene, auffällige Zeile statt im engen Kopf (siehe Kommentar an
+           TourAutoplayToggle in tourAutoplay.tsx) — vorher zwischen
+           Schrittzähler und ×-Button eingeklemmt und dadurch leicht zu
+           übersehen. */}
+        <div className="tour-autoplay-row">
+          <TourAutoplayToggle active={autoplay} onToggle={() => setAutoplay((a) => !a)} />
+        </div>
         <TourAutoplayBar active={autoplay && !isLast} progress={autoplayProgress} />
         <h3 className="tour-title">{step.title}</h3>
         <p className="tour-desc">{step.description}</p>
-        <div className="tour-progress">
-          {STEPS.map((_, i) => (
-            <span key={i} className={`tour-dot ${i === stepIndex ? "active" : i < stepIndex ? "done" : ""}`} />
-          ))}
-        </div>
+        {/* Klickbare Punkte statt reiner Anzeige (NEU, 18.09., "es soll
+           interaktiver sein") — direkter Sprung zu jedem Schritt, stoppt
+           dabei die Automatik wie ein manueller Zurück-Klick. */}
+        <TourStepDots
+          count={STEPS.length}
+          currentIndex={stepIndex}
+          onJump={(i) => {
+            setAutoplay(false);
+            setStepIndex(i);
+          }}
+        />
         <div className="tour-actions">
           <button className="tour-btn tour-btn-ghost" onClick={onClose}>
             Beenden

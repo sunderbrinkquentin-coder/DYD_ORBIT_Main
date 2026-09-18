@@ -124,7 +124,12 @@ const RAW_STEPS: RawStep[] = [
     selector: '[data-tour="tour-panel"]',
     title: "Zielrolle waehlen",
     description:
-      "Freitextsuche plus Karten-Auswahl. Diese Rolle ist ab hier der Bezugspunkt fuer den kompletten restlichen Abgleich.",
+      // Round 21 ("bei der Journey soll nicht so auf die Zielrolle
+      // eingegangen werden, sondern der Prozess soll erklärt werden"):
+      // statt die gewählte Rolle selbst zu betonen, jetzt der Ablauf, der ab
+      // hier automatisch anläuft — bewusst unabhängig davon, welche
+      // konkrete Rolle/welcher Kurs im Rundgang gerade zu sehen ist.
+      "Freitextsuche plus Karten-Auswahl. Ab hier läuft der komplette weitere Ablauf entlang derselben Kette automatisch: Zielrolle → Skill-Abgleich → Lücken-Berechnung → passende Kursempfehlung.",
     benefit: "Die Zielrolle steht danach fest im Lead — du siehst im Dashboard exakt, wofür sich jemand qualifizieren möchte, statt nur vager „Interesse an Weiterbildung“.",
   },
   {
@@ -151,9 +156,22 @@ const RAW_STEPS: RawStep[] = [
     selector: '[data-tour="tour-panel"]',
     title: "Passende Weiterbildung",
     description:
-      "Individuelle Kursempfehlung primaer nach gewichteter Abdeckung der eigenen Skill-Luecke sortiert, die weiter oben genannten Rahmenbedingungen entscheiden nur bei fachlich gleichwertigen Treffern die Reihenfolge — nie die Sichtbarkeit. Jede Karte zeigt zusaetzlich Preis (inkl. USt.-Hinweis/Pruefungsgebuehr), Unterrichtseinheiten, Abschlussart und einen „Foerderfaehig“-Hinweis, falls vom Bildungstraeger gepflegt, sowie individuell begruendet, WARUM genau dieser Kurs passt (konkrete Skill-Namen, keine allgemeine Floskel). Einzelne Kurskacheln koennen ausserdem Banner wie „Startet in Kuerze“ oder „Nur noch wenige Plaetze“ zeigen — direkt vom Bildungstraeger im Dashboard aus echten Werten gesetzt, nie erfunden. Der Nutzer waehlt hier aktiv einen konkreten Kurs, „Match danach“ zeigt ehrlich, wie viel naeher genau dieser eine Kurs an die Zielrolle bringt.",
+      // Round 21 ("bei der Journey soll nicht so auf die Zielrolle
+      // eingegangen werden, sondern der Prozess soll erklärt werden"):
+      // vorher stand hier eine Zusicherung, WARUM "genau dieser Kurs"
+      // passt — das behauptet für den konkret gezeigten Beispielkurs eine
+      // Präzision, die pickShowcaseCourses() (siehe JourneyPage.tsx) im
+      // Rundgang gar nicht mehr verspricht (dort zählt Datenvollständigkeit,
+      // nicht Rollen-Passung). Jetzt erklärt der Text den MECHANISMUS
+      // allgemein, statt eine Aussage über den gerade sichtbaren Einzelfall
+      // zu treffen.
+      "So funktioniert die Empfehlung: die Kurse aus dem eigenen Katalog werden nach gewichteter Abdeckung der Skill-Lücke sortiert, die weiter oben genannten Rahmenbedingungen entscheiden nur bei fachlich gleichwertigen Treffern über die Reihenfolge — nie über die Sichtbarkeit. Jede Karte zeigt zusätzlich Preis (inkl. USt.-Hinweis/Prüfungsgebühr), Unterrichtseinheiten, Abschlussart und einen „Förderfähig“-Hinweis, falls vom Bildungsträger gepflegt, und bei einem echten Treffer eine individuelle Begründung mit konkreten Skill-Namen statt einer allgemeinen Floskel. Einzelne Kurskacheln können außerdem Banner wie „Startet in Kürze“ oder „Nur noch wenige Plätze“ zeigen — direkt vom Bildungsträger im Dashboard aus echten Werten gesetzt, nie erfunden. Der Nutzer wählt hier aktiv einen konkreten Kurs, „Match danach“ zeigt ehrlich, wie viel näher die eigene Wahl an die Zielrolle bringt.",
     benefit: "Hier entscheidet sich, welcher deiner Kurse überhaupt gezeigt wird — gepflegte Rahmendaten, ein aktueller Buchungslink und der richtige Bereich zahlen sich direkt in mehr qualifizierten Leads aus.",
-    demoEvent: "🎓 Passender Kurs vorgeschlagen — 92 % Match",
+    // Round 21: keine feste Prozentzahl mehr behaupten (siehe Kommentar an
+    // der description oben) — die im Rundgang gezeigte Beispielkarte kann
+    // je nach Katalog auch mal 0% Lücken-Abdeckung haben (bewusst, siehe
+    // pickShowcaseCourses()).
+    demoEvent: "🎓 Kursempfehlung angezeigt",
   },
   {
     key: "lead",

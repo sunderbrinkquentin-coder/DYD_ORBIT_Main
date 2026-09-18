@@ -79,7 +79,12 @@ const STEPS: TourStep[] = [
     selector: '[data-tour="kurse-manual-form"]',
     title: "Kurse anlegen — drei Wege",
     description:
-      "Drei Wege zum selben Ziel, gleich unten im Detail: von Hand eintragen, per CSV-Liste importieren, oder direkt von der eigenen Website importieren. Gemeinsamer Kern aller drei: ohne Skill-Zuordnung erscheint ein Kurs NIE als persönliche Empfehlung in der Journey — das Matching kennt nur Skills, keine Kurstitel. Hier zunächst die manuelle Eingabe: Kurs-ID, Name, Anbieter, Dauer, Zielrolle(n). Genauso wichtig wie die Skills: der Bereich/die Branche (z.B. „IT“, „Wirtschaft & Verwaltung“, „Handwerk“) — ein Pflichtfeld, weil er direkt entscheidet, ob dieser Kurs auch Personen erreicht, die ihre Zielrolle noch nicht kennen und in der Journey stattdessen nur einen Bereich auswählen (siehe „Passende Rolle vorschlagen“). Ohne Bereich verpasst du genau diese Zielgruppe.",
+      // Round 24: die ausführliche Bereichs-Erklärung, die hier vorher stand,
+      // ist jetzt beim eigenen "Bereich"-Schritt weiter unten (siehe dort) —
+      // dieser Schritt bleibt bewusst kurz gefasst als reiner Überblick über
+      // die drei Anlage-Wege, statt den Bereich hier schon vorwegzunehmen,
+      // ohne ihn an dieser Stelle hell hervorzuheben.
+      "Drei Wege zum selben Ziel, gleich unten im Detail: von Hand eintragen, per CSV-Liste importieren, oder direkt von der eigenen Website importieren. Gemeinsamer Kern aller drei: ohne Skill-Zuordnung erscheint ein Kurs NIE als persönliche Empfehlung in der Journey — das Matching kennt nur Skills, keine Kurstitel. Hier zunächst die manuelle Eingabe: Kurs-ID, Name, Anbieter, Dauer, Zielrolle(n).",
   },
   {
     tab: "kurse",
@@ -102,6 +107,20 @@ const STEPS: TourStep[] = [
     title: "Modulhandbuch statt Beschreibung",
     description:
       "Alternative zur kurzen Kursbeschreibung: ein ganzes Modulhandbuch oder Kursplan als PDF/DOCX/TXT hochladen. Auch bei sehr großen Dateien vollständig ausgewertet — die Skill-Erkennung durchsucht das komplette Dokument parallel in Abschnitten statt nur einen gekürzten Ausschnitt zu lesen. Praktisch, wenn ein Kurs bereits eine ausführliche offizielle Beschreibung hat, die nicht nochmal von Hand zusammengefasst werden soll.",
+  },
+  {
+    // Round 24 ("wenn Bereich vorgestellt werden, müssen die auch so hell
+    // sein wie die anderen — das klappt in der Dashboardtour noch nicht
+    // ganz"): dieses Feld wurde bisher NIE gespotlightet, obwohl der
+    // "Kurse anlegen"-Schritt es textlich als besonders wichtig hervorhob —
+    // jetzt ein eigener, ebenso hell hervorgehobener Schritt wie Preis/
+    // Skill-Erkennung/Modulhandbuch davor.
+    tab: "kurse",
+    selector: '[data-tour="kurse-bereich-picker"]',
+    title: "Bereich zuordnen",
+    description:
+      "Genauso wichtig wie die Skills: der Bereich/die Branche (z.B. „IT“, „Wirtschaft & Verwaltung“, „Handwerk“) — ein Pflichtfeld, weil er direkt entscheidet, ob dieser Kurs auch Personen erreicht, die ihre Zielrolle noch nicht kennen und in der Journey stattdessen nur einen Bereich auswählen (siehe „Passende Rolle vorschlagen“ in der Journey-Tour). Mehrere Bereiche pro Kurs sind möglich. Ohne Bereich verpasst du genau diese Zielgruppe — die Kachel bleibt für sie in der Bereichsauswahl unsichtbar.",
+    demoEvent: "🧭 Bereich zugeordnet: Wirtschaft & Verwaltung",
   },
   {
     tab: "kurse",

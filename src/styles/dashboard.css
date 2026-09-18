@@ -3234,3 +3234,108 @@ button.course-skill-chip:disabled {
   font-weight: 600;
   line-height: 1.4;
 }
+
+/* ---------- Weitere Termine/Standorte im Kursformular (NEU, 18.09. —
+   "Kurse auch mehrere Standorte und Startzeitpunkte haben können") ---------- */
+.course-session-row {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.course-session-remove-btn {
+  margin-top: 8px;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 11px;
+  color: #e08a8a;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.course-session-remove-btn:hover {
+  color: #f0aeae;
+}
+
+/* ---------- Aktiv/Vergangen-Aufteilung im Kurskatalog (NEU, 18.09. —
+   "eine Aufteilung von aktiven und vergangenen Kursen") ---------- */
+.course-manage-card.past {
+  opacity: 0.72;
+}
+.course-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-bottom: 6px;
+}
+.course-status-badge.active {
+  background: rgba(120, 224, 173, 0.16);
+  color: #78e0ad;
+}
+.course-status-badge.past {
+  background: rgba(148, 163, 184, 0.16);
+  color: #94a3b8;
+}
+.course-catalog-section-heading {
+  font-size: 13px;
+  font-weight: 700;
+  margin: 18px 0 8px;
+  color: #cbd5e1;
+}
+.course-catalog-section-heading:first-child {
+  margin-top: 0;
+}
+
+/* ---------- Zeitraum-/Bereichs-Filterleiste (NEU, 18.09. — "nach Zeitraum
+   ordnen ... und will dort eine Filteroption haben"), wiederverwendet in
+   Leads/Kurse/Reports ---------- */
+.dashboard-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.dashboard-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 150px;
+}
+.dashboard-filter-field label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8494ac;
+}
+.dashboard-filter-custom-dates {
+  display: flex;
+  gap: 8px;
+}
+.dashboard-filter-reset {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 11.5px;
+  color: #8494ac;
+  text-decoration: underline;
+  cursor: pointer;
+  margin-left: auto;
+}
+.dashboard-filter-reset:hover {
+  color: #dce6f5;
+}
+.dashboard-filter-result-count {
+  font-size: 11.5px;
+  color: #8494ac;
+  align-self: center;
+}

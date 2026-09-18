@@ -603,6 +603,28 @@ const EXAMPLE_CSV_ROWS: string[][] = [
     "Grundlagen des klassischen und agilen Projektmanagements: Planung, Zeitmanagement, Teamkoordination.",
   ],
 ];
+/**
+ * Beispiel-Vorschau für den "Kurse per URL importieren"-Schritt des
+ * Rundgangs (Round 21, 18.09. — Rückmeldung "auch bei der URL [ein
+ * Beispiel]"). BEWUSST kein echter Seitenabruf: eine erfundene/fremde Domain
+ * waere bei einer Aufzeichnung ein Risiko (nicht erreichbar, langsam, oder
+ * ein echter Fehler mitten im Rundgang) — stattdessen ein rein STATISCHES,
+ * klar als Beispiel gekennzeichnetes Ergebnisbild derselben Beispielfirma
+ * wie EXAMPLE_COURSE_FORM/EXAMPLE_CSV_* oben (Muster Akademie GmbH, sogar
+ * derselbe Beispielkurs "SQL für Einsteiger" wie im CSV-Beispiel). Wird NICHT
+ * ins echte Formular übernommen — reine Anschauung, siehe
+ * showUrlImportExamplePreview weiter unten.
+ */
+const EXAMPLE_URL_IMPORT_URL = "https://muster-akademie.de/kurs/sql-fuer-einsteiger/";
+const EXAMPLE_URL_IMPORT_PREVIEW: { label: string; value: string }[] = [
+  { label: "Kursname", value: "SQL für Einsteiger" },
+  { label: "Anbieter", value: "Muster Akademie GmbH" },
+  { label: "Dauer", value: "6 Wochen" },
+  { label: "Preis", value: "490 € (USt.-befreit)" },
+  { label: "Unterrichtseinheiten", value: "60 UE" },
+  { label: "Förderung", value: "Bildungsgutschein" },
+  { label: "Abschlussart", value: "Lehrgangszertifikat" },
+];
 const MIN_PROFILE_TEXT_LENGTH = 10;
 // ---------- Kurs-CSV-Import ----------
 //
@@ -1485,10 +1507,16 @@ export function DashboardPage({
   const manualExampleDetectRef = useRef(false);
   const csvExampleAppliedRef = useRef(false);
   const csvExampleDetectRef = useRef(false);
+  // Round 21 (18.09., "auch bei der URL [ein Beispiel]") — gleiches Muster
+  // wie csvExampleAppliedRef: setzt NUR das URL-Feld, siehe
+  // EXAMPLE_URL_IMPORT_URL/-_PREVIEW oben und showUrlImportExamplePreview
+  // weiter unten (KEIN echter Seitenabruf).
+  const urlExampleAppliedRef = useRef(false);
   useEffect(() => {
     if (!tourOpen) {
       manualExampleAppliedRef.current = false;
       csvExampleAppliedRef.current = false;
+      urlExampleAppliedRef.current = false;
       return;
     }
     if (
@@ -1503,6 +1531,17 @@ export function DashboardPage({
     if (tourStepSelector === '[data-tour="kurse-csv-import"]' && !csvExampleAppliedRef.current && importDataRows.length === 0) {
       csvExampleAppliedRef.current = true;
       loadExampleCsvImport();
+    }
+    if (
+      tourStepSelector === '[data-tour="kurse-url-import"]' &&
+      !urlExampleAppliedRef.current &&
+      !urlImportSingleUrl.trim() &&
+      !urlImportDomain.trim() &&
+      !urlImportCurrentUrl &&
+      urlImportQueueTotal === 0
+    ) {
+      urlExampleAppliedRef.current = true;
+      setUrlImportSingleUrl(EXAMPLE_URL_IMPORT_URL);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tourOpen, tourStepSelector]);
@@ -6250,6 +6289,36 @@ export function DashboardPage({
                           </button>
                         </div>
                       </div>
+                      {/* Round 21 (18.09., "auch bei der URL [ein Beispiel]") —
+                         rein statische Beispiel-Vorschau, solange das Feld
+                         noch den vom Rundgang eingesetzten Beispielwert
+                         zeigt UND kein echter Import läuft (siehe
+                         EXAMPLE_URL_IMPORT_URL/-_PREVIEW oben). Verschwindet
+                         von selbst, sobald eine eigene URL eingetragen oder
+                         ein echter Import gestartet wird — es wird nie eine
+                         echte Seite abgerufen. */}
+                      {urlImportSingleUrl === EXAMPLE_URL_IMPORT_URL &&
+                        !urlImportCurrentUrl &&
+                        urlImportQueueTotal === 0 && (
+                          <div className="url-import-example-preview">
+                            <span className="url-import-example-badge">🧪 Beispiel-Vorschau</span>
+                            <p className="hint" style={{ marginTop: 8 }}>
+                              Noch kein echter Seitenabruf — nur zur Anschauung vorausgefüllt. Trag oben eine echte
+                              Kurs-Seite ein und klick auf „Diese Seite importieren", um ein echtes Ergebnis zu
+                              sehen. So sieht das Ergebnis aus, sobald eine Seite erfolgreich ausgelesen wurde:
+                            </p>
+                            <dl className="url-import-example-fields">
+                              {EXAMPLE_URL_IMPORT_PREVIEW.map((f) => (
+                                <div key={f.label} className="url-import-example-field">
+                                  <dt>{f.label}</dt>
+                                  <dd>
+                                    {f.value} <span className="url-import-example-verified">✓ von Seite</span>
+                                  </dd>
+                                </div>
+                              ))}
+                            </dl>
+                          </div>
+                        )}
                     </>
                   )}
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from "react";
 import {
   ESCO_LANG,
   EXPERIENCE_LEVEL_LABELS,
@@ -31,6 +31,11 @@ import {
   fetchOrbitReport,
   fetchSkillLevelDetect,
   fetchTenantInfo,
+  getCourseSessions,
+  isCourseActive,
+  // NICHT importiert: nextUpcomingSession/isSessionUpcoming — werden nur in
+  // orbit.ts selbst bzw. in JourneyPage.tsx gebraucht, nicht hier im
+  // Dashboard (noUnusedLocals/-Parameters, siehe tsconfig.json).
   setCourseFeatured,
   setLeadAssignedTo,
   setLeadBooked,
@@ -41,6 +46,7 @@ import {
   skillLevelDetectBaseUrl,
   upsertCourse,
   type CourseCategory,
+  type CourseSession,
   type CourseSkillEntry,
   type CourseUrlExtractResponse,
   type DepthAnalysisResponse,
@@ -279,6 +285,26 @@ interface CourseFormState {
   /** Tatsächlich verbleibende Plätze, leer = nicht gesetzt/keine Aussage.
    *  Grundlage für das "Nur noch X Plätze"-Banner. */
   seatsRemaining: string;
+  /**
+   * Finale Teilnehmerzahl für den PRIMÄREN Termin (startsAt/location/
+   * locationMode oben) — NEU, 18.09., Rückmeldung "wenn der Kurs gestartet
+   * ist, soll man auch die Möglichkeit haben die finalen Kursteilnehmen ...
+   * einzutragen". Rein manuell, leer = noch nicht eingetragen. Im Formular
+   * nur sichtbar/editierbar, sobald startsAt in der Vergangenheit liegt
+   * (siehe isPastDate() weiter unten) — vor Kursstart ergibt eine "finale"
+   * Zahl keinen Sinn.
+   */
+  finalParticipants: string;
+  /**
+   * Weitere Termine/Standorte NEBEN dem primären oben (NEU, 18.09. —
+   * "Kurse auch mehrere Standorte und Startzeitpunkte haben können", z.B.
+   * derselbe Kurs im Januar in Köln und im März in Hamburg). Additiv: ein
+   * Kurs ganz ohne extraSessions verhält sich exakt wie bisher (ein
+   * einzelner Termin aus startsAt/location/locationMode). Beim Speichern
+   * werden Primär-Termin + extraSessions gemeinsam als sessions[] ans
+   * Backend geschickt (siehe buildCourseSessionsPayload/handleAddCourse).
+   */
+  extraSessions: CourseSessionFormRow[];
   /** Frei formulierbarer Zusatz-Hinweis fürs Kurs-Banner, z.B. "Neu im Programm". */
   customBanner: string;
   /**
@@ -325,6 +351,95 @@ interface CourseFormState {
   /** Grobe Einkategorisierung (Version 37, siehe course_category in
    *  orbit.ts) — optional, "" = noch nicht kategorisiert. */
   courseCategory: CourseCategory | "";
+}
+/** Ein zusätzlicher Termin/Standort im Kursformular — siehe extraSessions an
+ *  CourseFormState oben. Bewusst dieselben Feldnamen/Typen wie die
+ *  Primärfelder (location/locationMode/seatsRemaining/finalParticipants),
+ *  damit dieselben Umrechnungs-/Validierungshelfer wiederverwendbar sind. */
+interface CourseSessionFormRow {
+  startsAt: string;
+  location: string;
+  locationMode: "remote" | "vor_ort" | "hybrid";
+  seatsRemaining: string;
+  finalParticipants: string;
+}
+const EMPTY_SESSION_ROW: CourseSessionFormRow = {
+  startsAt: "",
+  location: "",
+  locationMode: "remote",
+  seatsRemaining: "",
+  finalParticipants: "",
+};
+/** "YYYY-MM-DD" (oder leer/undefiniert) liegt strikt vor dem heutigen Tag. */
+function isPastDate(iso: string | null | undefined): boolean {
+  if (!iso) return false;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  return d.getTime() < startOfToday.getTime();
+}
+/** Ein Formular-Zahlenfeld ("" | Zifferntext) in einen Zahl-oder-null-Wert
+ *  fürs Backend um — dasselbe Muster wie die bestehende
+ *  seatsRemaining-Umrechnung in handleAddCourse. */
+function formFieldToIntOrNull(value: string): number | null {
+  return value.trim() === "" ? null : Math.max(0, Math.round(Number(value)));
+}
+
+/**
+ * Zeitraum-Filter (NEU, 18.09. — Rückmeldung "nach Zeitraum ordnen ... und
+ * will dort eine Filteroption haben"), wiederverwendet in Leads/Kurse/
+ * Reports. "custom" nutzt periodFrom/periodTo (YYYY-MM-DD, je optional).
+ */
+type PeriodFilter = "alle" | "7d" | "30d" | "90d" | "jahr" | "custom";
+const PERIOD_FILTER_OPTIONS: { key: PeriodFilter; label: string }[] = [
+  { key: "alle", label: "Gesamter Zeitraum" },
+  { key: "7d", label: "Letzte 7 Tage" },
+  { key: "30d", label: "Letzte 30 Tage" },
+  { key: "90d", label: "Letzte 90 Tage" },
+  { key: "jahr", label: "Dieses Jahr" },
+  { key: "custom", label: "Benutzerdefiniert" },
+];
+/** Prüft, ob ein ISO-Datum/-Zeitstempel in den gewählten Zeitraum fällt. */
+function isWithinPeriod(iso: string | null | undefined, period: PeriodFilter, periodFrom: string, periodTo: string): boolean {
+  if (period === "alle") return true;
+  if (!iso) return false;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  const now = new Date();
+  if (period === "7d") return d.getTime() >= now.getTime() - 7 * 86400000;
+  if (period === "30d") return d.getTime() >= now.getTime() - 30 * 86400000;
+  if (period === "90d") return d.getTime() >= now.getTime() - 90 * 86400000;
+  if (period === "jahr") return d.getFullYear() === now.getFullYear();
+  // custom
+  if (periodFrom && d < new Date(periodFrom)) return false;
+  if (periodTo) {
+    const end = new Date(periodTo);
+    end.setHours(23, 59, 59, 999);
+    if (d > end) return false;
+  }
+  return true;
+}
+/** Baut aus dem Primär-Termin (startsAt/location/locationMode/seatsRemaining/
+ *  finalParticipants) + extraSessions das vollständige sessions[]-Array fürs
+ *  Backend (siehe CourseSession in orbit.ts). Liefert null, wenn es außer dem
+ *  ohnehin schon über starts_at/location/location_mode abgedeckten
+ *  Primär-Termin nichts Neues zu sagen gibt (keine weiteren Termine, keine
+ *  finale Teilnehmerzahl) — dann bleibt die Sende-Nutzlast unverändert zum
+ *  bisherigen Verhalten, statt unnötig ein einzeiliges sessions[] mitzuschicken. */
+function buildCourseSessionsPayload(form: Pick<CourseFormState, "startsAt" | "location" | "locationMode" | "seatsRemaining" | "finalParticipants" | "extraSessions">): CourseSession[] | null {
+  const rowToSession = (row: { startsAt: string; location: string; locationMode: "remote" | "vor_ort" | "hybrid"; seatsRemaining: string; finalParticipants: string }): CourseSession => ({
+    starts_at: row.startsAt || null,
+    location: row.locationMode === "remote" ? null : row.location.trim() || null,
+    is_remote: row.locationMode !== "vor_ort",
+    location_mode: row.locationMode,
+    seats_remaining: formFieldToIntOrNull(row.seatsRemaining),
+    final_participants: formFieldToIntOrNull(row.finalParticipants),
+  });
+  const hasExtras = form.extraSessions.length > 0;
+  const hasFinalParticipants = form.finalParticipants.trim() !== "";
+  if (!hasExtras && !hasFinalParticipants) return null;
+  return [rowToSession(form), ...form.extraSessions.map(rowToSession)];
 }
 /** Fördermöglichkeiten (siehe FundingType/funding_types in orbit.ts) — ein
  *  Kurs kann mehrere gleichzeitig erfüllen, deshalb Checkbox-Mehrfachauswahl
@@ -408,6 +523,8 @@ const DEFAULT_COURSE_FORM: CourseFormState = {
   employmentMode: "beides",
   startsAt: "",
   seatsRemaining: "",
+  finalParticipants: "",
+  extraSessions: [],
   customBanner: "",
   priceEur: "",
   priceVatExempt: false,
@@ -449,6 +566,8 @@ const EXAMPLE_COURSE_FORM: CourseFormState = {
   employmentMode: "beides",
   startsAt: "",
   seatsRemaining: "",
+  finalParticipants: "",
+  extraSessions: [],
   customBanner: "",
   priceEur: "",
   priceVatExempt: false,
@@ -852,6 +971,114 @@ interface DashboardPageProps {
   showConnectionPanel?: boolean;
 }
 /**
+ * Wiederverwendbare Zeitraum-/Bereichs-/Kategorie-Filterleiste (NEU, 18.09. —
+ * Rückmeldung "Bei Leads Kurse und Reportings will ich, dass man das ganze
+ * nach Zeitraum ordnen kann bzw. nach Bereichen wie Zertifikate oder
+ * Branche/Bereich und will dort eine Filteroption haben"). Rein
+ * präsentational (kontrollierte Felder, kein eigener State) — genau dieselbe
+ * Komponente wird in Leads/Kurse/Reports eingesetzt, jeweils mit eigenem
+ * Filter-State/eigener Filterlogik im jeweiligen Tab.
+ */
+function FilterBar({
+  period,
+  onPeriodChange,
+  periodFrom,
+  periodTo,
+  onPeriodFromChange,
+  onPeriodToChange,
+  category,
+  onCategoryChange,
+  bereich,
+  onBereichChange,
+  bereichOptions,
+  sortOrder,
+  onSortOrderChange,
+  resultCount,
+  resultLabel,
+  onReset,
+}: {
+  period: PeriodFilter;
+  onPeriodChange: (p: PeriodFilter) => void;
+  periodFrom: string;
+  periodTo: string;
+  onPeriodFromChange: (v: string) => void;
+  onPeriodToChange: (v: string) => void;
+  category: string;
+  onCategoryChange: (v: string) => void;
+  bereich: string;
+  onBereichChange: (v: string) => void;
+  bereichOptions: { key: string; label: string }[];
+  sortOrder?: "neueste" | "aelteste";
+  onSortOrderChange?: (v: "neueste" | "aelteste") => void;
+  resultCount: number;
+  resultLabel: string;
+  onReset: () => void;
+}) {
+  const isFiltered = period !== "alle" || category !== "" || bereich !== "";
+  return (
+    <div className="dashboard-filter-bar">
+      <div className="dashboard-filter-field">
+        <label>Zeitraum</label>
+        <select value={period} onChange={(e) => onPeriodChange(e.target.value as PeriodFilter)}>
+          {PERIOD_FILTER_OPTIONS.map((o) => (
+            <option key={o.key} value={o.key}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      {period === "custom" && (
+        <div className="dashboard-filter-field">
+          <label>Von / Bis</label>
+          <div className="dashboard-filter-custom-dates">
+            <input type="date" value={periodFrom} onChange={(e) => onPeriodFromChange(e.target.value)} />
+            <input type="date" value={periodTo} onChange={(e) => onPeriodToChange(e.target.value)} />
+          </div>
+        </div>
+      )}
+      <div className="dashboard-filter-field">
+        <label>Kategorie</label>
+        <select value={category} onChange={(e) => onCategoryChange(e.target.value)}>
+          <option value="">Alle Kategorien</option>
+          {COURSE_CATEGORY_OPTIONS.map((o) => (
+            <option key={o.key} value={o.key}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="dashboard-filter-field">
+        <label>Branche/Bereich</label>
+        <select value={bereich} onChange={(e) => onBereichChange(e.target.value)}>
+          <option value="">Alle Bereiche</option>
+          {bereichOptions.map((o) => (
+            <option key={o.key} value={o.key}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      {sortOrder && onSortOrderChange && (
+        <div className="dashboard-filter-field">
+          <label>Sortierung</label>
+          <select value={sortOrder} onChange={(e) => onSortOrderChange(e.target.value as "neueste" | "aelteste")}>
+            <option value="neueste">Neueste zuerst</option>
+            <option value="aelteste">Älteste zuerst</option>
+          </select>
+        </div>
+      )}
+      <div className="dashboard-filter-result-count">
+        {resultCount} {resultLabel}
+      </div>
+      {isFiltered && (
+        <button type="button" className="dashboard-filter-reset" onClick={onReset}>
+          Filter zurücksetzen
+        </button>
+      )}
+    </div>
+  );
+}
+/**
  * Interface A: die Bildungsträger-/Operator-Seite (React-Fassung von
  * orbit-dashboard-preview.html). Zeigt echte Daten der eigenen API — keine
  * erfundenen Zahlen. Läuft nur, solange der deployte Server erreichbar ist
@@ -963,6 +1190,28 @@ export function DashboardPage({
     });
   }
   const [tab, setTab] = useState<Tab>("leads");
+  // ---------- Zeitraum-/Bereichs-/Kategorie-Filter (NEU, 18.09.) ----------
+  // Jeweils eigener State pro Tab (Leads/Kurse/Reports), gleiche Struktur,
+  // gerendert über die gemeinsame <FilterBar>-Komponente oben. Bewusst
+  // getrennt statt eines gemeinsamen State-Objekts — die drei Tabs werden
+  // typischerweise unabhängig voneinander gefiltert (z.B. Reports auf
+  // "dieses Jahr", Leads weiterhin ungefiltert).
+  const [leadsPeriod, setLeadsPeriod] = useState<PeriodFilter>("alle");
+  const [leadsPeriodFrom, setLeadsPeriodFrom] = useState("");
+  const [leadsPeriodTo, setLeadsPeriodTo] = useState("");
+  const [leadsCategoryFilter, setLeadsCategoryFilter] = useState("");
+  const [leadsBereichFilter, setLeadsBereichFilter] = useState("");
+  const [leadsSortOrder, setLeadsSortOrder] = useState<"neueste" | "aelteste">("neueste");
+  const [coursePeriod, setCoursePeriod] = useState<PeriodFilter>("alle");
+  const [coursePeriodFrom, setCoursePeriodFrom] = useState("");
+  const [coursePeriodTo, setCoursePeriodTo] = useState("");
+  const [courseCategoryFilter, setCourseCategoryFilter] = useState("");
+  const [courseBereichFilter, setCourseBereichFilter] = useState("");
+  const [reportsPeriod, setReportsPeriod] = useState<PeriodFilter>("alle");
+  const [reportsPeriodFrom, setReportsPeriodFrom] = useState("");
+  const [reportsPeriodTo, setReportsPeriodTo] = useState("");
+  const [reportsCategoryFilter, setReportsCategoryFilter] = useState("");
+  const [reportsBereichFilter, setReportsBereichFilter] = useState("");
   const [tourOpen, setTourOpen] = useState(false);
   // Selector des gerade aktiven Tour-Schritts (siehe onStepChange an
   // <DashboardTour>) — steuert die Live-Beispiele beim Kurse-Schritt weiter
@@ -1742,6 +1991,9 @@ export function DashboardPage({
       });
       return;
     }
+    // Einmal berechnet, unten sowohl fuers Senden als auch fuer den
+    // Mismatch-Check nach dem Speichern wiederverwendet (sentSessions).
+    const sentSessions = buildCourseSessionsPayload(courseForm);
     setSavingCourse(true);
     setCourseFormStatus({ msg: editingCourseId ? "Aktualisiere Kurs…" : "Speichere Kurs…", kind: "" });
     try {
@@ -1828,6 +2080,11 @@ export function DashboardPage({
         booking_url: trimmedBookingUrl || null,
         // Einkategorisierung — optional, siehe course_category in orbit.ts.
         course_category: courseForm.courseCategory || null,
+        // Mehrere Termine/Standorte (NEU, 18.09.) — siehe
+        // buildCourseSessionsPayload oben: null, wenn es außer dem ohnehin
+        // schon über starts_at/location/location_mode abgedeckten
+        // Primär-Termin nichts Zusätzliches gibt.
+        sessions: sentSessions,
       });
       setCourses((prev) => {
         const exists = prev.some((c) => c.course_id === saved.course_id);
@@ -1865,19 +2122,22 @@ export function DashboardPage({
       // bestätigen).
       const sentBookingUrl = trimmedBookingUrl || null;
       const bookingUrlMismatch = sentBookingUrl !== null && (saved.booking_url ?? null) !== sentBookingUrl;
-      if (bereichMismatch && bookingUrlMismatch) {
+      // Weitere Termine/finale Teilnehmerzahl (NEU, 18.09.) — dasselbe Muster
+      // wie bereichMismatch/bookingUrlMismatch oben: nur relevant, wenn
+      // tatsächlich mehr als der Primär-Termin gesendet wurde (sentSessions
+      // ist sonst null, siehe buildCourseSessionsPayload).
+      const sessionsMismatch = sentSessions !== null && (saved.sessions?.length ?? 0) < sentSessions.length;
+      const mismatchLabels: string[] = [];
+      if (bereichMismatch) mismatchLabels.push("der Bereich (bereich_key/bereich_keys)");
+      if (bookingUrlMismatch) mismatchLabels.push("der Buchungslink (booking_url)");
+      if (sessionsMismatch) mismatchLabels.push("die weiteren Termine (sessions)");
+      if (mismatchLabels.length > 0) {
+        const joined =
+          mismatchLabels.length === 1
+            ? mismatchLabels[0]
+            : `${mismatchLabels.slice(0, -1).join(", ")} und ${mismatchLabels[mismatchLabels.length - 1]}`;
         setCourseFormStatus({
-          msg: "Gespeichert, aber Bereich UND Buchungslink kamen vom Server nicht zurück — dein Backend unterstützt bereich_key/bereich_keys und booking_url vermutlich noch nicht.",
-          kind: "err",
-        });
-      } else if (bereichMismatch) {
-        setCourseFormStatus({
-          msg: "Gespeichert, aber der Bereich kam vom Server nicht zurück — dein Backend unterstützt das Feld bereich_key/bereich_keys vermutlich noch nicht.",
-          kind: "err",
-        });
-      } else if (bookingUrlMismatch) {
-        setCourseFormStatus({
-          msg: "Gespeichert, aber der Buchungslink kam vom Server nicht zurück — dein Backend unterstützt das Feld booking_url vermutlich noch nicht. Deshalb bleibt die Warnung im Kurskatalog stehen, obwohl der Link im Formular korrekt hinterlegt ist.",
+          msg: `Gespeichert, aber ${joined} kam${mismatchLabels.length > 1 ? "en" : ""} vom Server nicht zurück — dein Backend unterstützt das/die entsprechende(n) Feld(er) vermutlich noch nicht.`,
           kind: "err",
         });
       } else {
@@ -3214,6 +3474,21 @@ export function DashboardPage({
       employmentMode: course.employment_mode ?? "beides",
       startsAt: course.starts_at ?? "",
       seatsRemaining: course.seats_remaining != null ? String(course.seats_remaining) : "",
+      // NEU (18.09.) — sessions[0] ist beim Speichern immer der Primär-Termin
+      // (siehe buildCourseSessionsPayload), sessions[1..] werden hier als
+      // extraSessions zurück ins Formular geladen, damit sie beim Bearbeiten
+      // nicht verloren gehen. Ein Kurs ohne sessions (älterer Kurs oder noch
+      // nie mehrere Termine gepflegt) liefert hier bewusst [] statt eines
+      // synthetischen Eintrags — das übernehmen bereits startsAt/location/
+      // locationMode oben direkt aus den Einzelfeldern.
+      finalParticipants: course.sessions?.[0]?.final_participants != null ? String(course.sessions[0].final_participants) : "",
+      extraSessions: (course.sessions ?? []).slice(1).map((s) => ({
+        startsAt: s.starts_at ?? "",
+        location: s.location ?? "",
+        locationMode: s.location_mode ?? (s.is_remote ? "remote" : "vor_ort"),
+        seatsRemaining: s.seats_remaining != null ? String(s.seats_remaining) : "",
+        finalParticipants: s.final_participants != null ? String(s.final_participants) : "",
+      })),
       customBanner: course.custom_banner ?? "",
       priceEur: course.price_eur != null ? String(course.price_eur) : "",
       priceVatExempt: course.price_vat_exempt ?? false,
@@ -3374,8 +3649,141 @@ export function DashboardPage({
   const displayedAverageMatch = tourDemoMode ? 82 : report?.average_match_percentage ?? 0;
   const displayedQualified = tourDemoMode ? 76 : report?.qualified_leads ?? 0;
   const displayedConversion = tourDemoMode ? 24.2 : report?.conversion_rate ?? 0;
-  const maxCourseLeads = displayedTopCourses.length
-    ? Math.max(...displayedTopCourses.map((c) => c.lead_count))
+
+  // ---------- Zeitraum-/Bereichs-/Kategorie-Filter: Anwendung (NEU, 18.09.) ----------
+  // Ein Lead selbst kennt weder Kategorie noch Bereich direkt — beides wird
+  // über den empfohlenen bzw. verlinkten Kurs aus dem eigenen Katalog
+  // abgeleitet (courseIndexById), da genau dort course_category/bereich_keys
+  // bereits gepflegt sind. Ein Lead ohne zuordenbaren Kurs (z.B. noch nicht
+  // qualifiziert) matcht dann konsequent keinen Kategorie-/Bereichs-Filter,
+  // statt eine Zuordnung zu erfinden.
+  const courseIndexById = useMemo(() => new Map(displayedCourses.map((c) => [c.course_id, c])), [displayedCourses]);
+  function leadRelatedCourseIds(l: LeadResponse): string[] {
+    const ids = [l.recommended_course?.course_id, ...(l.linked_course_ids ?? [])].filter(
+      (id): id is string => Boolean(id)
+    );
+    return Array.from(new Set(ids));
+  }
+  function leadMatchesCategory(l: LeadResponse, category: string): boolean {
+    if (!category) return true;
+    return leadRelatedCourseIds(l).some((id) => courseIndexById.get(id)?.course_category === category);
+  }
+  function leadMatchesBereich(l: LeadResponse, bereichKey: string): boolean {
+    if (!bereichKey) return true;
+    return leadRelatedCourseIds(l).some((id) => {
+      const c = courseIndexById.get(id);
+      const keys = c?.bereich_keys?.length ? c.bereich_keys : c?.bereich_key ? [c.bereich_key] : [];
+      return keys.includes(bereichKey);
+    });
+  }
+  function courseMatchesBereich(c: OrbitCourse, bereichKey: string): boolean {
+    if (!bereichKey) return true;
+    const keys = c.bereich_keys?.length ? c.bereich_keys : c.bereich_key ? [c.bereich_key] : [];
+    return keys.includes(bereichKey);
+  }
+
+  // --- Leads-Tab: Filter + Sortierung (wirkt nur auf die Listenkarten unten,
+  // NICHT auf die vier Kennzahlen-Kacheln oben — die stammen aus dem
+  // Backend-Report und lassen sich nicht rückwirkend nach Zeitraum/Kategorie
+  // aufschlüsseln, ohne Zahlen zu erfinden). ---
+  const leadsFilterActive = leadsPeriod !== "alle" || leadsCategoryFilter !== "" || leadsBereichFilter !== "";
+  const filteredSortedLeads = useMemo(() => {
+    const filtered = displayedLeads.filter(
+      (l) =>
+        isWithinPeriod(l.created_at, leadsPeriod, leadsPeriodFrom, leadsPeriodTo) &&
+        leadMatchesCategory(l, leadsCategoryFilter) &&
+        leadMatchesBereich(l, leadsBereichFilter)
+    );
+    const sorted = filtered.slice().sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    return leadsSortOrder === "neueste" ? sorted.reverse() : sorted;
+  }, [displayedLeads, leadsPeriod, leadsPeriodFrom, leadsPeriodTo, leadsCategoryFilter, leadsBereichFilter, leadsSortOrder, courseIndexById]);
+
+  // --- Kurse-Tab: Filter (Zeitraum = Startdatum eines Termins) + Aktiv/
+  // Vergangen-Aufteilung ("eine Aufteilung von aktiven und vergangenen
+  // Kursen", 18.09.). Ein Kurs ganz ohne Terminangabe matcht "Gesamter
+  // Zeitraum", aber keinen konkreten Zeitraum-Filter (kein Datum zum
+  // Abgleichen vorhanden) — und gilt immer als aktiv (siehe isCourseActive
+  // in orbit.ts). ---
+  const courseTabFiltered = useMemo(() => {
+    return displayedCourses.filter((c) => {
+      if (courseCategoryFilter && c.course_category !== courseCategoryFilter) return false;
+      if (!courseMatchesBereich(c, courseBereichFilter)) return false;
+      if (coursePeriod !== "alle") {
+        const dates = getCourseSessions(c)
+          .map((s) => s.starts_at)
+          .filter((d): d is string => Boolean(d));
+        if (dates.length === 0) return false;
+        if (!dates.some((d) => isWithinPeriod(d, coursePeriod, coursePeriodFrom, coursePeriodTo))) return false;
+      }
+      return true;
+    });
+  }, [displayedCourses, courseCategoryFilter, courseBereichFilter, coursePeriod, coursePeriodFrom, coursePeriodTo]);
+  const activeCourses = useMemo(() => courseTabFiltered.filter((c) => isCourseActive(c)), [courseTabFiltered]);
+  const pastCourses = useMemo(() => courseTabFiltered.filter((c) => !isCourseActive(c)), [courseTabFiltered]);
+  const courseCatalogSorted = useMemo(() => [...activeCourses, ...pastCourses], [activeCourses, pastCourses]);
+
+  // --- Reports-Tab: sobald irgendein Filter aktiv ist, werden Kacheln UND
+  // Skill-Gaps/Top-Kurse aus den lokal vorliegenden, gefilterten Leads NEU
+  // berechnet, statt die (immer ungefilterten) Backend-Report-Werte zu
+  // zeigen — echte Zahlen aus echten Leads, kein erfundener Wert. Ohne
+  // aktiven Filter bleibt alles exakt beim bisherigen Verhalten (Backend-
+  // Report), um keine Abweichung von bereits verifizierten Zahlen zu
+  // riskieren. "Anzahl der Tests" (Leads-Tab) bleibt bewusst außen vor: sie
+  // zählt auch Abbrecher ohne Lead, für die es hier keine Zeitraum-/
+  // Kategorie-Angabe gibt. ---
+  const reportsFilterActive = reportsPeriod !== "alle" || reportsCategoryFilter !== "" || reportsBereichFilter !== "";
+  const reportsFilteredLeads = useMemo(
+    () =>
+      displayedLeads.filter(
+        (l) =>
+          isWithinPeriod(l.created_at, reportsPeriod, reportsPeriodFrom, reportsPeriodTo) &&
+          leadMatchesCategory(l, reportsCategoryFilter) &&
+          leadMatchesBereich(l, reportsBereichFilter)
+      ),
+    [displayedLeads, reportsPeriod, reportsPeriodFrom, reportsPeriodTo, reportsCategoryFilter, reportsBereichFilter, courseIndexById]
+  );
+  const reportsEffectiveLeadCount = reportsFilterActive ? reportsFilteredLeads.length : displayedLeadCount;
+  const reportsEffectiveQualified = reportsFilterActive
+    ? reportsFilteredLeads.filter((l) => l.qualified).length
+    : displayedQualified;
+  const reportsEffectiveAverageMatch = reportsFilterActive
+    ? reportsFilteredLeads.length
+      ? Math.round(
+          (reportsFilteredLeads.reduce((sum, l) => sum + (l.current_match_percentage ?? 0), 0) / reportsFilteredLeads.length) * 10
+        ) / 10
+      : 0
+    : displayedAverageMatch;
+  const reportsEffectiveConversion = reportsFilterActive
+    ? reportsFilteredLeads.length
+      ? Math.round((reportsEffectiveQualified / reportsFilteredLeads.length) * 1000) / 10
+      : 0
+    : displayedConversion;
+  const reportsEffectiveSkillGaps = useMemo(() => {
+    if (!reportsFilterActive) return displayedSkillGaps;
+    const counts = new Map<string, number>();
+    reportsFilteredLeads.forEach((l) => (l.gap_skills ?? []).forEach((s) => counts.set(s, (counts.get(s) ?? 0) + 1)));
+    const total = reportsFilteredLeads.length || 1;
+    return Array.from(counts.entries())
+      .map(([skill_name, count]) => ({ skill_name, percentage: Math.round((count / total) * 100) }))
+      .sort((a, b) => b.percentage - a.percentage)
+      .slice(0, 10);
+  }, [reportsFilterActive, reportsFilteredLeads, displayedSkillGaps]);
+  const reportsEffectiveTopCourses = useMemo(() => {
+    if (!reportsFilterActive) return displayedTopCourses;
+    const counts = new Map<string, { course_id: string; course_name: string; lead_count: number }>();
+    reportsFilteredLeads.forEach((l) => {
+      const rc = l.recommended_course;
+      if (!rc) return;
+      const entry = counts.get(rc.course_id) ?? { course_id: rc.course_id, course_name: rc.course_name, lead_count: 0 };
+      entry.lead_count += 1;
+      counts.set(rc.course_id, entry);
+    });
+    return Array.from(counts.values())
+      .sort((a, b) => b.lead_count - a.lead_count)
+      .slice(0, 10);
+  }, [reportsFilterActive, reportsFilteredLeads, displayedTopCourses]);
+  const reportsEffectiveMaxCourseLeads = reportsEffectiveTopCourses.length
+    ? Math.max(...reportsEffectiveTopCourses.map((c) => c.lead_count))
     : 0;
   function refreshIcon(extraTitle?: string) {
     return (
@@ -3856,6 +4264,32 @@ export function DashboardPage({
                   </div>
                 </div>
                 <div className="app-card-body">
+                  {displayedLeads.length > 0 && (
+                    <FilterBar
+                      period={leadsPeriod}
+                      onPeriodChange={setLeadsPeriod}
+                      periodFrom={leadsPeriodFrom}
+                      periodTo={leadsPeriodTo}
+                      onPeriodFromChange={setLeadsPeriodFrom}
+                      onPeriodToChange={setLeadsPeriodTo}
+                      category={leadsCategoryFilter}
+                      onCategoryChange={setLeadsCategoryFilter}
+                      bereich={leadsBereichFilter}
+                      onBereichChange={setLeadsBereichFilter}
+                      bereichOptions={BEREICH_OPTIONS}
+                      sortOrder={leadsSortOrder}
+                      onSortOrderChange={setLeadsSortOrder}
+                      resultCount={filteredSortedLeads.length}
+                      resultLabel={filteredSortedLeads.length === 1 ? "Lead" : "Leads"}
+                      onReset={() => {
+                        setLeadsPeriod("alle");
+                        setLeadsPeriodFrom("");
+                        setLeadsPeriodTo("");
+                        setLeadsCategoryFilter("");
+                        setLeadsBereichFilter("");
+                      }}
+                    />
+                  )}
                   {displayedLeads.length === 0 ? (
                     <div className="empty-state">
                       <span className="icon" aria-hidden="true">◎</span>
@@ -3863,10 +4297,13 @@ export function DashboardPage({
                         ? "Noch keine Daten — links auf „Verbinden & laden“ klicken."
                         : "Noch keine Leads — sobald jemand die Endnutzer-Journey abschließt, erscheint er hier."}
                     </div>
+                  ) : filteredSortedLeads.length === 0 ? (
+                    <div className="empty-state">
+                      <span className="icon" aria-hidden="true">◎</span>
+                      Kein Lead passt zu diesem Filter.
+                    </div>
                   ) : (
-                    displayedLeads
-                      .slice()
-                      .reverse()
+                    filteredSortedLeads
                       .map((l, i) => (
                         <div
                           className="lead-card clickable"
@@ -4341,6 +4778,25 @@ export function DashboardPage({
                           <div className="hint">Zeigt "Nur noch X Plätze" bzw. "Ausgebucht" bei 0.</div>
                         </div>
                       </div>
+                      {/* Finale Teilnehmerzahl (NEU, 18.09. — "wenn der Kurs
+                         gestartet ist, soll man auch die Möglichkeit haben
+                         die finalen Kursteilnehmen ... einzutragen") — nur
+                         sichtbar, sobald das Startdatum in der Vergangenheit
+                         liegt, damit eine "finale" Zahl vor Kursstart gar
+                         nicht erst angeboten wird. */}
+                      {isPastDate(courseForm.startsAt) && (
+                        <div className="lf-field" style={{ marginTop: 8 }}>
+                          <label>Finale Teilnehmerzahl</label>
+                          <input
+                            type="number"
+                            min={0}
+                            placeholder="z.B. 14"
+                            value={courseForm.finalParticipants}
+                            onChange={(e) => setCourseForm((f) => ({ ...f, finalParticipants: e.target.value }))}
+                          />
+                          <div className="hint">Dieser Termin ist bereits gestartet — hier die tatsächliche Teilnehmerzahl eintragen.</div>
+                        </div>
+                      )}
                       <input
                         style={{ marginTop: 8 }}
                         type="text"
@@ -4348,6 +4804,110 @@ export function DashboardPage({
                         value={courseForm.customBanner}
                         onChange={(e) => setCourseForm((f) => ({ ...f, customBanner: e.target.value }))}
                       />
+                    </div>
+                    {/* Weitere Termine/Standorte (NEU, 18.09. — "Kurse auch
+                       mehrere Standorte und Startzeitpunkte haben können"),
+                       additiv zum Primär-Termin oben — siehe extraSessions/
+                       CourseSessionFormRow und buildCourseSessionsPayload. */}
+                    <div className="lf-field">
+                      <label>Weitere Termine/Standorte (optional)</label>
+                      <div className="hint" style={{ marginBottom: 8 }}>
+                        Für denselben Kurs an mehreren Standorten/Zeitpunkten — z.B. im Januar in Köln, im März in
+                        Hamburg. Jeder Termin verschwindet einzeln aus der Journey, sobald er gestartet ist.
+                      </div>
+                      {courseForm.extraSessions.map((row, idx) => (
+                        <div key={idx} className="course-session-row" style={{ marginBottom: 10 }}>
+                          <div className="row2">
+                            <div className="lf-field">
+                              <label>Startdatum</label>
+                              <input
+                                type="date"
+                                value={row.startsAt}
+                                onChange={(e) =>
+                                  setCourseForm((f) => ({
+                                    ...f,
+                                    extraSessions: f.extraSessions.map((r, i) => (i === idx ? { ...r, startsAt: e.target.value } : r)),
+                                  }))
+                                }
+                              />
+                            </div>
+                            <div className="lf-field">
+                              <label>Verbleibende Plätze</label>
+                              <input
+                                type="number"
+                                min={0}
+                                value={row.seatsRemaining}
+                                onChange={(e) =>
+                                  setCourseForm((f) => ({
+                                    ...f,
+                                    extraSessions: f.extraSessions.map((r, i) => (i === idx ? { ...r, seatsRemaining: e.target.value } : r)),
+                                  }))
+                                }
+                              />
+                            </div>
+                          </div>
+                          <div className="location-toggle-row" style={{ marginTop: 6 }}>
+                            {(["remote", "hybrid", "vor_ort"] as const).map((mode) => (
+                              <button
+                                key={mode}
+                                type="button"
+                                className={`location-toggle-btn ${row.locationMode === mode ? "active" : ""}`}
+                                onClick={() =>
+                                  setCourseForm((f) => ({
+                                    ...f,
+                                    extraSessions: f.extraSessions.map((r, i) => (i === idx ? { ...r, locationMode: mode } : r)),
+                                  }))
+                                }
+                              >
+                                {mode === "remote" ? "💻 Remote" : mode === "hybrid" ? "🔀 Hybrid" : "📍 Vor Ort"}
+                              </button>
+                            ))}
+                          </div>
+                          {row.locationMode !== "remote" && (
+                            <input
+                              style={{ marginTop: 6 }}
+                              type="text"
+                              placeholder="Ort/Adresse"
+                              value={row.location}
+                              onChange={(e) =>
+                                setCourseForm((f) => ({
+                                  ...f,
+                                  extraSessions: f.extraSessions.map((r, i) => (i === idx ? { ...r, location: e.target.value } : r)),
+                                }))
+                              }
+                            />
+                          )}
+                          {isPastDate(row.startsAt) && (
+                            <input
+                              style={{ marginTop: 6 }}
+                              type="number"
+                              min={0}
+                              placeholder="Finale Teilnehmerzahl für diesen Termin"
+                              value={row.finalParticipants}
+                              onChange={(e) =>
+                                setCourseForm((f) => ({
+                                  ...f,
+                                  extraSessions: f.extraSessions.map((r, i) => (i === idx ? { ...r, finalParticipants: e.target.value } : r)),
+                                }))
+                              }
+                            />
+                          )}
+                          <button
+                            type="button"
+                            className="course-session-remove-btn"
+                            onClick={() => setCourseForm((f) => ({ ...f, extraSessions: f.extraSessions.filter((_, i) => i !== idx) }))}
+                          >
+                            ✕ Diesen Termin entfernen
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => setCourseForm((f) => ({ ...f, extraSessions: [...f.extraSessions, { ...EMPTY_SESSION_ROW }] }))}
+                      >
+                        + Weiteren Termin/Standort hinzufügen
+                      </button>
                     </div>
                     {/* Preis-/Förder-/Abschluss-Felder (Version 32, 14.09. —
                        Antwort auf "mehr Infos wie Preise, Anzahl Stunden und
@@ -5748,6 +6308,30 @@ export function DashboardPage({
                   </div>
                 </div>
                 <div className="app-card-body">
+                  {displayedCourses.length > 0 && (
+                    <FilterBar
+                      period={coursePeriod}
+                      onPeriodChange={setCoursePeriod}
+                      periodFrom={coursePeriodFrom}
+                      periodTo={coursePeriodTo}
+                      onPeriodFromChange={setCoursePeriodFrom}
+                      onPeriodToChange={setCoursePeriodTo}
+                      category={courseCategoryFilter}
+                      onCategoryChange={setCourseCategoryFilter}
+                      bereich={courseBereichFilter}
+                      onBereichChange={setCourseBereichFilter}
+                      bereichOptions={BEREICH_OPTIONS}
+                      resultCount={courseCatalogSorted.length}
+                      resultLabel={courseCatalogSorted.length === 1 ? "Kurs" : "Kurse"}
+                      onReset={() => {
+                        setCoursePeriod("alle");
+                        setCoursePeriodFrom("");
+                        setCoursePeriodTo("");
+                        setCourseCategoryFilter("");
+                        setCourseBereichFilter("");
+                      }}
+                    />
+                  )}
                   {displayedCourses.length === 0 ? (
                     <div className="empty-state">
                       <span className="icon" aria-hidden="true">▤</span>
@@ -5755,24 +6339,66 @@ export function DashboardPage({
                         ? "Noch keine Daten — links auf „Verbinden & laden“ klicken."
                         : "Noch keine Kurse — oben „+ Neuen Kurs hinzufügen“ nutzen."}
                     </div>
+                  ) : courseCatalogSorted.length === 0 ? (
+                    <div className="empty-state">
+                      <span className="icon" aria-hidden="true">▤</span>
+                      Kein Kurs passt zu diesem Filter.
+                    </div>
                   ) : (
                     <div className="course-manage-grid">
-                      {displayedCourses.map((c) => (
-                        <div
-                          className={`course-manage-card ${c.is_featured ? "featured" : ""}`}
-                          key={c.course_id}
-                          role="button"
-                          tabIndex={0}
-                          style={{ cursor: "pointer" }}
-                          onClick={() => { if (!tourDemoMode) trackCourseClick(c.course_name); }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              if (!tourDemoMode) trackCourseClick(c.course_name);
-                            }
-                          }}
-                          aria-label={`Kurs ansehen: ${c.course_name}`}
-                        >
+                      {courseCatalogSorted.map((c, i) => (
+                        <Fragment key={c.course_id}>
+                          {/* Aufteilung aktiv/vergangen (NEU, 18.09.) — eine
+                             Zwischenüberschrift direkt vor dem ersten
+                             aktiven bzw. dem ersten vergangenen Kurs, volle
+                             Grid-Breite. Nur eine der beiden Überschriften,
+                             falls ausschließlich aktive ODER ausschließlich
+                             vergangene Kurse im (gefilterten) Katalog sind. */}
+                          {i === 0 && activeCourses.length > 0 && pastCourses.length > 0 && (
+                            <div className="course-catalog-section-heading" style={{ gridColumn: "1 / -1" }}>
+                              Aktive Kurse ({activeCourses.length})
+                            </div>
+                          )}
+                          {i === activeCourses.length && pastCourses.length > 0 && (
+                            <div className="course-catalog-section-heading" style={{ gridColumn: "1 / -1" }}>
+                              Vergangene Kurse ({pastCourses.length})
+                            </div>
+                          )}
+                          <div
+                            className={`course-manage-card ${c.is_featured ? "featured" : ""} ${!isCourseActive(c) ? "past" : ""}`}
+                            role="button"
+                            tabIndex={0}
+                            style={{ cursor: "pointer" }}
+                            onClick={() => { if (!tourDemoMode) trackCourseClick(c.course_name); }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                if (!tourDemoMode) trackCourseClick(c.course_name);
+                              }
+                            }}
+                            aria-label={`Kurs ansehen: ${c.course_name}`}
+                          >
+                          <span className={`course-status-badge ${isCourseActive(c) ? "active" : "past"}`}>
+                            {isCourseActive(c) ? "● Aktiv" : "◻ Abgeschlossen"}
+                          </span>
+                          {/* Mehrere Termine/Standorte (NEU, 18.09.) — nur
+                             sichtbar, wenn tatsächlich mehr als ein Termin
+                             gepflegt ist; bei genau einem Termin bleibt die
+                             bestehende Anzeige (starts_at/location weiter
+                             unten im Banner-Quickpick) unverändert. */}
+                          {getCourseSessions(c).length > 1 && (
+                            <div className="course-manage-meta">
+                              📅{" "}
+                              {getCourseSessions(c)
+                                .map((s) => {
+                                  const dateLabel = s.starts_at ? new Date(s.starts_at).toLocaleDateString("de-DE") : "ohne Datum";
+                                  const locLabel = s.location_mode ? COURSE_LOCATION_LABELS[s.location_mode] : "";
+                                  const finalLabel = s.final_participants != null ? ` · ${s.final_participants} TN` : "";
+                                  return `${dateLabel}${locLabel ? ` (${locLabel})` : ""}${finalLabel}`;
+                                })
+                                .join(" · ")}
+                            </div>
+                          )}
                           <CourseBadgeRow course={c} />
                           <div className="course-manage-top">
                             <div>
@@ -5968,7 +6594,8 @@ export function DashboardPage({
                               <div className="banner-quickpick-error">{bannerError.msg}</div>
                             )}
                           </div>
-                        </div>
+                          </div>
+                        </Fragment>
                       ))}
                     </div>
                   )}
@@ -5991,13 +6618,43 @@ export function DashboardPage({
                   {refreshIcon()}
                 </div>
               </div>
+              {displayedLeads.length > 0 && (
+                <FilterBar
+                  period={reportsPeriod}
+                  onPeriodChange={setReportsPeriod}
+                  periodFrom={reportsPeriodFrom}
+                  periodTo={reportsPeriodTo}
+                  onPeriodFromChange={setReportsPeriodFrom}
+                  onPeriodToChange={setReportsPeriodTo}
+                  category={reportsCategoryFilter}
+                  onCategoryChange={setReportsCategoryFilter}
+                  bereich={reportsBereichFilter}
+                  onBereichChange={setReportsBereichFilter}
+                  bereichOptions={BEREICH_OPTIONS}
+                  resultCount={reportsEffectiveLeadCount}
+                  resultLabel={reportsEffectiveLeadCount === 1 ? "Lead in der Auswertung" : "Leads in der Auswertung"}
+                  onReset={() => {
+                    setReportsPeriod("alle");
+                    setReportsPeriodFrom("");
+                    setReportsPeriodTo("");
+                    setReportsCategoryFilter("");
+                    setReportsBereichFilter("");
+                  }}
+                />
+              )}
+              {reportsFilterActive && (
+                <div className="info-note">
+                  Zeitraum-/Bereichs-Filter aktiv: alle Zahlen auf dieser Seite (außer „Meistgeklickte Kurse") werden aus
+                  deinen echten, gefilterten Leads neu berechnet, statt der ungefilterten Gesamtwerte.
+                </div>
+              )}
               <div className="tile-row" data-tour="tile-row-reports">
                 <div className="tile" style={{ animationDelay: ".02s" }}>
                   <div className="tile-top">
                     <div className="tile-label">Neue Leads</div>
                     <div className="tile-icon-chip mint">◎</div>
                   </div>
-                  <div className="tile-value display">{report || tourDemoMode ? <AnimatedNumber value={displayedLeadCount} /> : "—"}</div>
+                  <div className="tile-value display">{report || tourDemoMode ? <AnimatedNumber value={reportsEffectiveLeadCount} /> : "—"}</div>
                 </div>
                 <div className="tile" style={{ animationDelay: ".08s" }}>
                   <div className="tile-top">
@@ -6005,7 +6662,7 @@ export function DashboardPage({
                     <div className="tile-icon-chip blue">◈</div>
                   </div>
                   <div className="tile-value display">
-                    {report || tourDemoMode ? <AnimatedNumber value={displayedAverageMatch} suffix="%" decimal /> : "—"}
+                    {report || tourDemoMode ? <AnimatedNumber value={reportsEffectiveAverageMatch} suffix="%" decimal /> : "—"}
                   </div>
                 </div>
                 <div className="tile" style={{ animationDelay: ".14s" }}>
@@ -6013,7 +6670,7 @@ export function DashboardPage({
                     <div className="tile-label">Qualifizierte Leads</div>
                     <div className="tile-icon-chip violet">✓</div>
                   </div>
-                  <div className="tile-value display">{report || tourDemoMode ? <AnimatedNumber value={displayedQualified} /> : "—"}</div>
+                  <div className="tile-value display">{report || tourDemoMode ? <AnimatedNumber value={reportsEffectiveQualified} /> : "—"}</div>
                 </div>
                 <div className="tile" style={{ animationDelay: ".20s" }}>
                   <div className="tile-top">
@@ -6021,7 +6678,7 @@ export function DashboardPage({
                     <div className="tile-icon-chip amber">→</div>
                   </div>
                   <div className="tile-value display">
-                    {report || tourDemoMode ? <AnimatedNumber value={displayedConversion} suffix="%" decimal /> : "—"}
+                    {report || tourDemoMode ? <AnimatedNumber value={reportsEffectiveConversion} suffix="%" decimal /> : "—"}
                   </div>
                 </div>
               </div>
@@ -6036,13 +6693,13 @@ export function DashboardPage({
                   </div>
                 </div>
                 <div className="app-card-body">
-                  {displayedSkillGaps.length === 0 ? (
+                  {reportsEffectiveSkillGaps.length === 0 ? (
                     <div className="empty-state">
                       <span className="icon" aria-hidden="true">◪</span>
                       {notConnectedYet ? "Noch keine Daten — auf „Verbinden & laden“ klicken." : "Noch keine Skill-Gaps erfasst."}
                     </div>
                   ) : (
-                    displayedSkillGaps.map((g, i) => (
+                    reportsEffectiveSkillGaps.map((g, i) => (
                       <div className="course-bar-row" key={g.skill_name}>
                         <div className="course-rank">{i + 1}</div>
                         <div className="course-bar-label">{g.skill_name}</div>
@@ -6063,20 +6720,20 @@ export function DashboardPage({
                   </div>
                 </div>
                 <div className="app-card-body">
-                  {displayedTopCourses.length === 0 ? (
+                  {reportsEffectiveTopCourses.length === 0 ? (
                     <div className="empty-state">
                       <span className="icon" aria-hidden="true">▤</span>
                       {notConnectedYet ? "Noch keine Daten — auf „Verbinden & laden“ klicken." : "Noch keine Kursempfehlungen erfasst."}
                     </div>
                   ) : (
-                    displayedTopCourses.map((c, i) => (
+                    reportsEffectiveTopCourses.map((c, i) => (
                       <div className="course-bar-row" key={c.course_id}>
                         <div className="course-rank">{i + 1}</div>
                         <div className="course-bar-label">{c.course_name}</div>
                         <div className="course-bar-track">
                           <div
                             className="course-bar-fill"
-                            style={{ width: `${maxCourseLeads ? ((c.lead_count / maxCourseLeads) * 100).toFixed(0) : 0}%` }}
+                            style={{ width: `${reportsEffectiveMaxCourseLeads ? ((c.lead_count / reportsEffectiveMaxCourseLeads) * 100).toFixed(0) : 0}%` }}
                           />
                         </div>
                         <div className="course-bar-count">{c.lead_count}</div>

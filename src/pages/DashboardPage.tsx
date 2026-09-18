@@ -27,6 +27,7 @@ import {
   fetchCourseUrlDiscover,
   fetchCourseUrlExtract,
   fetchDepthAnalysis,
+  bereichLabelsOf,
   fetchLeads,
   fetchOrbitReport,
   fetchSkillLevelDetect,
@@ -61,7 +62,7 @@ import { guessExperienceLevel } from "../lib/skillLevel";
 import { matchSkills } from "../data/skillMatcher";
 import { listBereiche } from "../data/gapAnalysis";
 import { ROLES_CATALOG } from "../data/rolesCatalog";
-import { CourseBadgeRow } from "../data/courseBadges";
+import { BereichBadges, CourseBadgeRow } from "../data/courseBadges";
 import { AnimatedNumber } from "../components/AnimatedNumber";
 import { DashboardTour } from "../components/DashboardTour";
 import "../styles/dashboard.css";
@@ -3681,6 +3682,19 @@ export function DashboardPage({
     const keys = c.bereich_keys?.length ? c.bereich_keys : c.bereich_key ? [c.bereich_key] : [];
     return keys.includes(bereichKey);
   }
+  /** Für die Bereich-Badge auf der Lead-Karte (NEU, 18.09. — "die angezeigten
+   *  Bereiche müssen immer im Mittelpunkt stehen"): dieselbe Kurs-Ableitung
+   *  wie leadMatchesBereich oben, aber als Anzeige statt als Filter-Treffer.
+   *  Sammelt die Bereiche aller verlinkten/empfohlenen Kurse (meist genau
+   *  einer) über bereichLabelsOf(), damit kein Bereich verlorengeht. */
+  function leadDerivedBereichLabels(l: LeadResponse): string[] {
+    const labels = new Set<string>();
+    for (const id of leadRelatedCourseIds(l)) {
+      const c = courseIndexById.get(id);
+      if (c) bereichLabelsOf(c).forEach((label) => labels.add(label));
+    }
+    return Array.from(labels);
+  }
 
   // --- Leads-Tab: Filter + Sortierung (wirkt nur auf die Listenkarten unten,
   // NICHT auf die vier Kennzahlen-Kacheln oben — die stammen aus dem
@@ -4336,6 +4350,20 @@ export function DashboardPage({
                                      contact_email. */}
                                   {l.contact_phone ? ` · ${l.contact_phone}` : ""}
                                 </div>
+                                {/* Bereich (NEU, 18.09.) — aus dem verlinkten/empfohlenen Kurs
+                                   abgeleitet (siehe leadDerivedBereichLabels oben), damit auch
+                                   auf der Lead-Karte selbst sofort erkennbar ist, welcher Branche
+                                   dieser Lead zuzuordnen ist, statt das erst im Detail-Modal oder
+                                   über den Filter (Leads-Tab) zu sehen. */}
+                                {leadDerivedBereichLabels(l).length > 0 && (
+                                  <div className="bereich-badge-row bereich-badge-row-inline">
+                                    {leadDerivedBereichLabels(l).map((label, i) => (
+                                      <span key={i} className="bereich-badge">
+                                        {label}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
                                 {l.assigned_to && <div className="lead-assigned-chip">👤 {l.assigned_to}</div>}
                                 {/* Nur ein Hinweis-Chip in der Kompaktkarte (Platz ist hier
                                     knapp) — der volle Text steht im Detail-Modal (siehe
@@ -6400,41 +6428,35 @@ export function DashboardPage({
                             </div>
                           )}
                           <CourseBadgeRow course={c} />
+                          {/* Bereich (NEU, 18.09.) — jetzt als eigene, farbige Badge-Zeile ganz
+                             oben auf der Karte statt als reiner Textzeile weiter unten ("die
+                             angezeigten Bereiche müssen immer im Mittelpunkt stehen"). Fällt bei
+                             fehlendem Bereich weg; die Warnung darunter bleibt dann übrig. */}
+                          <BereichBadges course={c} />
                           <div className="course-manage-top">
                             <div>
                               <div className="course-manage-name">{c.course_name}</div>
                               <div className="course-manage-meta">
                                 {c.provider} · {c.duration_weeks} Wochen
                               </div>
-                              {/* Bereich (15.09., Pflichtfeld) direkt im Listing sichtbar — u.a.
-                                 damit Altkurse ohne Bereich auf einen Blick als nachpflegebedürftig
-                                 erkennbar sind (tauchen sonst in der Journey nirgends auf). */}
-                              <div className="course-manage-meta">
-                                {(() => {
-                                  // Mehrfachauswahl zuerst (15.09.), Einzelfeld nur als Fallback
-                                  // für ältere Datensätze ohne bereich_labels.
-                                  const labels = c.bereich_labels?.length
-                                    ? c.bereich_labels
-                                    : c.bereich_label
-                                    ? [c.bereich_label]
-                                    : c.bereich_key
-                                    ? [c.bereich_key]
-                                    : [];
-                                  return labels.length ? (
-                                    labels.join(" · ")
-                                  ) : (
-                                    // War hier ein <span>: bei zwei- statt einzeiligem Text bekommt
-                                    // ein INLINE-Element mit Hintergrund/Padding/Radius pro Zeile eine
-                                    // eigene, versetzte "Box" (klassischer CSS-Effekt bei mehrzeiligem
-                                    // Inline-Hintergrund) — sah wie zwei abgerissene Wortfetzen statt
-                                    // einer klaren Warnung aus (Rückmeldung 17.09.: "so sieht das
-                                    // unprofessionell aus"). Als <div> (wie überall sonst im Kurs-
-                                    // formular, siehe grep `hint warn`) bildet Hintergrund+Radius EINE
-                                    // durchgehende Box, auch wenn der Text umbricht.
-                                    <div className="hint warn course-field-warning">⚠ Kein Bereich zugeordnet — in Journey unsichtbar</div>
-                                  );
-                                })()}
-                              </div>
+                              {/* Bereich (15.09., Pflichtfeld) — Anzeige jetzt oben als Badge (siehe
+                                 BereichBadges direkt über der Karte); hier nur noch die Warnung bei
+                                 fehlendem Bereich, damit Altkurse ohne Bereich weiterhin auf einen
+                                 Blick als nachpflegebedürftig erkennbar sind (tauchen sonst in der
+                                 Journey nirgends auf). */}
+                              {bereichLabelsOf(c).length === 0 && (
+                                // War hier ein <span>: bei zwei- statt einzeiligem Text bekommt
+                                // ein INLINE-Element mit Hintergrund/Padding/Radius pro Zeile eine
+                                // eigene, versetzte "Box" (klassischer CSS-Effekt bei mehrzeiligem
+                                // Inline-Hintergrund) — sah wie zwei abgerissene Wortfetzen statt
+                                // einer klaren Warnung aus (Rückmeldung 17.09.: "so sieht das
+                                // unprofessionell aus"). Als <div> (wie überall sonst im Kurs-
+                                // formular, siehe grep `hint warn`) bildet Hintergrund+Radius EINE
+                                // durchgehende Box, auch wenn der Text umbricht.
+                                <div className="course-manage-meta">
+                                  <div className="hint warn course-field-warning">⚠ Kein Bereich zugeordnet — in Journey unsichtbar</div>
+                                </div>
+                              )}
                               {/* Buchungslink (17.09., Pflichtfeld) — genau dasselbe Muster wie
                                  die Bereich-Warnung direkt darüber: Altkurse von vor diesem
                                  Feature auf einen Blick als nachpflegebedürftig erkennbar, statt

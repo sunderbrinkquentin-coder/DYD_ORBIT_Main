@@ -11,7 +11,7 @@
  * orbit.ts) — bewusst NICHTS Erfundenes, sonst irreführende Werbung
  * (§5 UWG).
  */
-import type { OrbitCourse } from "../api/orbit";
+import { bereichLabelsOf, type OrbitCourse } from "../api/orbit";
 
 export interface CourseBadge {
   text: string;
@@ -111,6 +111,37 @@ export function courseBadges(
     }
   }
   return badges;
+}
+
+/**
+ * Bereich (Branche/Kategorie) als farbige Badge-Zeile statt reinem Fliesstext
+ * (NEU, 18.09. — "die angezeigten Bereiche müssen immer im Mittelpunkt
+ * stehen"). Geteilt zwischen DashboardPage.tsx (Kurskatalog-Karten,
+ * Lead-Karten) und JourneyPage.tsx (Kurs-Hero), damit beide Seiten exakt
+ * dieselbe Optik verwenden statt zwei Kopien zu pflegen — analog
+ * CourseBadgeRow oben. Nutzt bereichLabelsOf() aus orbit.ts (einzige
+ * Fallback-Kette bereich_labels → bereich_label → bereich_key), damit hier
+ * nicht erneut dupliziert wird, was Version 15.09. bereits dreimal inline
+ * geschrieben hatte. Leer = kein Badge (Aufrufer zeigen ggf. eine eigene
+ * "Kein Bereich"-Warnung, siehe DashboardPage.tsx Kurskatalog).
+ */
+export function BereichBadges({
+  course,
+}: {
+  course: Pick<OrbitCourse, "bereich_labels" | "bereich_label" | "bereich_key"> | undefined | null;
+}) {
+  if (!course) return null;
+  const labels = bereichLabelsOf(course);
+  if (labels.length === 0) return null;
+  return (
+    <div className="bereich-badge-row">
+      {labels.map((label, i) => (
+        <span key={i} className="bereich-badge">
+          {label}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 /** Kleine Banner-Leiste über einer Kurskarte — leer/nichts, wenn keine

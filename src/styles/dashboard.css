@@ -2349,19 +2349,47 @@
 /* Der "kurz groß werden"-Effekt: kurz auf das echte, hervorgehobene Element
    angewendet (nicht auf den Spotlight-Rahmen), damit der Bereich selbst
    spürbar reagiert statt nur umrahmt zu sein. Reine Animation -- die
-   Sichtbarkeit selbst kommt aus "tour-highlight-active" oben. */
+   Sichtbarkeit selbst kommt aus "tour-highlight-active" oben.
+
+   ECHTE URSACHE fuer "Schritt 8 bis 11 und 15 ist falsch/anders formatiert"
+   (18.09., blieb nach Runde 25 UND 26 bestehen -- beide Fixes waren zwar
+   selbst korrekt, haben aber ein DRITTES, unabhaengiges Problem nicht
+   getroffen): Diese Animation nutzte bisher "transform: scale(1.035)" --
+   das Element wird kurz 3,5% groesser. .app-card (das "+ Neuen Kurs
+   hinzufuegen"-Formular UND die Kurskatalog-Karte, in der jede einzelne
+   Kurskachel liegt) hat "overflow: hidden" fuer die abgerundeten Ecken.
+   Ist das gepulste Zielelement fast so breit wie die Karte selbst -- genau
+   der Fall bei den vier Formularfeldern in Schritt 8-11 (Preis-Block,
+   Skill-Erkennung, Modulhandbuch, Bereich-Pillen, alle nahezu kartenbreit)
+   und beim Banner in Schritt 15 (banner-quickpick liegt in einer nahezu
+   kartenbreiten Kurskachel) --, ragt die um 3,5% vergroesserte Box beim
+   Puls kurz UEBER den Rand der Karte hinaus und wird durch deren
+   "overflow: hidden" sichtbar ABGESCHNITTEN: die Kante "springt"/wirkt fuer
+   die 550ms des Pulses schief bzw. kantig-verzerrt -- exakt das, was als
+   "falsch/anders formatiert" auffaellt. Schritte auf schmaleren, mittig
+   liegenden Zielen (z.B. ein einzelner Button) erreichen den Kartenrand
+   nie und zeigen den Bug deshalb nie -- daher betraf es konsistent nur
+   diese fuenf breiten Ziele, nie die uebrigen vierzehn Schritte.
+
+   Fix: der Puls aendert nicht mehr die GROESSE (kein "transform" mehr,
+   also nichts, das ueber die Elementgrenze hinauswachsen und abgeschnitten
+   werden koennte), sondern nur noch die HELLIGKEIT ("filter: brightness").
+   Optisch weiterhin ein klar wahrnehmbares kurzes Aufblitzen ("spuerbar
+   reagiert"), aber geometrisch folgenlos -- kann von keinem "overflow:
+   hidden"-Vorfahren mehr angeschnitten werden, unabhaengig davon, wie nah
+   das Zielelement am Kartenrand liegt. */
 .tour-pulse-target {
   animation: tourPulse 0.55s ease;
 }
 @keyframes tourPulse {
   0% {
-    transform: scale(1);
+    filter: brightness(1);
   }
   40% {
-    transform: scale(1.035);
+    filter: brightness(1.18);
   }
   100% {
-    transform: scale(1);
+    filter: brightness(1);
   }
 }
 

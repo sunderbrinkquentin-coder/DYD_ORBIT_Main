@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { readingDurationMs, TourAutoplayBar, TourAutoplayToggle, TourDemoToast, useTourAutoplay } from "./tourAutoplay";
 
 /**
  * Gefuehrter Rundgang durch die Endnutzer-Journey — fuer Demos/Praesentationen
@@ -54,15 +55,36 @@ interface RawStep {
   selector: string | null;
   title: string;
   description: string;
+  /** NEU (18.09.): eigener, optischer abgesetzter Nutzen-Satz aus Sicht des
+   *  Bildungstraegers (siehe .tour-benefit in journey.css) — bewusst NICHT
+   *  in `description` verschachtelt, damit er als eigene, erkennbare Zeile
+   *  dargestellt werden kann statt als reiner Fliesstext-Anhang. */
+  benefit?: string;
+  /** Optionaler, rein simulierter "Live-Hinweis" (siehe tourAutoplay.tsx) —
+   *  blendet kurz ein, waehrend die automatische Wiedergabe diesen Schritt
+   *  zeigt. Erzeugt nichts Echtes, nur fuers Bild bei einer Aufzeichnung. */
+  demoEvent?: string;
 }
 
+/**
+ * Update 18.09. ("die Journeytour muss sich auf die Beduerfnisse der
+ * Bildungstraeger und die Vorteile dafuer beziehen"): jeder inhaltliche
+ * Schritt bekommt jetzt zusaetzlich einen eigenen `benefit`-Satz, der den
+ * konkreten Nutzen fuer den Bildungstraeger benennt — die Tour erklaert
+ * nicht mehr nur, WAS der Endnutzer sieht, sondern WARUM das dem
+ * Bildungstraeger hilft (mehr/qualifiziertere Leads, weniger Abbrueche,
+ * belastbarere Beratungsgespraeche). Der "bereich"-Schritt bekommt dabei die
+ * staerkste Ueberarbeitung ("die angezeigten Bereiche muessen immer im
+ * Mittelpunkt stehen"): er macht jetzt explizit die Bruecke zum
+ * Bereich-Filter im Dashboard (siehe Filterleiste, 18. Durchgang).
+ */
 const RAW_STEPS: RawStep[] = [
   {
     key: null,
     selector: null,
     title: "Rundgang durch die Journey",
     description:
-      "Ein kurzer, gefuehrter Durchlauf durch den Weiterbildungs-Finder aus Sicht des Endnutzers — gut geeignet, um das Widget in einer Demo zu erklaeren. Mit „Beenden“ jederzeit aussteigen.",
+      "Ein kurzer, gefuehrter Durchlauf durch den Weiterbildungs-Finder aus Sicht des Endnutzers — gedacht, damit DU als Bildungsträger in einer Präsentation oder Aufzeichnung schnell zeigen kannst, wie aus einer einfachen Frage ein qualifizierter Lead in deinem Dashboard wird. Mit „Beenden“ jederzeit aussteigen. Tipp: „▶ Automatisch abspielen“ oben in dieser Karte lässt die Tour für eine Bildschirmaufzeichnung von selbst weiterlaufen, ganz ohne eigenes Klicken.",
   },
   {
     key: "ziel",
@@ -70,6 +92,7 @@ const RAW_STEPS: RawStep[] = [
     title: "Fortschrittsanzeige",
     description:
       "Zeigt dem Nutzer jederzeit, wo er in der Journey steht und wie viele Schritte noch kommen — hier startet die eigentliche Befragung.",
+    benefit: "Transparenz über die verbleibenden Schritte senkt nachweislich die Abbruchquote — mehr Personen kommen bis zum Ende durch und werden zu einem Lead in deinem Dashboard statt unterwegs auszusteigen.",
   },
   {
     key: "ziel",
@@ -77,20 +100,24 @@ const RAW_STEPS: RawStep[] = [
     title: "Motivations-Frage",
     description:
       "Bevor es technisch wird, fragen wir nach dem persoenlichen „Warum“. Rein qualifizierend — beeinflusst spaeter Formulierungen, nicht das Matching selbst.",
+    benefit: "Das „Warum“ landet mit im Lead-Datensatz und hilft dir, ein späteres Beratungsgespräch von der ersten Sekunde an persönlicher statt generisch zu führen.",
   },
   {
     key: "praeferenzen",
     selector: '[data-tour="tour-panel"]',
     title: "Rahmenbedingungen",
     description:
-      "Beschäftigungsart, gewünschter Arbeitsort (Remote/Vor Ort), grober Startzeitpunkt und ob eine Förderung (z.B. Bildungsgutschein) wichtig ist — vier kurze, jederzeit mit „Egal“ überspringbare Fragen. Beeinflusst NIE, ob ein Kurs überhaupt vorgeschlagen wird, nur die Reihenfolge unter fachlich gleichwertigen Treffern (siehe „Passende Weiterbildung“ weiter unten) — und wird dem Bildungsträger direkt an jedem Lead im Dashboard angezeigt.",
+      "Beschäftigungsart, gewünschter Arbeitsort (Remote/Vor Ort), grober Startzeitpunkt und ob eine Förderung (z.B. Bildungsgutschein) wichtig ist — vier kurze, jederzeit mit „Egal“ überspringbare Fragen. Beeinflusst NIE, ob ein Kurs überhaupt vorgeschlagen wird, nur die Reihenfolge unter fachlich gleichwertigen Treffern (siehe „Passende Weiterbildung“ weiter unten).",
+    benefit: "Diese vier Antworten stehen direkt an jedem Lead in deinem Dashboard — du weißt schon vor dem ersten Anruf, ob Förderung oder Remote-Möglichkeit den Ausschlag geben könnte.",
   },
   {
     key: "bereich",
     selector: '[data-tour="tour-panel"]',
-    title: "Passende Rolle vorschlagen (optionaler Pfad)",
+    title: "Bereich vorschlagen lassen",
     description:
       "Wer die eigene Zielrolle noch nicht kennt, klickt hier einfach an, was er/sie schon kann oder gerne macht — kein Text nötig. Daraus errechnen wir echte, prozentuale Rollen-Vorschläge statt nur eine Branche raten zu lassen. Eine konkrete Rolle muss dabei nicht aktiv angeklickt werden: ein einfaches „Weiter“ wählt automatisch die am besten passende. Die angeklickten Skills sind im Fragebogen-Schritt danach schon vorausgewählt.",
+    benefit: "Dieser Weg fängt genau die Personen auf, die sonst ohne konkrete Zielrolle abgesprungen wären — der hier ermittelte Bereich taucht danach direkt im Dashboard wieder auf (Filterleiste in Leads, Kurse und Reports, siehe Branche/Bereich-Filter) und entscheidet mit, welche deiner Kurse überhaupt als Empfehlung infrage kommen. Ein Kurs ohne gepflegten Bereich bleibt für genau diese Zielgruppe unsichtbar.",
+    demoEvent: "🧭 Bereich erkannt: Wirtschaft & Verwaltung",
   },
   {
     key: "zielrolle",
@@ -98,6 +125,7 @@ const RAW_STEPS: RawStep[] = [
     title: "Zielrolle waehlen",
     description:
       "Freitextsuche plus Karten-Auswahl. Diese Rolle ist ab hier der Bezugspunkt fuer den kompletten restlichen Abgleich.",
+    benefit: "Die Zielrolle steht danach fest im Lead — du siehst im Dashboard exakt, wofür sich jemand qualifizieren möchte, statt nur vager „Interesse an Weiterbildung“.",
   },
   {
     key: "skills",
@@ -105,6 +133,7 @@ const RAW_STEPS: RawStep[] = [
     title: "Lebenslauf oder Fragebogen",
     description:
       "Zwei Wege zum selben Ergebnis: Lebenslauf hochladen (inkl. OCR-Fallback fuer eingescannte PDFs) oder die Kern-Skills der Zielrolle per Checkbox angeben. Die DSGVO-Einwilligung ist beim Upload Pflicht.",
+    benefit: "Beide Wege liefern echte, belegte Skills statt einer Selbsteinschätzung „aus dem Bauch heraus“ — die Grundlage für ein Match, das im Beratungsgespräch auch inhaltlich standhält.",
   },
   {
     key: "gap",
@@ -113,6 +142,8 @@ const RAW_STEPS: RawStep[] = [
     title: "Skill-Gap-Ergebnis",
     description:
       "Match-Prozentsatz sowie bereits vorhandene und noch fehlende Kern-Skills fuer die Zielrolle — jeder Skill mit einer echten Begruendung statt einer abstrakten Prozentzahl: ein woertliches Zitat aus dem Lebenslauf (per Ueberschriften-Erkennung sogar mit Abschnitt wie „Berufserfahrung“ oder „Ausbildung“), oder sobald verfuegbar die Einschaetzung der KI-Tiefenanalyse. Zusaetzlich waehlbar: das eigene Erfahrungslevel je Skill (Grundkenntnisse/Fortgeschritten/Experte, mit KI-Vorschlag vorbelegt) sowie eine manuelle Korrektur („✕ Entfernen“/„+ Als vorhanden markieren“) — geht ein Skill falsch in die eine oder andere Richtung, kann die Person das selbst richtigstellen, das wirkt sich direkt auf Match-Prozent UND die folgende Kursempfehlung aus.",
+    benefit: "Ein nachvollziehbar begründetes Ergebnis schafft an genau diesem kritischen Punkt Vertrauen — und erhöht die Wahrscheinlichkeit, dass die Person danach wirklich einen Kurs auswählt statt abzuspringen.",
+    demoEvent: "✨ Skill-Gap live berechnet — 82 % Match",
   },
   {
     key: "kurs",
@@ -121,6 +152,8 @@ const RAW_STEPS: RawStep[] = [
     title: "Passende Weiterbildung",
     description:
       "Individuelle Kursempfehlung primaer nach gewichteter Abdeckung der eigenen Skill-Luecke sortiert, die weiter oben genannten Rahmenbedingungen entscheiden nur bei fachlich gleichwertigen Treffern die Reihenfolge — nie die Sichtbarkeit. Jede Karte zeigt zusaetzlich Preis (inkl. USt.-Hinweis/Pruefungsgebuehr), Unterrichtseinheiten, Abschlussart und einen „Foerderfaehig“-Hinweis, falls vom Bildungstraeger gepflegt, sowie individuell begruendet, WARUM genau dieser Kurs passt (konkrete Skill-Namen, keine allgemeine Floskel). Einzelne Kurskacheln koennen ausserdem Banner wie „Startet in Kuerze“ oder „Nur noch wenige Plaetze“ zeigen — direkt vom Bildungstraeger im Dashboard aus echten Werten gesetzt, nie erfunden. Der Nutzer waehlt hier aktiv einen konkreten Kurs, „Match danach“ zeigt ehrlich, wie viel naeher genau dieser eine Kurs an die Zielrolle bringt.",
+    benefit: "Hier entscheidet sich, welcher deiner Kurse überhaupt gezeigt wird — gepflegte Rahmendaten, ein aktueller Buchungslink und der richtige Bereich zahlen sich direkt in mehr qualifizierten Leads aus.",
+    demoEvent: "🎓 Passender Kurs vorgeschlagen — 92 % Match",
   },
   {
     key: "lead",
@@ -128,13 +161,15 @@ const RAW_STEPS: RawStep[] = [
     title: "Kontaktaufnahme",
     description:
       "Letzter Schritt: nur noch Name, E-Mail (optional Telefon) und die DSGVO-Einwilligung — der qualifizierte Lead landet direkt im Bildungstraeger-Dashboard, inklusive Zielrolle, Match-Score, gewaehltem Kurs und den weiter oben angegebenen Rahmenbedingungen (Beschaeftigungsart, Arbeitsort, Wunschstart, Foerderung). Zwei klare Wege: direkt buchen oder erst beraten lassen — beides landet als Lead im Dashboard, nur mit unterschiedlichem Status. Die Einwilligung wird mit Zeitpunkt und Text-Version nachweisbar gespeichert, die Person kann ihre Daten jederzeit vom Bildungstraeger loeschen lassen (Recht auf Loeschung, Art. 17 DSGVO).",
+    benefit: "Das komplette Ergebnis landet ohne manuelle Übertragung direkt im Dashboard — inklusive Bereich, Zielrolle und Match-Score, sofort filterbar und einsatzbereit fürs Beratungsgespräch.",
+    demoEvent: "📥 Neuer Lead im Dashboard sichtbar",
   },
   {
     key: null,
     selector: null,
     title: "Das war der Rundgang",
     description:
-      "Den Button „🧭 Rundgang starten“ findest du jederzeit wieder — praktisch direkt vor einer Praesentation. Er erscheint nur im Demo-/Entwicklungsmodus, nie fuer echte Endnutzer.",
+      "Den Button „🧭 Rundgang starten“ findest du jederzeit wieder — praktisch direkt vor einer Praesentation oder Bildschirmaufzeichnung. Er erscheint nur im Demo-/Entwicklungsmodus, nie fuer echte Endnutzer. Beim erneuten Start läuft eine laufende automatische Wiedergabe wieder von vorne los.",
   },
 ];
 
@@ -198,6 +233,9 @@ export function JourneyTour({
   const [rect, setRect] = useState<Rect | null>(null);
   const pulsedElRef = useRef<Element | null>(null);
   const demoTriggeredRef = useRef(false);
+  // Automatische Wiedergabe (NEU, 18.09., siehe tourAutoplay.tsx) — rein
+  // clientseitig, nur fuers Bild bei einer Bildschirmaufzeichnung.
+  const [autoplay, setAutoplay] = useState(false);
 
   const step = steps[Math.min(stepIdx, steps.length - 1)];
   const isLast = stepIdx >= steps.length - 1;
@@ -207,9 +245,22 @@ export function JourneyTour({
   // eine kurze Warteflaeche statt des eigentlichen Rundgangs zeigen - sonst
   // wuerden "gap"/"kurs" beim Start einfach lautlos aus der Tour fallen.
   const waitingForDemoResults = open && (!hasGapResult || !hasCourseResult);
+  // Laeuft der letzte Schritt oder wird noch auf die Demo-Analyse gewartet,
+  // bleibt die Automatik bewusst stehen statt weiterzuspringen oder die Tour
+  // zu schliessen — bei einer Aufzeichnung soll Quentin selbst entscheiden,
+  // wann er "Fertig" klickt bzw. abwarten, bis echte Ergebnisse da sind.
+  const autoplayProgress = useTourAutoplay(
+    autoplay && open && !isLast && !waitingForDemoResults,
+    stepIdx,
+    readingDurationMs(step.description + (step.benefit ?? "")),
+    () => setStepIdx((i) => Math.min(i + 1, steps.length - 1)),
+  );
 
   useEffect(() => {
-    if (open) setStepIdx(0);
+    if (open) {
+      setStepIdx(0);
+      setAutoplay(false);
+    }
   }, [open]);
 
   /** Bugfix (14.09., "die Kachel von der Rundtour ist hinter den Infos, die
@@ -321,7 +372,12 @@ export function JourneyTour({
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
       else if (e.key === "ArrowRight") setStepIdx((i) => Math.min(i + 1, steps.length - 1));
-      else if (e.key === "ArrowLeft") setStepIdx((i) => Math.max(i - 1, 0));
+      else if (e.key === "ArrowLeft") {
+        // Autoplay bei manueller Rückwärts-Navigation stoppen (analog DashboardTour.tsx) —
+        // sonst springt der Timer mitten in der eigenen Rückschau wieder nach vorne.
+        setAutoplay(false);
+        setStepIdx((i) => Math.max(i - 1, 0));
+      }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -345,6 +401,7 @@ export function JourneyTour({
         <div className="tour-card tour-card-dock tour-card-preparing" style={{ width: CARD_WIDTH }}>
           <div className="tour-card-head">
             <span className="tour-step-count">Rundgang wird vorbereitet</span>
+            <TourAutoplayToggle active={autoplay} onToggle={() => setAutoplay((a) => !a)} />
             <button className="tour-close" onClick={onClose} aria-label="Rundgang beenden" title="Beenden (Esc)">
               ×
             </button>
@@ -372,17 +429,21 @@ export function JourneyTour({
           style={{ top: highlightBox.top, left: highlightBox.left, width: highlightBox.width, height: highlightBox.height }}
         />
       )}
+      <TourDemoToast text={autoplay ? step.demoEvent : null} toastKey={stepIdx} />
       <div className="tour-card tour-card-dock" style={{ width: CARD_WIDTH }}>
         <div className="tour-card-head">
           <span className="tour-step-count">
             {stepIdx + 1} / {steps.length}
           </span>
+          <TourAutoplayToggle active={autoplay} onToggle={() => setAutoplay((a) => !a)} />
           <button className="tour-close" onClick={onClose} aria-label="Rundgang beenden" title="Beenden (Esc)">
             ×
           </button>
         </div>
+        <TourAutoplayBar active={autoplay && !isLast} progress={autoplayProgress} />
         <h3 className="tour-title">{step.title}</h3>
         <p className="tour-desc">{step.description}</p>
+        {step.benefit && <p className="tour-benefit">{step.benefit}</p>}
         <div className="tour-progress">
           {steps.map((_, i) => (
             <span key={i} className={`tour-dot ${i === stepIdx ? "active" : i < stepIdx ? "done" : ""}`} />
@@ -395,7 +456,11 @@ export function JourneyTour({
           <div className="tour-nav-btns">
             <button
               className="tour-btn tour-btn-secondary"
-              onClick={() => setStepIdx((i) => Math.max(i - 1, 0))}
+              onClick={() => {
+                // Siehe ArrowLeft-Handler oben: manuelles Zurückgehen beendet Autoplay.
+                setAutoplay(false);
+                setStepIdx((i) => Math.max(i - 1, 0));
+              }}
               disabled={isFirst}
             >
               ← Zurück

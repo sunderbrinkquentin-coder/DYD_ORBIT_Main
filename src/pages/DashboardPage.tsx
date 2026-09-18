@@ -6664,8 +6664,23 @@ export function DashboardPage({
                           {/* Banner-Quick-Picker — genauso präsent/direkt anklickbar wie der
                              Top-Toggle oben, statt in "✎ Bearbeiten" versteckt. onClick auf dem
                              Wrapper stoppt die Bubble zur Kachel (die sonst trackCourseClick
-                             auslöst) für alle Klicks/Eingaben darin. */}
-                          <div className="banner-quickpick" onClick={(e) => e.stopPropagation()}>
+                             auslöst) für alle Klicks/Eingaben darin.
+                             Bugfix (18.09., "Schritt 15 ... ist falsch formatiert"): Der Rundgang
+                             zielte bisher per Klassen-Selektor (".banner-quickpick") auf das
+                             ERSTE Vorkommen im gesamten DOM — traf das zufällig die Kachel eines
+                             VERGANGENEN Kurses (".course-manage-card.past", opacity: 0.72, siehe
+                             dashboard.css), sah die Hervorhebung zusätzlich zu den während der
+                             Tour deaktivierten (":disabled", opacity: 0.6) Preset-Buttons
+                             ungewöhnlich blass/ausgewaschen aus statt knackig wie jeder andere
+                             Rundgang-Schritt. `courseCatalogSorted` listet aktive Kurse immer
+                             ZUERST (siehe dort) — der eigene data-tour-Anker nur auf der ersten
+                             Kachel (i === 0) trifft dadurch zuverlässig einen aktiven Kurs, falls
+                             vorhanden, statt vom baren Klassen-Treffer abhängig zu sein. */}
+                          <div
+                            className="banner-quickpick"
+                            data-tour={i === 0 ? "kurse-banner-quickpick" : undefined}
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <div className="banner-quickpick-label">Banner</div>
                             <div className="banner-quickpick-presets">
                               {BANNER_PRESETS.map((preset) => (

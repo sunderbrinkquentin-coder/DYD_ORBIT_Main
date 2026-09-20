@@ -2227,11 +2227,14 @@ input.big-input:focus {
   inset: 0;
   z-index: 200;
 }
+/* Angeglichen an dashboard.css (19./20.09., "die Touren sollen immer im
+   gleichen Stil sein"): Deckkraft/Rahmenabstand/Timing waren hier leicht
+   abweichend von DashboardTour.tsx's Overlay, obwohl beide Touren optisch
+   identisch wirken sollen -- keine funktionale Aenderung, reine Angleichung. */
 .tour-scrim {
   position: absolute;
   inset: 0;
-  background: rgba(8, 20, 38, 0.6);
-  animation: fadeInUp 0.2s ease both;
+  background: rgba(8, 20, 38, 0.62);
 
   z-index: 200;
   pointer-events: auto;
@@ -2239,12 +2242,12 @@ input.big-input:focus {
 .tour-spotlight {
   position: fixed;
   border-radius: 14px;
-  box-shadow: 0 0 0 9999px rgba(8, 20, 38, 0.6);
+  box-shadow: 0 0 0 9999px rgba(8, 20, 38, 0.62);
   outline: 2px solid var(--dyd-mint);
-  outline-offset: 2px;
+  outline-offset: 3px;
   pointer-events: none;
-  transition: top 0.35s cubic-bezier(0.4, 0, 0.2, 1), left 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-    width 0.35s cubic-bezier(0.4, 0, 0.2, 1), height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: top 0.45s cubic-bezier(0.22, 1, 0.36, 1), left 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.45s cubic-bezier(0.22, 1, 0.36, 1), height 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
 /* Haelt das echte, hervorgehobene Element ueber dem dunklen ".tour-scrim"-
    Overlay -- sonst schimmert es nur durch den Spotlight-Ausschnitt hindurch.
@@ -2256,18 +2259,27 @@ input.big-input:focus {
   position: relative;
   z-index: 201;
 }
+/* Angeglichen an dashboard.css Runde 27 ("Schritt 8 bis 11 und 15 ist
+   falsch/anders formatiert" -- ECHTE URSACHE dort: "transform: scale()"
+   wurde von "overflow: hidden"-Kartenraendern abgeschnitten, siehe
+   ausfuehrlicher Kommentar in dashboard.css). journey.css hatte bisher eine
+   EIGENE, unabhaengige Kopie dieser Animation, die den Fix nie mitbekam --
+   selbst wenn kein konkreter Fall dazu gemeldet wurde, ist das derselbe
+   Risikofall (ein Ziel nahe am Rand eines "overflow: hidden"-Vorfahren) und
+   zugleich der von Quentin explizit gewuenschte einheitliche Stil zwischen
+   beiden Touren. */
 .tour-pulse-target {
   animation: tourPulse 0.55s ease;
 }
 @keyframes tourPulse {
   0% {
-    transform: scale(1);
+    filter: brightness(1);
   }
   40% {
-    transform: scale(1.035);
+    filter: brightness(1.18);
   }
   100% {
-    transform: scale(1);
+    filter: brightness(1);
   }
 }
 .tour-card {
@@ -2276,7 +2288,6 @@ input.big-input:focus {
   border-radius: 16px;
   box-shadow: var(--shadow-lg);
   padding: 18px 20px 16px;
-  animation: popIn 0.22s ease both;
     /* Wichtig: Kachel muss über dem Overlay liegen */
   z-index: 202;
   pointer-events: auto;
@@ -2286,12 +2297,23 @@ input.big-input:focus {
  * Kopf-Kommentar von JourneyTour.tsx. max-height + eigener Scroll als
  * zusaetzliches Sicherheitsnetz auf sehr niedrigen Bildschirmen (z.B.
  * Laptop mit Zoom), statt die Buttons ganz zu verlieren. */
+/* Rueckmeldung (19./20.09., "die Beschreibung soll immer sichtbar sein, egal
+   in welchem Format man die Seite offen hat") -- identischer Fix wie in
+   dashboard.css, siehe ausfuehrlicher Kommentar dort: Kopf und Buttonzeile
+   bleiben jetzt IMMER sichtbar, nur der mittlere Inhalt (.tour-card-body)
+   scrollt bei Bedarf. */
 .tour-card-dock {
   left: 50%;
   bottom: 20px;
   transform: translateX(-50%);
   max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+}
+.tour-card-body {
   overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 /* Bugfix (14.09., "die Kachel von der Rundtour ist hinter den Infos, die
  * muss irgendwo am Rand stehen, sodass man beides immer sieht"): unten mittig
@@ -2323,6 +2345,7 @@ input.big-input:focus {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 6px;
+  flex-shrink: 0;
 }
 .tour-step-count {
   font-size: 11px;
@@ -2348,27 +2371,79 @@ input.big-input:focus {
 
 /* NEU (18.09.) — Auto-Advance-Umschalter, Fortschrittsleiste, simulierte
    Live-Hinweise (Toast) und Bildungsträger-Nutzen-Zeile; siehe
-   tourAutoplay.tsx sowie DashboardTour.tsx/JourneyTour.tsx. */
+   tourAutoplay.tsx sowie DashboardTour.tsx/JourneyTour.tsx.
+   ÜBERARBEITET (18.09., Rückmeldung "ich finde das Autoplay nicht"): der
+   Umschalter stand vorher als schmale, grau umrandete Pille im engen
+   Tour-Kopf zwischen Schrittzähler und ×-Button und ging dort optisch
+   unter. Jetzt eine eigene, ganzzeilige Zeile (.tour-autoplay-row) MIT
+   vollem Farbverlauf statt Rahmen — dieselbe Optik wie der primäre
+   Tour-Button (.tour-btn-primary) weiter unten, damit sofort klar ist,
+   dass das ein wichtiges, klickbares Element ist. */
+.tour-autoplay-row {
+  margin: 0 0 10px;
+}
 .tour-autoplay-toggle {
-  border: 1.5px solid var(--border);
-  background: var(--surface);
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 700;
-  padding: 5px 11px;
-  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  border: none;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue) 130%);
+  color: var(--dyd-navy);
+  font-size: 12.5px;
+  font-weight: 800;
+  padding: 10px 14px;
+  border-radius: 10px;
   cursor: pointer;
   white-space: nowrap;
-  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  box-shadow: var(--shadow-sm);
+  transition: filter 0.15s, box-shadow 0.15s, background 0.15s, color 0.15s;
+  animation: tourAutoplayInvite 2.4s ease-in-out infinite;
 }
 .tour-autoplay-toggle:hover {
-  border-color: var(--dyd-blue);
-  color: var(--dyd-blue-dark);
+  filter: brightness(1.05);
 }
 .tour-autoplay-toggle.active {
-  border-color: var(--dyd-blue);
-  background: var(--blue-bg);
-  color: var(--dyd-blue-dark);
+  background: var(--dyd-navy);
+  color: #fff;
+  animation: none;
+  box-shadow: var(--shadow-sm);
+}
+.tour-autoplay-toggle-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+}
+.tour-autoplay-toggle.active .tour-autoplay-toggle-dot {
+  background: #ff5f6d;
+  opacity: 1;
+  animation: tourAutoplayRecDot 1.1s ease-in-out infinite;
+}
+@keyframes tourAutoplayInvite {
+  0%, 100% {
+    box-shadow: var(--shadow-sm);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(47, 143, 214, 0.16);
+  }
+}
+@keyframes tourAutoplayRecDot {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-autoplay-toggle,
+  .tour-autoplay-toggle-dot,
+  .tour-autoplay-toggle.active .tour-autoplay-toggle-dot {
+    animation: none;
+  }
 }
 
 .tour-autoplay-bar {
@@ -2439,11 +2514,29 @@ input.big-input:focus {
   gap: 5px;
   margin-bottom: 14px;
 }
+/* .tour-dot ist jetzt ein <button> statt eines reinen <span> (NEU, 18.09.,
+   "es soll interaktiver sein" — Sprung zu jedem Schritt per Klick, siehe
+   TourStepDots in tourAutoplay.tsx) — Button-Grundformatierung zurückgesetzt,
+   damit es weiterhin wie der bisherige reine Anzeige-Punkt aussieht, nur mit
+   größerer Klickfläche (padding) und sichtbarem Hover-/Fokus-Zustand. */
 .tour-dot {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--border);
+  border: none;
+  padding: 0;
+  margin: 4px 0;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+.tour-dot:hover {
+  background: var(--dyd-blue);
+  transform: scale(1.3);
+}
+.tour-dot:focus-visible {
+  outline: 2px solid var(--dyd-blue);
+  outline-offset: 2px;
 }
 .tour-dot.done {
   background: var(--dyd-blue);
@@ -2457,6 +2550,8 @@ input.big-input:focus {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
+  padding-top: 4px;
 }
 .tour-nav-btns {
   display: flex;

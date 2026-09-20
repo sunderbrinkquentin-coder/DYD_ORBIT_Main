@@ -2448,12 +2448,33 @@
  * ausführlicher Kommentar dort): eine FESTE Docking-Position (unten mittig),
  * unabhängig von Größe/Position des Ziels — dieselbe Lösung jetzt auch hier
  * uebernommen, DashboardTour.tsx berechnet cardStyle nicht mehr dynamisch. */
+/* Rueckmeldung (19./20.09., "die Beschreibung soll immer sichtbar sein, egal
+   in welchem Format man die Seite offen hat"): vorher lag "overflow-y: auto"
+   + "max-height" direkt auf .tour-card-dock -- Kopf, Autoplay-Zeile,
+   Fortschrittsleiste, Titel, Beschreibung, Punkte UND die Weiter/Zurueck-
+   Buttons steckten dadurch ALLE in EINEM einzigen Scroll-Container. Bei
+   geringer Fensterhoehe (kleines Fenster, Browser-Zoom, mobile Landscape)
+   konnten dadurch sowohl das Ende einer laengeren Beschreibung als auch die
+   Buttons unbemerkt aus dem sichtbaren Bereich rutschen -- man musste
+   innerhalb der Karte scrollen, ohne dass das offensichtlich war. Fix: die
+   Karte ist jetzt ein Flex-Container; Kopf (.tour-card-head) und die
+   Buttonzeile (.tour-actions) sind ausserhalb des Scroll-Bereichs und bleiben
+   IMMER sichtbar, nur der mittlere Inhalt (.tour-card-body: Autoplay,
+   Fortschrittsleiste, Titel, Beschreibung, Nutzen-Satz, Punkte) scrollt bei
+   Bedarf -- Titel und Beschreibung stehen darin ganz oben und sind dadurch in
+   praktisch jedem Fensterformat sofort sichtbar. */
 .tour-card-dock {
   left: 50%;
   bottom: 20px;
   transform: translateX(-50%);
   max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+}
+.tour-card-body {
   overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* Bugfix (14.09., "die Kachel von der Rundtour ist hinter den Infos, die
@@ -2488,6 +2509,7 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 6px;
+  flex-shrink: 0;
 }
 .tour-step-count {
   font-size: 11px;
@@ -2696,6 +2718,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
+  padding-top: 4px;
 }
 .tour-nav-btns {
   display: flex;

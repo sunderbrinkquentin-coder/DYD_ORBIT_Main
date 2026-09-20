@@ -429,27 +429,37 @@ export function DashboardTour({ open, onClose, activeTab, onChangeTab, onStepCha
             ×
           </button>
         </div>
-        {/* Eigene, auffällige Zeile statt im engen Kopf (siehe Kommentar an
-           TourAutoplayToggle in tourAutoplay.tsx) — vorher zwischen
-           Schrittzähler und ×-Button eingeklemmt und dadurch leicht zu
-           übersehen. */}
-        <div className="tour-autoplay-row">
-          <TourAutoplayToggle active={autoplay} onToggle={() => setAutoplay((a) => !a)} />
+        {/* Rueckmeldung (19./20.09., "Beschreibung soll immer sichtbar sein,
+           egal in welchem Format man die Seite offen hat"): dieser mittlere
+           Block ist jetzt der EINZIGE Scroll-Container der Karte
+           (.tour-card-body, siehe dashboard.css) — Kopf oben und die
+           Weiter/Zurueck-Buttons unten (.tour-actions) liegen bewusst
+           AUSSERHALB und bleiben dadurch immer sichtbar, unabhaengig von der
+           Fensterhoehe. Titel+Beschreibung stehen hier ganz oben, sind also
+           auch bei wenig Platz als Erstes sichtbar. */}
+        <div className="tour-card-body">
+          {/* Eigene, auffällige Zeile statt im engen Kopf (siehe Kommentar an
+             TourAutoplayToggle in tourAutoplay.tsx) — vorher zwischen
+             Schrittzähler und ×-Button eingeklemmt und dadurch leicht zu
+             übersehen. */}
+          <div className="tour-autoplay-row">
+            <TourAutoplayToggle active={autoplay} onToggle={() => setAutoplay((a) => !a)} />
+          </div>
+          <TourAutoplayBar active={autoplay && !isLast} progress={autoplayProgress} />
+          <h3 className="tour-title">{step.title}</h3>
+          <p className="tour-desc">{step.description}</p>
+          {/* Klickbare Punkte statt reiner Anzeige (NEU, 18.09., "es soll
+             interaktiver sein") — direkter Sprung zu jedem Schritt, stoppt
+             dabei die Automatik wie ein manueller Zurück-Klick. */}
+          <TourStepDots
+            count={STEPS.length}
+            currentIndex={stepIndex}
+            onJump={(i) => {
+              setAutoplay(false);
+              setStepIndex(i);
+            }}
+          />
         </div>
-        <TourAutoplayBar active={autoplay && !isLast} progress={autoplayProgress} />
-        <h3 className="tour-title">{step.title}</h3>
-        <p className="tour-desc">{step.description}</p>
-        {/* Klickbare Punkte statt reiner Anzeige (NEU, 18.09., "es soll
-           interaktiver sein") — direkter Sprung zu jedem Schritt, stoppt
-           dabei die Automatik wie ein manueller Zurück-Klick. */}
-        <TourStepDots
-          count={STEPS.length}
-          currentIndex={stepIndex}
-          onJump={(i) => {
-            setAutoplay(false);
-            setStepIndex(i);
-          }}
-        />
         <div className="tour-actions">
           <button className="tour-btn tour-btn-ghost" onClick={onClose}>
             Beenden

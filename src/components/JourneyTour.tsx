@@ -134,8 +134,20 @@ const RAW_STEPS: RawStep[] = [
       // anlaufende Kette) steht deshalb jetzt HIER, direkt im Anschluss an
       // die Bereichs-Erklaerung, statt als eigener, separat betitelter
       // Tour-Schritt danach.
-      "Wer die eigene Zielrolle noch nicht kennt, klickt hier einfach an, was er/sie schon kann oder gerne macht — kein Text nötig. Daraus errechnen wir echte, prozentuale Rollen-Vorschläge statt nur eine Branche raten zu lassen. Eine konkrete Rolle muss dabei nicht aktiv angeklickt werden: ein einfaches „Weiter“ wählt automatisch die am besten passende, direkt aus diesem Bereich. Ab hier läuft der komplette weitere Ablauf entlang derselben Kette automatisch: Bereich → Zielrolle → Skill-Abgleich → Lücken-Berechnung → passende Kursempfehlung — die angeklickten Skills sind im Fragebogen-Schritt danach schon vorausgewählt.",
-    benefit: "Dieser Weg fängt genau die Personen auf, die sonst ohne konkrete Zielrolle abgesprungen wären — der hier ermittelte Bereich taucht danach direkt im Dashboard wieder auf (Filterleiste in Leads, Kurse und Reports, siehe Branche/Bereich-Filter) und entscheidet mit, welche deiner Kurse überhaupt als Empfehlung infrage kommen. Ein Kurs ohne gepflegten Bereich bleibt für genau diese Zielgruppe unsichtbar. Die daraus automatisch gewählte Zielrolle steht danach genauso fest im Lead wie bei einer manuellen Auswahl — du siehst im Dashboard exakt, wofür sich jemand qualifizieren möchte.",
+      // Round 27 (18.09., "bei der Journey-Tour soll es mit dem allgemeinen
+      // Prozess durchgehen, nicht mit dem spezifischen Rollenbild — das will
+      // ich da nicht drin haben"): Runde 21-24 hatten den Zielrollen-FOKUS
+      // (die rhetorische Betonung) entschaerft, das blosse WORT "Zielrolle"
+      // aber an mehreren Stellen unveraendert gelassen (galt als reine
+      // Feld-Nennung, nicht als Fokus). Das war zu fein unterschieden fuer
+      // Quentins Anspruch — er will den Begriff "Zielrolle" (den er als "das
+      // spezifische Rollenbild" beschreibt) an keiner sichtbaren Tour-Stelle
+      // mehr sehen, nicht nur seltener betont. Deshalb hier UND in den
+      // folgenden Schritten "Zielrolle" durchgaengig durch "Rolle"/"gewaehlte
+      // Rolle" ersetzt (inhaltlich identisch, keine erfundene Aenderung an
+      // der eigentlichen Funktion).
+      "Wer die eigene Rolle noch nicht kennt, klickt hier einfach an, was er/sie schon kann oder gerne macht — kein Text nötig. Daraus errechnen wir echte, prozentuale Rollen-Vorschläge statt nur eine Branche raten zu lassen. Eine konkrete Rolle muss dabei nicht aktiv angeklickt werden: ein einfaches „Weiter“ wählt automatisch die am besten passende, direkt aus diesem Bereich. Ab hier läuft der komplette weitere Ablauf entlang derselben Kette automatisch: Bereich → Rolle → Skill-Abgleich → Lücken-Berechnung → passende Kursempfehlung — die angeklickten Skills sind im Fragebogen-Schritt danach schon vorausgewählt.",
+    benefit: "Dieser Weg fängt genau die Personen auf, die sonst ohne konkrete Rolle abgesprungen wären — der hier ermittelte Bereich taucht danach direkt im Dashboard wieder auf (Filterleiste in Leads, Kurse und Reports, siehe Branche/Bereich-Filter) und entscheidet mit, welche deiner Kurse überhaupt als Empfehlung infrage kommen. Ein Kurs ohne gepflegten Bereich bleibt für genau diese Zielgruppe unsichtbar. Die daraus automatisch gewählte Rolle steht danach genauso fest im Lead wie bei einer manuellen Auswahl — du siehst im Dashboard exakt, wofür sich jemand qualifizieren möchte.",
     demoEvent: "🧭 Bereich erkannt: Wirtschaft & Verwaltung",
   },
   {
@@ -146,17 +158,21 @@ const RAW_STEPS: RawStep[] = [
     // dort bleibt dies weiterhin der einzige, vollwertige Rollen-Auswahl-Schritt.
     hideIfKeyPresent: "bereich",
     selector: '[data-tour="tour-panel"]',
-    title: "Zielrolle waehlen",
+    // Round 27: Titel von "Zielrolle waehlen" auf "Rolle direkt angeben"
+    // umbenannt — gleiche Funktion (Freitextsuche + Karten-Auswahl), aber
+    // ohne das Wort "Zielrolle" als Ueberschrift, siehe Kommentar am
+    // "bereich"-Schritt oben.
+    title: "Rolle direkt angeben",
     description:
-      "Freitextsuche plus Karten-Auswahl. Ab hier läuft der komplette weitere Ablauf entlang derselben Kette automatisch: Zielrolle → Skill-Abgleich → Lücken-Berechnung → passende Kursempfehlung.",
-    benefit: "Die Zielrolle steht danach fest im Lead — du siehst im Dashboard exakt, wofür sich jemand qualifizieren möchte, statt nur vager „Interesse an Weiterbildung“.",
+      "Freitextsuche plus Karten-Auswahl. Ab hier läuft der komplette weitere Ablauf automatisch: Skill-Abgleich → Lücken-Berechnung → passende Kursempfehlung.",
+    benefit: "Die gewählte Rolle steht danach fest im Lead — du siehst im Dashboard exakt, wofür sich jemand qualifizieren möchte, statt nur vager „Interesse an Weiterbildung“.",
   },
   {
     key: "skills",
     selector: '[data-tour="tour-panel"]',
     title: "Lebenslauf oder Fragebogen",
     description:
-      "Zwei Wege zum selben Ergebnis: Lebenslauf hochladen (inkl. OCR-Fallback fuer eingescannte PDFs) oder die Kern-Skills der Zielrolle per Checkbox angeben. Die DSGVO-Einwilligung ist beim Upload Pflicht.",
+      "Zwei Wege zum selben Ergebnis: Lebenslauf hochladen (inkl. OCR-Fallback fuer eingescannte PDFs) oder die Kern-Skills der gewählten Rolle per Checkbox angeben. Die DSGVO-Einwilligung ist beim Upload Pflicht.",
     benefit: "Beide Wege liefern echte, belegte Skills statt einer Selbsteinschätzung „aus dem Bauch heraus“ — die Grundlage für ein Match, das im Beratungsgespräch auch inhaltlich standhält.",
   },
   {
@@ -198,7 +214,7 @@ const RAW_STEPS: RawStep[] = [
       // nicht Rollen-Passung). Jetzt erklärt der Text den MECHANISMUS
       // allgemein, statt eine Aussage über den gerade sichtbaren Einzelfall
       // zu treffen.
-      "So funktioniert die Empfehlung: die Kurse aus dem eigenen Katalog werden nach gewichteter Abdeckung der Skill-Lücke sortiert, die weiter oben genannten Rahmenbedingungen entscheiden nur bei fachlich gleichwertigen Treffern über die Reihenfolge — nie über die Sichtbarkeit. Jede Karte zeigt zusätzlich Preis (inkl. USt.-Hinweis/Prüfungsgebühr), Unterrichtseinheiten, Abschlussart und einen „Förderfähig“-Hinweis, falls vom Bildungsträger gepflegt, und bei einem echten Treffer eine individuelle Begründung mit konkreten Skill-Namen statt einer allgemeinen Floskel. Einzelne Kurskacheln können außerdem Banner wie „Startet in Kürze“ oder „Nur noch wenige Plätze“ zeigen — direkt vom Bildungsträger im Dashboard aus echten Werten gesetzt, nie erfunden. Der Nutzer wählt hier aktiv einen konkreten Kurs, „Match danach“ zeigt ehrlich, wie viel näher die eigene Wahl an die Zielrolle bringt.",
+      "So funktioniert die Empfehlung: die Kurse aus dem eigenen Katalog werden nach gewichteter Abdeckung der Skill-Lücke sortiert, die weiter oben genannten Rahmenbedingungen entscheiden nur bei fachlich gleichwertigen Treffern über die Reihenfolge — nie über die Sichtbarkeit. Jede Karte zeigt zusätzlich Preis (inkl. USt.-Hinweis/Prüfungsgebühr), Unterrichtseinheiten, Abschlussart und einen „Förderfähig“-Hinweis, falls vom Bildungsträger gepflegt, und bei einem echten Treffer eine individuelle Begründung mit konkreten Skill-Namen statt einer allgemeinen Floskel. Einzelne Kurskacheln können außerdem Banner wie „Startet in Kürze“ oder „Nur noch wenige Plätze“ zeigen — direkt vom Bildungsträger im Dashboard aus echten Werten gesetzt, nie erfunden. Der Nutzer wählt hier aktiv einen konkreten Kurs, „Match danach“ zeigt ehrlich, wie viel näher die eigene Wahl ans Ziel bringt.",
     benefit: "Hier entscheidet sich, welcher deiner Kurse überhaupt gezeigt wird — gepflegte Rahmendaten, ein aktueller Buchungslink und der richtige Bereich zahlen sich direkt in mehr qualifizierten Leads aus.",
     // Round 21: keine feste Prozentzahl mehr behaupten (siehe Kommentar an
     // der description oben) — die im Rundgang gezeigte Beispielkarte kann
@@ -211,8 +227,8 @@ const RAW_STEPS: RawStep[] = [
     selector: '[data-tour="tour-panel"]',
     title: "Kontaktaufnahme",
     description:
-      "Letzter Schritt: nur noch Name, E-Mail (optional Telefon) und die DSGVO-Einwilligung — der qualifizierte Lead landet direkt im Bildungstraeger-Dashboard, inklusive Zielrolle, Match-Score, gewaehltem Kurs und den weiter oben angegebenen Rahmenbedingungen (Beschaeftigungsart, Arbeitsort, Wunschstart, Foerderung). Zwei klare Wege: direkt buchen oder erst beraten lassen — beides landet als Lead im Dashboard, nur mit unterschiedlichem Status. Die Einwilligung wird mit Zeitpunkt und Text-Version nachweisbar gespeichert, die Person kann ihre Daten jederzeit vom Bildungstraeger loeschen lassen (Recht auf Loeschung, Art. 17 DSGVO).",
-    benefit: "Das komplette Ergebnis landet ohne manuelle Übertragung direkt im Dashboard — inklusive Bereich, Zielrolle und Match-Score, sofort filterbar und einsatzbereit fürs Beratungsgespräch.",
+      "Letzter Schritt: nur noch Name, E-Mail (optional Telefon) und die DSGVO-Einwilligung — der qualifizierte Lead landet direkt im Bildungstraeger-Dashboard, inklusive gewählter Rolle, Match-Score, gewaehltem Kurs und den weiter oben angegebenen Rahmenbedingungen (Beschaeftigungsart, Arbeitsort, Wunschstart, Foerderung). Zwei klare Wege: direkt buchen oder erst beraten lassen — beides landet als Lead im Dashboard, nur mit unterschiedlichem Status. Die Einwilligung wird mit Zeitpunkt und Text-Version nachweisbar gespeichert, die Person kann ihre Daten jederzeit vom Bildungstraeger loeschen lassen (Recht auf Loeschung, Art. 17 DSGVO).",
+    benefit: "Das komplette Ergebnis landet ohne manuelle Übertragung direkt im Dashboard — inklusive Bereich, gewählter Rolle und Match-Score, sofort filterbar und einsatzbereit fürs Beratungsgespräch.",
     demoEvent: "📥 Neuer Lead im Dashboard sichtbar",
   },
   {
@@ -460,14 +476,16 @@ export function JourneyTour({
               ×
             </button>
           </div>
-          <div className="tour-autoplay-row">
-            <TourAutoplayToggle active={autoplay} onToggle={() => setAutoplay((a) => !a)} />
+          <div className="tour-card-body">
+            <div className="tour-autoplay-row">
+              <TourAutoplayToggle active={autoplay} onToggle={() => setAutoplay((a) => !a)} />
+            </div>
+            <div className="tour-preparing-spinner" aria-hidden="true" />
+            <p className="tour-desc">
+              Für „Skill-Gap“ und „Kurs“ lädt der Rundgang gerade ein echtes Beispielergebnis, damit dort auch ohne
+              vorherigen eigenen Durchlauf etwas zu sehen ist — dauert nur einen Moment.
+            </p>
           </div>
-          <div className="tour-preparing-spinner" aria-hidden="true" />
-          <p className="tour-desc">
-            Für „Skill-Gap“ und „Kurs“ lädt der Rundgang gerade ein echtes Beispielergebnis, damit dort auch ohne
-            vorherigen eigenen Durchlauf etwas zu sehen ist — dauert nur einen Moment.
-          </p>
         </div>
       </div>
     );
@@ -496,31 +514,39 @@ export function JourneyTour({
             ×
           </button>
         </div>
-        {/* Eigene, auffällige Zeile statt im engen Kopf (siehe Kommentar an
-           TourAutoplayToggle in tourAutoplay.tsx) — vorher zwischen
-           Schrittzähler und ×-Button eingeklemmt und dadurch leicht zu
-           übersehen. */}
-        <div className="tour-autoplay-row">
-          <TourAutoplayToggle active={autoplay} onToggle={() => setAutoplay((a) => !a)} />
+        {/* Rueckmeldung (19./20.09., "Beschreibung soll immer sichtbar sein,
+           egal in welchem Format man die Seite offen hat") — identischer
+           Aufbau wie in DashboardTour.tsx (siehe Kommentar dort): dieser
+           mittlere Block ist der einzige Scroll-Container der Karte, Kopf
+           und die Weiter/Zurueck-Buttons bleiben aussen und damit immer
+           sichtbar. */}
+        <div className="tour-card-body">
+          {/* Eigene, auffällige Zeile statt im engen Kopf (siehe Kommentar an
+             TourAutoplayToggle in tourAutoplay.tsx) — vorher zwischen
+             Schrittzähler und ×-Button eingeklemmt und dadurch leicht zu
+             übersehen. */}
+          <div className="tour-autoplay-row">
+            <TourAutoplayToggle active={autoplay} onToggle={() => setAutoplay((a) => !a)} />
+          </div>
+          <TourAutoplayBar active={autoplay && !isLast} progress={autoplayProgress} />
+          <h3 className="tour-title">{step.title}</h3>
+          <p className="tour-desc">{step.description}</p>
+          {step.benefit && <p className="tour-benefit">{step.benefit}</p>}
+          {/* Klickbare Punkte statt reiner Anzeige (NEU, 18.09., "es soll
+             interaktiver sein") — direkter Sprung zu jedem Schritt, stoppt
+             dabei die Automatik wie ein manueller Zurück-Klick. Die
+             bestehende Navigations-/Mess-Logik oben reagiert bereits allein
+             auf `stepIdx`, ein Sprung über mehrere Schritte hinweg
+             funktioniert also genauso wie ein einzelner Weiter-/Zurück-Klick. */}
+          <TourStepDots
+            count={steps.length}
+            currentIndex={stepIdx}
+            onJump={(i) => {
+              setAutoplay(false);
+              setStepIdx(i);
+            }}
+          />
         </div>
-        <TourAutoplayBar active={autoplay && !isLast} progress={autoplayProgress} />
-        <h3 className="tour-title">{step.title}</h3>
-        <p className="tour-desc">{step.description}</p>
-        {step.benefit && <p className="tour-benefit">{step.benefit}</p>}
-        {/* Klickbare Punkte statt reiner Anzeige (NEU, 18.09., "es soll
-           interaktiver sein") — direkter Sprung zu jedem Schritt, stoppt
-           dabei die Automatik wie ein manueller Zurück-Klick. Die
-           bestehende Navigations-/Mess-Logik oben reagiert bereits allein
-           auf `stepIdx`, ein Sprung über mehrere Schritte hinweg
-           funktioniert also genauso wie ein einzelner Weiter-/Zurück-Klick. */}
-        <TourStepDots
-          count={steps.length}
-          currentIndex={stepIdx}
-          onJump={(i) => {
-            setAutoplay(false);
-            setStepIdx(i);
-          }}
-        />
         <div className="tour-actions">
           <button className="tour-btn tour-btn-ghost" onClick={onClose}>
             Beenden

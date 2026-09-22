@@ -2442,10 +2442,10 @@ async function runDemoAnalysis() {
     // Explizit gewünschte Lernziele aus dem Bereich-Schritt zuerst zeigen.
     // Sie bleiben trotzdem nur dann "Lücke", wenn der Skill im Skill-Check
     // nicht als vorhanden bestätigt wurde.
-    const learningGoalIds = roleSuggestSkillIds;
+    const learningGoalIds = new Set(roleSuggestSkillIds);
     gap.sort((a, b) => {
-      const aGoal = learningGoalIds.has(a.skill_id) ? 0 : 1;
-      const bGoal = learningGoalIds.has(b.skill_id) ? 0 : 1;
+      const aGoal = learningGoalIds.has(a.esco_uri) ? 0 : 1;
+      const bGoal = learningGoalIds.has(b.esco_uri) ? 0 : 1;
       if (aGoal !== bGoal) return aGoal - bGoal;
       return b.weight - a.weight;
     });
@@ -2474,7 +2474,7 @@ async function runDemoAnalysis() {
       .filter((s) => checkedSkills.has(s.esco_uri))
       .map((s) => s.preferred_label);
     const learningGoals = roleSkills
-      .filter((s) => roleSuggestSkillIds.has(s.skill_id))
+      .filter((s) => roleSuggestSkillIds.has(s.esco_uri))
       .map((s) => s.preferred_label);
     const syntheticParts = [
       learningGoals.length ? `Ich möchte folgende Fähigkeiten gezielt lernen: ${learningGoals.join(", ")}.` : "",
@@ -3299,7 +3299,6 @@ async function runDemoAnalysis() {
                     loadingRoleSkills={loadingRoleSkills}
                     roleSkillsError={roleSkillsError}
                     checkedSkills={checkedSkills}
-                    learningGoalSkillIds={roleSuggestSkillIds}
                     toggleSkill={toggleSkill}
                     skillDepthByUri={skillDepthByUri}
                     onAnswerSkill={answerQuizSkill}
@@ -3344,7 +3343,11 @@ async function runDemoAnalysis() {
                     error={gapError}
                     goalLabel={GOAL_OPTIONS.find((g) => g.key === careerGoal)?.label}
                     allCourses={allCourses}
-                    targetBereichKey={bereichRole?.bereich_key ?? rolesInPortfolio.find((r) => r.role_id === targetRoleId)?.bereich_key ?? null}
+                    targetBereichKey={
+                      bereichRole?.bereich_key ??
+                      rolesInPortfolio.find((r) => r.role_id === targetRoleId)?.bereich_key ??
+                      null
+                    }
                     portfolioRoles={rolesInPortfolio}
                     onForward={goToKurs}
                     onBack={() => setCurrent(stepIndex("skills"))}
@@ -3673,38 +3676,6 @@ function GoalStep({ selected, onSelect, onSkip, onBack }: { selected: string | n
  *  taucht davon nichts auf. Wer eine konkrete Rolle kennt, nutzt weiterhin
  *  den expliziten Ausweg "Lieber selbst durch alle Rollen stöbern"
  *  (ZielrolleStep) — das ist eine bewusste Wahl, kein erzwungener Schritt. */
-/**
- * Verständliche Unterbereiche für die Skill-Auswahl.
- *
- * Die API/ESCO-Daten bleiben unverändert. Die Unterbereiche sind reine
- * Präsentationsgruppen: ein Skill gehört immer genau zu einer Gruppe und
- * kann weiterhin ausschließlich über seine echte `skill_id` ausgewählt
- * werden. So muss niemand ESCO-Bezeichnungen kennen, um ein Entwicklungsziel
- * zu finden.
- */
-function skillSubgroupKey(name: string): { key: string; label: string; icon: string } {
-  const n = name.toLowerCase();
-  if (/kommunikation|präsent|praesent|moderation|gespräch|gespraech|zuhören|zuhoeren|feedback|verhandlung|argument|rhetor|sprache|kunden|beratung|empath/.test(n))
-    return { key: "kommunikation", label: "Kommunikation & Auftreten", icon: "💬" };
-  if (/führung|fuehrung|leadership|team|mitarbeit|konflikt|deleg|coaching|zusammenarbeit|motivation/.test(n))
-    return { key: "zusammenarbeit", label: "Führung & Zusammenarbeit", icon: "🤝" };
-  if (/projekt|planung|organisation|prozess|management|scrum|agil|zeitmanagement|prior/.test(n))
-    return { key: "organisation", label: "Organisation & Projekte", icon: "🧭" };
-  if (/analyse|daten|statistik|sql|excel|power bi|dashboard|report|kennzahl|controlling|recherche/.test(n))
-    return { key: "analyse", label: "Analyse & Entscheidungen", icon: "📊" };
-  if (/programm|software|entwick|code|digital|technolog|it |cloud|datenbank|web|automatis|system|cyber|computer/.test(n))
-    return { key: "digital", label: "Digital & Technik", icon: "💻" };
-  if (/marketing|seo|content|social|kampagne|branding|marke|werbung|design|kreat|text|grafik|medien/.test(n))
-    return { key: "kreativ", label: "Kreativität & Wirkung", icon: "✨" };
-  if (/verkauf|sales|vertrieb|kunde|akquise|geschäft|geschaeft|service|handel/.test(n))
-    return { key: "business", label: "Kunden & Business", icon: "🚀" };
-  if (/handwerk|montage|reparatur|maschinen|technik|produktion|bau|werkzeug|praktisch/.test(n))
-    return { key: "praxis", label: "Praxis & Umsetzung", icon: "🛠️" };
-  if (/gesund|pflege|medizin|patient|therapie|sozial|pädagog|paedagog|bildung|lernen|didakt/.test(n))
-    return { key: "menschen", label: "Menschen & Entwicklung", icon: "❤️" };
-  return { key: "fachwissen", label: "Fachwissen & Praxis", icon: "🎯" };
-}
-
 function RoleSuggestStep({
   selectedSkillIds,
   onToggleSkill,
@@ -3727,10 +3698,13 @@ function RoleSuggestStep({
   const [selectedBereich, setSelectedBereich] = useState<Set<string>>(new Set());
   const [selectedInterests, setSelectedInterests] = useState<Set<string>>(new Set());
   const [discoveryMode, setDiscoveryMode] = useState(false);
-  const [openSubgroups, setOpenSubgroups] = useState<Set<string>>(new Set());
+  const [skillAreaOpen, setSkillAreaOpen] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState(false);
 
-  const availableAreaKeys = useMemo(() => new Set(bereicheOptions.map((b) => b.key)), [bereicheOptions]);
+  const availableAreaKeys = useMemo(
+    () => new Set(bereicheOptions.map((bereich) => bereich.key)),
+    [bereicheOptions],
+  );
 
   function toggleBereich(key: string) {
     setSelectedBereich((prev) => {
@@ -3739,6 +3713,7 @@ function RoleSuggestStep({
       else if (next.size < 2) next.add(key);
       return next;
     });
+    setSkillAreaOpen(key);
   }
 
   function toggleInterest(key: string) {
@@ -3751,69 +3726,62 @@ function RoleSuggestStep({
   }
 
   const recommendedBereiche = useMemo(() => {
-    if (!selectedInterests.size) return [];
+    if (selectedInterests.size === 0) return [];
     const score = new Map<string, number>();
     for (const interest of BEREICH_DISCOVERY_OPTIONS) {
       if (!selectedInterests.has(interest.key)) continue;
       for (const areaKey of interest.areaHints) {
-        if (availableAreaKeys.has(areaKey)) score.set(areaKey, (score.get(areaKey) ?? 0) + 1);
+        if (!availableAreaKeys.has(areaKey)) continue;
+        score.set(areaKey, (score.get(areaKey) ?? 0) + 1);
       }
     }
     return [...score.entries()]
       .sort((a, b) => b[1] - a[1])
-      .map(([key]) => bereicheOptions.find((b) => b.key === key))
-      .filter((b): b is BereichOption => Boolean(b))
+      .map(([key]) => bereicheOptions.find((bereich) => bereich.key === key))
+      .filter((bereich): bereich is BereichOption => Boolean(bereich))
       .slice(0, 4);
   }, [selectedInterests, availableAreaKeys, bereicheOptions]);
 
-  const bereichFilteredRoles = useMemo(
-    () => selectedBereich.size ? rolesInPortfolio.filter((r) => selectedBereich.has(r.bereich_key)) : rolesInPortfolio,
-    [selectedBereich, rolesInPortfolio],
+  const effectiveSelectedBereich = useMemo(
+    () => selectedBereich,
+    [selectedBereich],
   );
 
-  const learningSkills = useMemo(() => topSkillsForRoles(bereichFilteredRoles, 40), [bereichFilteredRoles]);
+  const bereichFilteredRoles = useMemo(
+    () =>
+      effectiveSelectedBereich.size > 0
+        ? rolesInPortfolio.filter((role) => effectiveSelectedBereich.has(role.bereich_key))
+        : rolesInPortfolio,
+    [effectiveSelectedBereich, rolesInPortfolio],
+  );
 
-  const skillGroups = useMemo(() => {
-    const map = new Map<string, { key: string; label: string; icon: string; skills: typeof learningSkills }>();
-    for (const skill of learningSkills) {
-      const meta = skillSubgroupKey(skill.name);
-      const existing = map.get(meta.key);
-      if (existing) existing.skills.push(skill);
-      else map.set(meta.key, { ...meta, skills: [skill] });
-    }
-    return [...map.values()];
+  const learningSkills = useMemo(
+    () => topSkillsForRoles(bereichFilteredRoles, 24),
+    [bereichFilteredRoles],
+  );
+
+  const skillsByArea = useMemo(() => {
+    return new Map([["skills", learningSkills]]);
   }, [learningSkills]);
 
-  const selectedLearningLabels = learningSkills.filter((s) => selectedSkillIds.has(s.skill_id)).map((s) => s.name);
+  const selectedLearningLabels = learningSkills
+    .filter((skill) => selectedSkillIds.has(skill.skill_id))
+    .map((skill) => skill.name);
 
-  function selectRecommendedArea(key: string) { toggleBereich(key); }
-
-  function toggleSubgroup(key: string) {
-    setOpenSubgroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
-  }
-
-  function toggleAllSkills(skills: typeof learningSkills) {
-    const allSelected = skills.every((s) => selectedSkillIds.has(s.skill_id));
-    for (const skill of skills) {
-      if (allSelected && selectedSkillIds.has(skill.skill_id)) onToggleSkill(skill.skill_id);
-      if (!allSelected && !selectedSkillIds.has(skill.skill_id)) onToggleSkill(skill.skill_id);
-    }
+  function selectRecommendedArea(key: string) {
+    toggleBereich(key);
   }
 
   function goWithBereich() {
-    const keys = [...selectedBereich];
-    if (advancing || !keys.length) return;
+    const keys = [...effectiveSelectedBereich];
+    if (advancing || keys.length === 0) return;
     setAdvancing(true);
     onSelectBereich(keys);
-    window.setTimeout(onForward, 180);
+    window.setTimeout(onForward, 220);
   }
 
-  const selectedLabels = [...selectedBereich]
-    .map((key) => bereicheOptions.find((b) => b.key === key)?.label ?? key)
+  const selectedLabels = [...effectiveSelectedBereich]
+    .map((key) => bereicheOptions.find((bereich) => bereich.key === key)?.label ?? key)
     .join(" · ");
 
   return (
@@ -3822,103 +3790,173 @@ function RoleSuggestStep({
         step="04"
         kicker="DEINE ENTWICKLUNG"
         title="Was möchtest du gezielt entwickeln?"
-        description="Wähle zuerst einen Bereich. Danach findest du darin übersichtliche Themenfelder – und darin die konkreten Skills. Alles bleibt auf einer einzigen Ansicht."
+        description="Wir gehen nicht sofort auf Weiterbildungen. Erst legen wir gemeinsam fest, welche Bereiche und Skills für dich interessant sind. Dein Erfahrungslevel kommt direkt danach."
       />
 
       {!discoveryMode && selectedBereich.size === 0 ? (
         <div>
-          <button type="button" onClick={() => setDiscoveryMode(true)} style={{ width: "100%", border: "1px solid rgba(47,143,214,.22)", borderRadius: "18px", padding: "18px", background: "linear-gradient(135deg, rgba(95,220,153,.10), rgba(47,143,214,.08))", cursor: "pointer", textAlign: "left", marginBottom: "18px" }}>
+          <button
+            type="button"
+            onClick={() => setDiscoveryMode(true)}
+            style={{
+              width: "100%",
+              border: "1px solid rgba(47,143,214,.22)",
+              borderRadius: "18px",
+              padding: "18px",
+              background: "linear-gradient(135deg, rgba(95,220,153,.10), rgba(47,143,214,.08))",
+              cursor: "pointer",
+              textAlign: "left",
+              marginBottom: "18px",
+            }}
+          >
             <span style={{ display: "flex", alignItems: "center", gap: "12px" }}>
               <span style={{ fontSize: "25px" }}>🧭</span>
-              <span><strong style={{ display: "block", fontSize: "16px" }}>Ich bin noch nicht sicher</strong><span className="hint">Beantworte 2–3 kurze Fragen und wir grenzen passende Bereiche für dich ein.</span></span>
+              <span>
+                <strong style={{ display: "block", fontSize: "16px" }}>Ich bin noch nicht sicher</strong>
+                <span className="hint">Beantworte 2–3 kurze Fragen und wir grenzen passende Bereiche für dich ein.</span>
+              </span>
               <span style={{ marginLeft: "auto", fontSize: "20px" }}>→</span>
             </span>
           </button>
-          <div className="hint" style={{ margin: "0 0 10px", textAlign: "center" }}>Oder wähle direkt einen Bereich:</div>
+
+          <div style={{ margin: "0 0 10px", textAlign: "center" }} className="hint">
+            Oder wähle direkt einen Bereich:
+          </div>
           <div className="role-grid">
-            {bereicheOptions.map((bereich) => {
-              const active = selectedBereich.has(bereich.key);
-              return <button key={bereich.key} type="button" className={`role-card ${active ? "selected" : ""}`} onClick={() => toggleBereich(bereich.key)} aria-pressed={active} style={{ textAlign: "left", cursor: "pointer" }}>
-                {active && <span className="role-card-check" aria-hidden="true">✓</span>}
+            {bereicheOptions.map((bereich) => (
+              <button
+                key={bereich.key}
+                type="button"
+                className={`role-card ${selectedBereich.has(bereich.key) ? "selected" : ""}`}
+                onClick={() => toggleBereich(bereich.key)}
+                aria-pressed={selectedBereich.has(bereich.key)}
+                style={{ textAlign: "left", cursor: "pointer" }}
+              >
+                {selectedBereich.has(bereich.key) && <span className="role-card-check" aria-hidden="true">✓</span>}
                 <div className="role-card-icon" aria-hidden="true">{BEREICH_ICONS[bereich.key] ?? "🧭"}</div>
                 <div className="role-card-name">{bereich.label}</div>
-              </button>;
-            })}
+              </button>
+            ))}
           </div>
         </div>
       ) : discoveryMode && selectedBereich.size === 0 ? (
         <div>
           <div style={{ marginBottom: "14px", padding: "13px 15px", borderRadius: "14px", background: "rgba(127,127,127,.04)", border: "1px solid var(--border-soft)" }}>
             <strong style={{ fontSize: "14px" }}>Was interessiert dich am meisten?</strong>
-            <div className="hint" style={{ marginTop: "4px" }}>Wähle bis zu 3 Dinge. Daraus schlagen wir dir passende Bereiche vor.</div>
+            <div className="hint" style={{ marginTop: "4px" }}>Wähle bis zu 3 Dinge. Daraus schlagen wir dir Bereiche vor.</div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "10px" }}>
             {BEREICH_DISCOVERY_OPTIONS.map((interest) => {
               const active = selectedInterests.has(interest.key);
-              return <button key={interest.key} type="button" onClick={() => toggleInterest(interest.key)} aria-pressed={active} style={{ border: active ? "1.5px solid rgba(47,143,214,.55)" : "1px solid var(--border-soft)", borderRadius: "16px", padding: "15px", background: active ? "linear-gradient(135deg, rgba(95,220,153,.11), rgba(47,143,214,.08))" : "var(--surface, #fff)", cursor: "pointer", textAlign: "left" }}>
-                <div style={{ fontSize: "21px", marginBottom: "8px" }}>{interest.icon}</div><strong style={{ display: "block", fontSize: "14px" }}>{interest.title}</strong><span className="hint" style={{ display: "block", marginTop: "5px", lineHeight: 1.45 }}>{interest.description}</span>
-              </button>;
+              return (
+                <button
+                  key={interest.key}
+                  type="button"
+                  onClick={() => toggleInterest(interest.key)}
+                  aria-pressed={active}
+                  style={{
+                    border: active ? "1.5px solid rgba(47,143,214,.55)" : "1px solid var(--border-soft)",
+                    borderRadius: "16px",
+                    padding: "15px",
+                    background: active ? "linear-gradient(135deg, rgba(95,220,153,.11), rgba(47,143,214,.08))" : "var(--surface, #fff)",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <div style={{ fontSize: "21px", marginBottom: "8px" }}>{interest.icon}</div>
+                  <strong style={{ display: "block", fontSize: "14px" }}>{interest.title}</strong>
+                  <span className="hint" style={{ display: "block", marginTop: "5px", lineHeight: 1.45 }}>{interest.description}</span>
+                </button>
+              );
             })}
           </div>
-          {recommendedBereiche.length > 0 && <div style={{ marginTop: "20px" }}>
-            <strong style={{ fontSize: "15px" }}>Diese Bereiche könnten passen</strong>
-            <div className="hint" style={{ margin: "4px 0 10px" }}>Wähle einen oder zwei Bereiche.</div>
-            <div className="role-grid">{recommendedBereiche.map((bereich) => {
-              const active = selectedBereich.has(bereich.key);
-              return <button key={bereich.key} type="button" onClick={() => selectRecommendedArea(bereich.key)} className={`role-card ${active ? "selected" : ""}`} style={{ textAlign: "left", cursor: "pointer" }} aria-pressed={active}>
-                {active && <span className="role-card-check" aria-hidden="true">✓</span>}<div className="role-card-icon" aria-hidden="true">{BEREICH_ICONS[bereich.key] ?? "🧭"}</div><div className="role-card-name">{bereich.label}</div>
-              </button>;
-            })}</div>
-          </div>}
+          {recommendedBereiche.length > 0 && (
+            <div style={{ marginTop: "20px" }}>
+              <strong style={{ fontSize: "15px" }}>Diese Bereiche könnten passen</strong>
+              <div className="hint" style={{ margin: "4px 0 10px" }}>Wähle einen oder zwei Bereiche, die dich wirklich interessieren.</div>
+              <div className="role-grid">
+                {recommendedBereiche.map((bereich) => (
+                  <button key={bereich.key} type="button" onClick={() => selectRecommendedArea(bereich.key)} className={`role-card ${selectedBereich.has(bereich.key) ? "selected" : ""}`} style={{ textAlign: "left", cursor: "pointer" }} aria-pressed={selectedBereich.has(bereich.key)}>
+                    {selectedBereich.has(bereich.key) && <span className="role-card-check" aria-hidden="true">✓</span>}
+                    <div className="role-card-icon" aria-hidden="true">{BEREICH_ICONS[bereich.key] ?? "🧭"}</div>
+                    <div className="role-card-name">{bereich.label}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div>
           <div style={{ marginBottom: "16px", padding: "13px 15px", borderRadius: "16px", background: "rgba(95,220,153,.07)", border: "1px solid rgba(95,220,153,.18)" }}>
             <strong style={{ fontSize: "14px" }}>Deine Richtung: {selectedLabels}</strong>
-            <div className="hint" style={{ marginTop: "4px" }}>Du musst keinen einzelnen Skill kennen. Öffne einfach ein Themenfeld und wähle aus, was du entwickeln möchtest.</div>
+            <div className="hint" style={{ marginTop: "4px" }}>Jetzt wird es konkreter: Wähle die Skills aus, die du wirklich entwickeln möchtest.</div>
+          </div>
+
+          <div style={{ marginBottom: "12px" }}>
+            <div style={{ fontSize: "21px", fontWeight: 850, lineHeight: 1.2 }}>Was möchtest du lernen oder vertiefen?</div>
+            <div className="hint" style={{ marginTop: "5px" }}>Du kannst einen ganzen Bereich öffnen oder nur einzelne Skills auswählen. Keine Auswahl bedeutet nicht, dass dir der Skill fehlt.</div>
           </div>
 
           <div style={{ display: "grid", gap: "10px" }}>
-            {skillGroups.map((group) => {
-              const open = openSubgroups.has(group.key);
-              const selectedCount = group.skills.filter((s) => selectedSkillIds.has(s.skill_id)).length;
-              const allSelected = group.skills.length > 0 && selectedCount === group.skills.length;
-              return <div key={group.key} style={{ border: "1px solid var(--border-soft)", borderRadius: "18px", overflow: "hidden", background: "var(--surface, #fff)" }}>
-                <button type="button" onClick={() => toggleSubgroup(group.key)} aria-expanded={open} style={{ width: "100%", border: 0, padding: "16px", background: open ? "rgba(95,220,153,.07)" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", gap: "12px", textAlign: "left" }}>
-                  <span style={{ fontSize: "24px" }}>{group.icon}</span>
-                  <span style={{ flex: 1 }}><strong style={{ display: "block", fontSize: "15px" }}>{group.label}</strong><span className="hint">{group.skills.length} Skills{selectedCount ? ` · ${selectedCount} ausgewählt` : ""}</span></span>
-                  {selectedCount > 0 && <span style={{ fontSize: "11px", fontWeight: 850, padding: "5px 8px", borderRadius: "999px", background: "rgba(47,143,214,.10)" }}>{selectedCount}</span>}
-                  <span aria-hidden="true" style={{ fontSize: "18px", opacity: .55 }}>{open ? "⌃" : "→"}</span>
-                </button>
-                {open && <div style={{ padding: "0 12px 12px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 2px 10px" }}>
-                    <span className="hint">Welche davon möchtest du gezielt entwickeln?</span>
-                    <button type="button" onClick={() => toggleAllSkills(group.skills)} style={{ border: 0, background: "transparent", cursor: "pointer", fontSize: "12px", fontWeight: 800 }}>{allSelected ? "Alle abwählen" : "Alle auswählen"}</button>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: "8px" }}>
-                    {group.skills.map((skill) => {
-                      const active = selectedSkillIds.has(skill.skill_id);
-                      return <button key={skill.skill_id} type="button" onClick={() => onToggleSkill(skill.skill_id)} aria-pressed={active} style={{ width: "100%", border: active ? "1.5px solid rgba(47,143,214,.55)" : "1px solid var(--border-soft)", borderRadius: "14px", padding: "12px 13px", background: active ? "rgba(47,143,214,.07)" : "var(--surface, #fff)", cursor: "pointer", display: "flex", alignItems: "center", gap: "11px", textAlign: "left" }}>
-                        <span style={{ width: "24px", height: "24px", borderRadius: "7px", display: "grid", placeItems: "center", border: active ? "0" : "1px solid var(--border-soft)", background: active ? "var(--accent, #2f8fd6)" : "transparent", color: active ? "#fff" : "inherit", fontWeight: 850, flex: "0 0 auto" }}>{active ? "✓" : ""}</span>
-                        <span style={{ flex: 1 }}><strong style={{ display: "block", fontSize: "14px" }}>{skill.name}</strong><span className="hint" style={{ fontSize: "12px" }}>Als Entwicklungsziel markieren</span></span>
-                      </button>;
-                    })}
-                  </div>
-                </div>}
-              </div>;
+            {[...skillsByArea.entries()].map(([areaKey, skills]) => {
+              const open = skillAreaOpen === areaKey;
+              const selectedCount = skills.filter((skill) => selectedSkillIds.has(skill.skill_id)).length;
+              return (
+                <div key={areaKey} style={{ border: "1px solid var(--border-soft)", borderRadius: "18px", overflow: "hidden", background: "var(--surface, #fff)" }}>
+                  <button
+                    type="button"
+                    onClick={() => setSkillAreaOpen(open ? null : areaKey)}
+                    style={{ width: "100%", border: 0, padding: "16px", background: open ? "rgba(95,220,153,.07)" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", gap: "12px", textAlign: "left" }}
+                  >
+                    <span style={{ fontSize: "22px" }}>{BEREICH_ICONS[[...effectiveSelectedBereich][0]] ?? "✦"}</span>
+                    <span style={{ flex: 1 }}>
+                      <strong style={{ display: "block", fontSize: "15px" }}>Relevante Skills für {selectedLabels}</strong>
+                      <span className="hint">{skills.length} relevante Skills{selectedCount > 0 ? ` · ${selectedCount} ausgewählt` : ""}</span>
+                    </span>
+                    <span aria-hidden="true" style={{ fontSize: "18px", opacity: .55 }}>{open ? "⌃" : "→"}</span>
+                  </button>
+                  {open && (
+                    <div style={{ padding: "0 12px 12px", display: "grid", gap: "8px" }}>
+                      {skills.map((skill) => {
+                        const active = selectedSkillIds.has(skill.skill_id);
+                        return (
+                          <button
+                            key={skill.skill_id}
+                            type="button"
+                            onClick={() => onToggleSkill(skill.skill_id)}
+                            aria-pressed={active}
+                            style={{ width: "100%", border: active ? "1.5px solid rgba(47,143,214,.55)" : "1px solid var(--border-soft)", borderRadius: "14px", padding: "12px 13px", background: active ? "rgba(47,143,214,.07)" : "var(--surface, #fff)", cursor: "pointer", display: "flex", alignItems: "center", gap: "11px", textAlign: "left" }}
+                          >
+                            <span style={{ width: "24px", height: "24px", borderRadius: "7px", display: "grid", placeItems: "center", border: active ? "0" : "1px solid var(--border-soft)", background: active ? "var(--accent, #2f8fd6)" : "transparent", color: active ? "#fff" : "inherit", fontWeight: 850, flex: "0 0 auto" }}>{active ? "✓" : ""}</span>
+                            <span style={{ flex: 1 }}>
+                              <strong style={{ display: "block", fontSize: "14px" }}>{skill.name}</strong>
+                              <span className="hint" style={{ fontSize: "12px" }}>Als Entwicklungsziel auswählen</span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
             })}
           </div>
 
-          <div style={{ marginTop: "14px", padding: "14px 15px", borderRadius: "16px", background: selectedSkillIds.size ? "rgba(47,143,214,.06)" : "rgba(127,127,127,.035)", border: "1px solid var(--border-soft)" }}>
-            <strong style={{ display: "block", fontSize: "14px" }}>{selectedSkillIds.size ? `${selectedSkillIds.size} Entwicklungsziel${selectedSkillIds.size === 1 ? "" : "e"} ausgewählt` : "Du kannst auch ohne konkrete Skill-Auswahl weitergehen"}</strong>
-            <span className="hint" style={{ display: "block", marginTop: "4px" }}>{selectedSkillIds.size ? `${selectedLearningLabels.slice(0, 6).join(" · ")}${selectedLearningLabels.length > 6 ? ` +${selectedLearningLabels.length - 6}` : ""}` : "Im Erfahrungscheck prüfen wir dein Profil trotzdem gegen die wichtigsten Skills."}</span>
+          <div style={{ marginTop: "14px", padding: "14px 15px", borderRadius: "16px", background: selectedSkillIds.size > 0 ? "rgba(47,143,214,.06)" : "rgba(127,127,127,.035)", border: "1px solid var(--border-soft)" }}>
+            <strong style={{ display: "block", fontSize: "14px" }}>{selectedSkillIds.size > 0 ? `${selectedSkillIds.size} Entwicklungsziel${selectedSkillIds.size === 1 ? "" : "e"} ausgewählt` : "Noch keine konkreten Skills ausgewählt"}</strong>
+            <span className="hint" style={{ display: "block", marginTop: "4px" }}>
+              {selectedSkillIds.size > 0 ? `${selectedLearningLabels.slice(0, 5).join(" · ")}${selectedLearningLabels.length > 5 ? ` +${selectedLearningLabels.length - 5}` : ""}` : "Kein Problem. Im nächsten Schritt prüfen wir trotzdem dein vorhandenes Skill-Profil."}
+            </span>
           </div>
 
           <div className="cta-block" style={{ marginTop: "18px" }}>
             <button type="button" className={`btn-cta-primary ${advancing ? "loading" : ""}`} onClick={goWithBereich}>
               {advancing ? <><span className="btn-spinner" aria-hidden="true" /> Profil wird vorbereitet…</> : <>Weiter zum Erfahrungscheck <span className="arrow">→</span></>}
             </button>
-            <div className="hint" style={{ textAlign: "center", marginTop: "9px" }}>Danach schauen wir gemeinsam auf dein Erfahrungslevel.</div>
+            <div className="hint" style={{ textAlign: "center", marginTop: "9px" }}>
+              Als Nächstes gibst du für die ausgewählten bzw. relevanten Skills dein Erfahrungslevel an.
+            </div>
           </div>
         </div>
       )}
@@ -3930,7 +3968,6 @@ function RoleSuggestStep({
     </div>
   );
 }
-
 function ZielrolleStep({
   roles,
   loading,
@@ -4085,8 +4122,6 @@ interface SkillsMethodStepProps {
   loadingRoleSkills: boolean;
   roleSkillsError: string | null;
   checkedSkills: Set<string>;
-  /** Entwicklungsziele aus dem Bereich-Explorer; keyed by catalog skill_id. */
-  learningGoalSkillIds?: ReadonlySet<string>;
   toggleSkill: (uri: string) => void;
   /** Teil 2 (22.09.2026, siehe SkillDepth-Kommentar in JourneyPage): Grad +
    *  Aktualität je bestätigtem Skill — parallel zu checkedSkills. */
@@ -4380,23 +4415,22 @@ function CvMethod({
 /**
  * Teil 2 (22.09.2026) — vollständig neu gegenüber der Ja/Nein-Karte:
  *
- * Alle Skills werden jetzt in einer einzigen Ansicht gebündelt. Pro Skill
- * gibt es vier leicht verständliche Selbsteinschätzungen; es gibt keinen
- * eigenen Skill-Stepper und keinen separaten Abschluss-Bildschirm.
- */
-const EMPTY_STRING_SET: ReadonlySet<string> = new Set<string>();
-
-/**
- * Der Skill-Check bleibt bewusst auf einer Seite.
- * Ziel der UI: Der Nutzer soll in Sekunden verstehen können:
- * 1. Welche Skills sind für mein Ziel besonders wichtig?
- * 2. Was ist mein aktueller Stand?
- * 3. Was muss ich noch beantworten?
- *
- * Deshalb zeigen wir keine künstlichen Relevanz-Prozentwerte und keinen
- * "Match" während der Selbsteinschätzung. Die echten Gewichte bleiben
- * vollständig im Matching erhalten; die UI übersetzt sie nur in eine klare
- * Reihenfolge (Kernkompetenzen zuerst, weitere Skills optional).
+ * - Statt zwei Buttons eine 3×3-Matrix (Grad × Aktualität, siehe
+ *   PROFICIENCY_ROWS/RECENCY_COLS oben) — EIN Tap auf eine Zelle beantwortet
+ *   "Ja" UND erfasst Grad + Aktualität gleichzeitig. Genau ein Tap pro Skill,
+ *   wie vorher — nur mit neun statt zwei möglichen, aussagekräftigeren
+ *   Antworten. Ein separater Button bleibt für "Noch nicht".
+ * - Ein kleiner, live mitwachsender Match-Ring ersetzt/ergänzt die reine
+ *   "Frage X von Y"-Zählung — macht sichtbar, wie sich jede Antwort direkt
+ *   auf das Ergebnis auswirkt, statt es bis zur Motivations-Zwischenseite
+ *   komplett zu verstecken.
+ * - Nach der letzten Kern-Frage kein sofortiges Auto-Submit mehr, sondern ein
+ *   kurzer "erfasst"-Zwischenstand INNERHALB desselben Schritts (kein neuer
+ *   Stepper-Eintrag!) mit einem optionalen "+ N weitere (ergänzend)"-Link für
+ *   Skills außerhalb der Kern-Auswahl — bewusst als einfacher Ein-Tap-Chip
+ *   (nicht die volle Matrix), weil es sich um freiwillige Zusatzangaben
+ *   handelt und Vorgabe "nicht zu viele Schritte" für Zusatzinteraktionen
+ *   erst recht gilt.
  */
 function FragebogenMethod({
   setMethod,
@@ -4406,8 +4440,6 @@ function FragebogenMethod({
   loadingRoleSkills,
   roleSkillsError,
   checkedSkills,
-  skillDepthByUri,
-  learningGoalSkillIds = EMPTY_STRING_SET,
   onAnswerSkill,
   onSubmitQuiz,
   skillsBusy,
@@ -4416,39 +4448,54 @@ function FragebogenMethod({
   avatarName,
   avatarAccentColor,
 }: SkillsMethodStepProps) {
-  const initialAnswers = useMemo<Record<string, SkillDepth | "no">>(() => {
-    const next: Record<string, SkillDepth | "no"> = {};
-    for (const skill of questionSkills) {
-      if (!checkedSkills.has(skill.esco_uri)) continue;
-      next[skill.esco_uri] = skillDepthByUri.get(skill.esco_uri) ?? {
-        proficiency: "fortgeschritten",
-        recency: "aktuell",
-      };
-    }
-    return next;
-  }, [checkedSkills, questionSkills, skillDepthByUri]);
-
-  const [answers, setAnswers] = useState<Record<string, SkillDepth | "no">>(initialAnswers);
+  const [index, setIndex] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, SkillDepth | "no">>({});
+  const [phase, setPhase] = useState<"asking" | "done">("asking");
   const [extraOpen, setExtraOpen] = useState(false);
+  // Avatar-Tipp (22.09.2026, siehe GuideAvatarBubble-Kommentar): erklärt
+  // gezielt die neue 3×3-Matrix (Teil 2 desselben Tages) — genau die Stelle
+  // im Prozess, an der eine kurze Erklärung den größten Nutzen hat, weil die
+  // Interaktion neu/ungewohnt ist. Erscheint nur bei der ersten Frage, nicht
+  // bei jeder — sonst würde sie schnell nerven statt zu helfen.
   const [tipDismissed, setTipDismissed] = useState(false);
 
   useEffect(() => {
-    setAnswers(initialAnswers);
-  }, [initialAnswers]);
+    setIndex(0);
+    setAnswers({});
+    setPhase("asking");
+    setExtraOpen(false);
+    setTipDismissed(false);
+  }, [questionSkills.length]);
 
+  // Bugfix 22.09.2026: questionSkills kommt fertig aus JourneyPage
+  // (pickCoreQuestionSkills() — Pareto-Kern-Skills statt fixer "erste 8",
+  // siehe dortiger Kommentar), nicht mehr lokal hier berechnet. Wichtig:
+  // buildQuizGapResult() in JourneyPage wertet dieselbe Kern-Liste (plus
+  // freiwillig beantwortete Zusatz-Skills, siehe extraSkills unten) aus —
+  // "gefragt" und "gewertet" dürfen nie wieder auseinanderlaufen.
+
+  // Teil 2: alle Rollen-Skills außerhalb der Kern-Auswahl — Kandidaten für
+  // den "+ N weitere"-Link im "done"-Zwischenstand unten.
   const extraSkills = useMemo(
     () => roleSkills.filter((s) => !questionSkills.some((q) => q.esco_uri === s.esco_uri)),
     [roleSkills, questionSkills]
   );
 
-  const answeredCount = questionSkills.reduce(
-    (count, skill) => count + (answers[skill.esco_uri] ? 1 : 0),
-    0
-  );
-  const remaining = Math.max(0, questionSkills.length - answeredCount);
-  const progress = questionSkills.length > 0
-    ? Math.round((answeredCount / questionSkills.length) * 100)
-    : 0;
+  // Live-Match: exakt dieselbe gewichtete Formel wie buildQuizGapResult()
+  // in JourneyPage, aber laufend über den lokalen answers-State statt über
+  // das erst am Ende gebaute gapResult — jede beantwortete Frage lässt den
+  // Ring sofort sichtbar wachsen, bis er am Ende exakt dem Wert entspricht,
+  // den die Motivations-Zwischenseite direkt danach zeigt.
+  const liveMatch = useMemo(() => {
+    let totalWeight = 0;
+    let coveredWeight = 0;
+    for (const s of questionSkills) {
+      totalWeight += s.weight;
+      const a = answers[s.esco_uri];
+      if (a && a !== "no") coveredWeight += s.weight * (quizSkillScore(a) / 100);
+    }
+    return totalWeight > 0 ? Math.round((coveredWeight / totalWeight) * 1000) / 10 : 0;
+  }, [answers, questionSkills]);
 
   if (loadingRoleSkills) {
     return (
@@ -4480,290 +4527,289 @@ function FragebogenMethod({
     );
   }
 
-  function selectSkill(skill: RoleSkillStatus, depth: SkillDepth | null) {
-    setAnswers((prev) => ({ ...prev, [skill.esco_uri]: depth ?? "no" }));
-    onAnswerSkill(skill.esco_uri, depth);
-  }
+  const safeIndex = Math.min(index, questionSkills.length - 1);
+  const skill = questionSkills[safeIndex];
+  const answered = answers[skill.esco_uri];
+  const answeredCount = Object.keys(answers).length;
+  const remaining = questionSkills.length - answeredCount;
+  const isLast = safeIndex === questionSkills.length - 1;
 
-  function toggleExtra(skill: RoleSkillStatus) {
-    if (checkedSkills.has(skill.esco_uri)) {
-      onAnswerSkill(skill.esco_uri, null);
-      setAnswers((prev) => {
-        const next = { ...prev };
-        delete next[skill.esco_uri];
-        return next;
-      });
+  function advance() {
+    if (safeIndex < questionSkills.length - 1) {
+      window.setTimeout(() => setIndex((i) => Math.min(questionSkills.length - 1, i + 1)), 260);
     } else {
-      onAnswerSkill(skill.esco_uri, DEFAULT_EXTRA_SKILL_DEPTH);
+      // Nach der letzten Kern-Frage: kurzer Zwischenstand statt sofortigem
+      // Auto-Submit (siehe Funktionskommentar oben) — die Person sieht ihr
+      // Ergebnis wachsen und kann optional noch ergänzende Skills angeben,
+      // statt direkt weitergerissen zu werden.
+      window.setTimeout(() => setPhase("done"), 320);
     }
   }
 
-  const renderSkillCard = (skill: RoleSkillStatus, index: number) => {
-    const answer = answers[skill.esco_uri];
-    const isGoal = learningGoalSkillIds.has(skill.skill_id);
+  function selectDepth(proficiency: ProficiencyBucket, recency: RecencyBucket) {
+    const depth: SkillDepth = { proficiency, recency };
+    setAnswers((prev) => ({ ...prev, [skill.esco_uri]: depth }));
+    onAnswerSkill(skill.esco_uri, depth);
+    advance();
+  }
 
-    const options: Array<{
-      key: string;
-      label: string;
-      short: string;
-      depth: SkillDepth | null;
-    }> = [
-      {
-        key: "expert",
-        label: "Sehr sicher",
-        short: "setze ich selbstständig ein",
-        depth: { proficiency: "experte", recency: "aktuell" },
-      },
-      {
-        key: "advanced",
-        label: "Sicher",
-        short: "habe ich praktisch angewendet",
-        depth: { proficiency: "fortgeschritten", recency: "aktuell" },
-      },
-      {
-        key: "basic",
-        label: "Grundlagen",
-        short: "kenne ich aus Praxis oder Theorie",
-        depth: { proficiency: "grundkenntnisse", recency: "letzte_jahre" },
-      },
-      {
-        key: "new",
-        label: "Noch nicht",
-        short: "möchte ich erst entwickeln",
-        depth: null,
-      },
-    ];
+  function markNotYet() {
+    setAnswers((prev) => ({ ...prev, [skill.esco_uri]: "no" }));
+    onAnswerSkill(skill.esco_uri, null);
+    advance();
+  }
 
+  function previous() {
+    setIndex((i) => Math.max(0, i - 1));
+  }
+
+  function toggleExtra(uri: string) {
+    if (checkedSkills.has(uri)) onAnswerSkill(uri, null);
+    else onAnswerSkill(uri, DEFAULT_EXTRA_SKILL_DEPTH);
+  }
+
+  if (phase === "done") {
     return (
-      <article
-        key={skill.esco_uri}
-        style={{
-          border: "1px solid var(--border-soft)",
-          borderRadius: "18px",
-          padding: "16px",
-          background: "var(--surface, #fff)",
-          boxShadow: "0 4px 18px rgba(0,0,0,.035)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "12px", marginBottom: "12px" }}>
-          <span
-            aria-hidden="true"
-            style={{
-              width: "28px",
-              height: "28px",
-              borderRadius: "9px",
-              display: "grid",
-              placeItems: "center",
-              flex: "0 0 auto",
-              background: "rgba(47,143,214,.08)",
-              fontSize: "12px",
-              fontWeight: 900,
+      <div>
+        <button
+          type="button"
+          className="method-switch"
+          onClick={() => setMethod(null)}
+          style={{ marginBottom: "10px" }}
+        >
+          ← Andere Methode wählen
+        </button>
+
+        <div className="quiz-done">
+          <div className="quiz-done-ring">
+            <MatchRing percent={liveMatch} size={88} />
+          </div>
+          <div className="quiz-done-headline">Kern-Skills erfasst ✓</div>
+          <div className="quiz-done-sub">
+            Du hast alle {questionSkills.length} wichtigsten Skills für{" "}
+            {targetRoleName || "deine Zielrolle"} beantwortet — mit Grad und Aktualität statt
+            nur Ja/Nein.
+          </div>
+          <button
+            type="button"
+            className="quiz-edit-answers"
+            onClick={() => {
+              setPhase("asking");
+              setIndex(questionSkills.length - 1);
             }}
           >
-            {index + 1}
-          </span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "7px", flexWrap: "wrap" }}>
-              <div style={{ fontSize: "16px", fontWeight: 850, lineHeight: 1.25 }}>{skill.preferred_label}</div>
-              {isGoal && (
-                <span style={{ fontSize: "10px", fontWeight: 850, padding: "4px 7px", borderRadius: "999px", background: "rgba(47,143,214,.09)" }}>
-                  DEIN LERNZIEL
-                </span>
-              )}
-            </div>
-            <div className="hint" style={{ marginTop: "4px", fontSize: "11px" }}>
-              Wie sicher kannst du das heute einsetzen?
+            ← Antworten noch anpassen
+          </button>
+
+          <div style={{ marginTop: "18px", textAlign: "left" }}>
+            <div style={{ fontSize: "15px", fontWeight: 850, marginBottom: "8px" }}>Dein Erfahrungsprofil</div>
+            <div style={{ display: "grid", gap: "8px" }}>
+              {questionSkills.map((s) => {
+                const answer = answers[s.esco_uri];
+                const levelLabel = answer && answer !== "no"
+                  ? ({ grundkenntnisse: "Grundkenntnisse", fortgeschritten: "Fortgeschritten", experte: "Sehr sicher" } as Record<ProficiencyBucket, string>)[answer.proficiency]
+                  : "Noch keine Erfahrung";
+                const recencyLabel = answer && answer !== "no"
+                  ? answer.recency === "aktuell" ? "aktuell" : "vor einiger Zeit"
+                  : "";
+                const isGoal = selectedSkillIds.has(s.skill_id);
+                return (
+                  <div key={s.esco_uri} style={{ padding: "12px 13px", borderRadius: "14px", border: "1px solid var(--border-soft)", background: "var(--surface, #fff)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <span style={{ flex: 1, fontWeight: 800, fontSize: "13px" }}>{s.preferred_label}</span>
+                      {isGoal && <span style={{ fontSize: "10px", fontWeight: 800, padding: "4px 7px", borderRadius: "999px", background: "rgba(47,143,214,.09)" }}>ENTWICKLUNGSZIEL</span>}
+                    </div>
+                    <div style={{ display: "flex", gap: "7px", flexWrap: "wrap", marginTop: "7px" }}>
+                      <span style={{ fontSize: "11px", fontWeight: 750, padding: "5px 8px", borderRadius: "999px", background: answer === "no" ? "rgba(127,127,127,.08)" : "rgba(95,220,153,.10)" }}>{levelLabel}</span>
+                      {recencyLabel && <span style={{ fontSize: "11px", padding: "5px 8px", borderRadius: "999px", background: "rgba(127,127,127,.06)" }}>{recencyLabel}</span>}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
+
+          {extraSkills.length > 0 && (
+            <div className="quiz-extra-section">
+              {!extraOpen ? (
+                <button type="button" className="quiz-extra-toggle" onClick={() => setExtraOpen(true)}>
+                  + {extraSkills.length} weitere (ergänzend) auch angeben
+                </button>
+              ) : (
+                <div className="quiz-extra-list">
+                  <div className="quiz-extra-hint">
+                    Optional — zählt zusätzlich mit, sobald du eine Fähigkeit antippst.
+                  </div>
+                  <div className="quiz-extra-chips">
+                    {extraSkills.map((s) => {
+                      const isChecked = checkedSkills.has(s.esco_uri);
+                      return (
+                        <button
+                          key={s.esco_uri}
+                          type="button"
+                          className={`quiz-extra-chip ${isChecked ? "checked" : ""}`}
+                          onClick={() => toggleExtra(s.esco_uri)}
+                          aria-pressed={isChecked}
+                        >
+                          <span className="quiz-extra-chip-check" aria-hidden="true">
+                            {isChecked ? "✓" : ""}
+                          </span>
+                          {s.preferred_label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        <div
-          role="radiogroup"
-          aria-label={`Erfahrung mit ${skill.preferred_label}`}
-          style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(175px, 1fr))", gap: "8px" }}
-        >
-          {options.map((option) => {
-            const selected = option.depth === null
-              ? answer === "no"
-              : answer !== undefined && answer !== "no" &&
-                answer.proficiency === option.depth.proficiency && answer.recency === option.depth.recency;
+        {skillsError && <div className="status-line err" aria-live="polite">{skillsError}</div>}
 
-            return (
-              <button
-                key={option.key}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => selectSkill(skill, option.depth)}
-                style={{
-                  minHeight: "60px",
-                  padding: "9px 10px",
-                  borderRadius: "13px",
-                  border: selected ? "2px solid var(--accent, #2f8fd6)" : "1px solid var(--border-soft)",
-                  background: selected ? "rgba(47,143,214,.075)" : "transparent",
-                  textAlign: "left",
-                  cursor: "pointer",
-                }}
-              >
-                <span style={{ display: "flex", alignItems: "center", gap: "7px" }}>
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      width: "19px",
-                      height: "19px",
-                      borderRadius: "50%",
-                      display: "grid",
-                      placeItems: "center",
-                      flex: "0 0 auto",
-                      border: selected ? "0" : "1px solid var(--border-soft)",
-                      background: selected ? "var(--accent, #2f8fd6)" : "transparent",
-                      color: selected ? "#fff" : "inherit",
-                      fontSize: "10px",
-                      fontWeight: 900,
-                    }}
-                  >
-                    {selected ? "✓" : ""}
-                  </span>
-                  <strong style={{ fontSize: "12px", lineHeight: 1.2 }}>{option.label}</strong>
-                </span>
-                <span style={{ display: "block", marginTop: "4px", paddingLeft: "26px", fontSize: "10px", lineHeight: 1.3, opacity: .64 }}>
-                  {option.short}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </article>
+        <ActionsRow
+          forwardLabel={skillsBusy ? "Ergebnis wird erstellt…" : "Mein Skill-Profil ansehen →"}
+          onForward={onSubmitQuiz}
+          forwardDisabled={skillsBusy}
+          busy={skillsBusy}
+        />
+      </div>
     );
-  };
+  }
 
   return (
     <div>
-      <button type="button" className="method-switch" onClick={() => setMethod(null)} style={{ marginBottom: "10px" }}>
+      <button
+        type="button"
+        className="method-switch"
+        onClick={() => setMethod(null)}
+        style={{ marginBottom: "10px" }}
+      >
         ← Andere Methode wählen
       </button>
 
       <JourneyStepHeading
         step="06"
-        kicker="DEINE FÄHIGKEITEN"
-        title={`Welche Fähigkeiten kannst du für ${targetRoleName || "dein Ziel"} bereits einsetzen?`}
-        description="Ordne dich direkt pro Fähigkeit ein. Die wichtigsten Skills stehen zuerst; zusätzliche Skills sind optional."
+        kicker="DEIN PROFIL"
+        title="Was bringst du bereits mit?"
+        description={`Wir haben die für ${targetRoleName || "dein Ziel"} wichtigsten Fähigkeiten herausgefiltert. Du beantwortest nur ${questionSkills.length} kurze Praxisfragen — daraus entsteht dein persönliches Skill-Profil.`}
       />
 
-      {showAvatar && !tipDismissed && (
+      {showAvatar && !tipDismissed && safeIndex === 0 && (
         <GuideAvatarBubble
           name={avatarName}
-          message="Einfach pro Fähigkeit eine Antwort auswählen. Es gibt keine richtige oder falsche Antwort — wichtig ist nur, wo du heute wirklich stehst."
+          message="Tipp: Ein Antippen genügt — wähle einfach die Zelle, die am besten zu deinem Grad und deiner Aktualität passt. 'Noch nicht' bleibt als eigener Button darunter."
           accentColor={avatarAccentColor}
           onDismiss={() => setTipDismissed(true)}
         />
       )}
 
-      <div
-        style={{
-          padding: "14px 15px",
-          marginBottom: "18px",
-          borderRadius: "16px",
-          background: "var(--surface, #fff)",
-          border: "1px solid var(--border-soft)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "8px" }}>
-          <strong style={{ fontSize: "13px" }}>Dein Fortschritt</strong>
-          <span style={{ fontSize: "12px", fontWeight: 850 }}>{answeredCount} / {questionSkills.length}</span>
+      <div className="quiz-progress-row">
+        <div className="quiz-live-ring">
+          <MatchRing percent={liveMatch} size={52} />
         </div>
-        <div style={{ height: "7px", borderRadius: "999px", background: "rgba(127,127,127,.12)", overflow: "hidden" }}>
-          <div style={{ width: `${progress}%`, height: "100%", borderRadius: "999px", background: "var(--accent, #2f8fd6)", transition: "width .2s ease" }} />
-        </div>
-        <div className="hint" style={{ marginTop: "7px" }}>
-          {remaining > 0 ? `${remaining} ${remaining === 1 ? "Fähigkeit fehlt" : "Fähigkeiten fehlen"} noch.` : "Alles beantwortet — dein Skill-Profil ist bereit."}
+        <div className="quiz-progress-text">
+          <div className="quiz-progress-count">
+            Skill {safeIndex + 1} von {questionSkills.length}
+          </div>
+          <div className="hint">{remaining > 0 ? `${remaining} offen` : "Kern-Check abgeschlossen"}</div>
         </div>
       </div>
 
-      <section style={{ marginBottom: "20px" }}>
-        <div style={{ marginBottom: "10px" }}>
-          <div style={{ fontSize: "18px", fontWeight: 900 }}>Kernkompetenzen</div>
-          <div className="hint">Diese Fähigkeiten sind für dein gewähltes Ziel besonders wichtig.</div>
-        </div>
-        <div style={{ display: "grid", gap: "10px" }}>
-          {questionSkills.map((skill, index) => renderSkillCard(skill, index))}
-        </div>
-      </section>
+      {(() => {
+        const context = skillQuestionContext(skill, targetRoleName);
+        return (
+          <div key={skill.esco_uri} className="quiz-depth-card" style={{ padding: "24px", borderRadius: "24px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "flex-start", marginBottom: "18px" }}>
+              <div>
+                <div className="quiz-depth-card-kicker">SKILL {safeIndex + 1} · DEIN PROFIL</div>
+                <div className="quiz-depth-card-title" style={{ fontSize: "28px", lineHeight: 1.12 }}>{skill.preferred_label}</div>
+              </div>
+              <div style={{ fontSize: "12px", fontWeight: 750, padding: "8px 11px", borderRadius: "999px", background: "rgba(47,143,214,.08)", whiteSpace: "nowrap" }}>
+                {Math.round(skill.weight * 100)}% Relevanz
+              </div>
+            </div>
 
-      {extraSkills.length > 0 && (
-        <section style={{ marginBottom: "18px" }}>
-          <button
-            type="button"
-            aria-expanded={extraOpen}
-            onClick={() => setExtraOpen((open) => !open)}
-            style={{
-              width: "100%",
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              padding: "14px 15px",
-              borderRadius: "15px",
-              border: "1px solid var(--border-soft)",
-              background: "var(--surface, #fff)",
-              cursor: "pointer",
-              textAlign: "left",
-            }}
-          >
-            <span style={{ fontSize: "18px", opacity: .7 }}>{extraOpen ? "⌄" : "›"}</span>
-            <span style={{ flex: 1 }}>
-              <strong style={{ display: "block", fontSize: "14px" }}>Weitere Fähigkeiten</strong>
-              <span className="hint" style={{ fontSize: "11px" }}>Optional — nur öffnen, wenn du zusätzliche Skills einschätzen möchtest.</span>
-            </span>
-            <span style={{ fontSize: "11px", fontWeight: 800, opacity: .62 }}>{extraSkills.length}</span>
-          </button>
+            <div style={{ fontSize: "20px", fontWeight: 820, lineHeight: 1.25, marginBottom: "8px" }}>{context.title}</div>
+            <div className="hint" style={{ fontSize: "14px", lineHeight: 1.55, marginBottom: "6px" }}>{context.body}</div>
+            <div style={{ fontSize: "12px", opacity: .62, marginBottom: "20px" }}>{context.signal}</div>
 
-          {extraOpen && (
-            <div style={{ display: "grid", gap: "8px", marginTop: "8px" }}>
-              {extraSkills.map((skill) => {
-                const selected = checkedSkills.has(skill.esco_uri);
+            <div style={{ display: "grid", gap: "10px" }}>
+              {[
+                { key: "strong", title: "Ich kann das selbstständig", body: "Ich setze es aktuell praktisch ein.", depth: { proficiency: "experte" as ProficiencyBucket, recency: "aktuell" as RecencyBucket } },
+                { key: "solid", title: "Ich habe damit gearbeitet", body: "Ich kann Aufgaben damit selbstständig lösen, aber nicht regelmäßig.", depth: { proficiency: "fortgeschritten" as ProficiencyBucket, recency: "letzte_jahre" as RecencyBucket } },
+                { key: "basic", title: "Ich kenne die Grundlagen", body: "Ich habe erste Erfahrung oder theoretisches Wissen.", depth: { proficiency: "grundkenntnisse" as ProficiencyBucket, recency: "letzte_jahre" as RecencyBucket } },
+                { key: "gap", title: "Das ist für mich neu", body: "Genau hier könnte eine Weiterbildung ansetzen.", depth: null },
+              ].map((option) => {
+                const selected = option.key === "gap"
+                  ? answered === "no"
+                  : !!answered && answered !== "no" && answered.proficiency === option.depth?.proficiency && answered.recency === option.depth?.recency;
                 return (
                   <button
-                    key={skill.esco_uri}
+                    key={option.key}
                     type="button"
+                    onClick={() => option.depth ? selectDepth(option.depth.proficiency, option.depth.recency) : markNotYet()}
                     aria-pressed={selected}
-                    onClick={() => toggleExtra(skill)}
                     style={{
                       width: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "11px",
-                      padding: "12px 13px",
-                      borderRadius: "13px",
-                      border: selected ? "2px solid var(--accent, #2f8fd6)" : "1px solid var(--border-soft)",
-                      background: selected ? "rgba(47,143,214,.06)" : "var(--surface, #fff)",
                       textAlign: "left",
+                      padding: "16px 17px",
+                      borderRadius: "16px",
+                      border: selected ? "2px solid var(--accent, #2f8fd6)" : "1px solid var(--border-soft)",
+                      background: selected ? "rgba(47,143,214,.07)" : "var(--surface, #fff)",
                       cursor: "pointer",
+                      transition: "transform .16s ease, border-color .16s ease, background .16s ease",
                     }}
                   >
-                    <span style={{ width: "22px", height: "22px", borderRadius: "7px", display: "grid", placeItems: "center", border: selected ? "0" : "1px solid var(--border-soft)", background: selected ? "var(--accent, #2f8fd6)" : "transparent", color: selected ? "#fff" : "inherit", fontWeight: 900 }}>
-                      {selected ? "✓" : ""}
-                    </span>
-                    <span style={{ flex: 1, minWidth: 0 }}>
-                      <strong style={{ fontSize: "13px" }}>{skill.preferred_label}</strong>
-                      <span style={{ display: "block", marginTop: "3px", fontSize: "11px", opacity: .62 }}>Als zusätzliche Erfahrung hinzufügen</span>
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <span style={{ width: "28px", height: "28px", borderRadius: "50%", display: "grid", placeItems: "center", flex: "0 0 auto", border: selected ? "0" : "1px solid var(--border-soft)", background: selected ? "var(--accent, #2f8fd6)" : "transparent", color: selected ? "#fff" : "inherit", fontWeight: 850 }}>{selected ? "✓" : ""}</span>
+                      <span style={{ flex: 1 }}>
+                        <span style={{ display: "block", fontWeight: 800, fontSize: "15px" }}>{option.title}</span>
+                        <span style={{ display: "block", marginTop: "3px", fontSize: "12px", opacity: .68, lineHeight: 1.45 }}>{option.body}</span>
+                      </span>
+                      <span aria-hidden="true" style={{ opacity: .42, fontSize: "18px" }}>→</span>
+                    </div>
                   </button>
                 );
               })}
             </div>
-          )}
-        </section>
-      )}
+
+            <div style={{ marginTop: "16px", paddingTop: "14px", borderTop: "1px solid var(--border-soft)", fontSize: "12px", opacity: .65 }}>
+              Deine Antwort verändert direkt, welche Lernfelder ORBIT dir anschließend zeigt.
+            </div>
+          </div>
+        );
+      })()}
+
+      <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", marginTop: "12px" }}>
+        <button type="button" className="btn-back" onClick={previous} disabled={safeIndex === 0}>
+          ← Zurück
+        </button>
+        {!isLast && answered && (
+          <button
+            type="button"
+            className="btn-forward"
+            onClick={() => setIndex((i) => Math.min(questionSkills.length - 1, i + 1))}
+          >
+            Nächster Skill →
+          </button>
+        )}
+      </div>
+
+      <div
+        style={{
+          marginTop: "14px",
+          padding: "11px 13px",
+          borderRadius: "12px",
+          background: "rgba(127,127,127,.045)",
+          fontSize: "13px",
+        }}
+      >
+        <strong>Wichtig:</strong> Hier geht es nur darum, was du schon kannst.
+        Deine Lernziele und dein Bereich werden separat berücksichtigt.
+      </div>
 
       {skillsError && <div className="status-line err" aria-live="polite">{skillsError}</div>}
-
-      <ActionsRow
-        onBack={() => setMethod(null)}
-        forwardLabel={skillsBusy ? "Ergebnis wird erstellt…" : remaining > 0 ? `${remaining} ${remaining === 1 ? "Fähigkeit" : "Fähigkeiten"} noch einordnen` : "Mein Skill-Profil ansehen →"}
-        onForward={onSubmitQuiz}
-        forwardDisabled={skillsBusy || remaining > 0}
-        busy={skillsBusy}
-      />
     </div>
   );
 }
@@ -5033,25 +5079,12 @@ function courseAreaKeys(course: OrbitCourse): string[] {
   return [...keys];
 }
 
-/**
- * Kurse werden im Gap-Schritt nicht pauschal als "passend" bezeichnet.
- * Zuerst wird exakt gegen die offenen ESCO-Skills gematcht. Wenn bereits alle
- * Skills vorhanden sind, bleiben sinnvolle Weiterbildungen trotzdem sichtbar:
- * dann wird auf den echten Bereich des Kurses und die aktuelle Zielrolle
- * zurückgegriffen. So bedeutet "0 Lernfelder" nicht mehr "0 Möglichkeiten".
- */
 function buildGapCourseView(
   gapSkills: RoleSkillStatus[],
   allCourses: OrbitCourse[],
   targetRoleName: string | null,
   targetBereichKey: string | null,
-): Array<{
-  course: OrbitCourse;
-  matchedGapSkills: RoleSkillStatus[];
-  areaMatch: boolean;
-  relevance: number;
-}> {
-  const gapIds = new Set(gapSkills.map((s) => s.esco_uri));
+): Array<{ course: OrbitCourse; matchedGapSkills: RoleSkillStatus[]; areaMatch: boolean; relevance: number }> {
   const activeCourses = allCourses.filter((course) => isCourseActive(course));
   return activeCourses
     .map((course) => {
@@ -5342,7 +5375,7 @@ function GapStep({
         </button>
       )}
       <label className="field-label gap-section-label gap" style={{ marginTop: "18px" }}>
-        <span className="gap-section-dot" aria-hidden="true" /> Lernfelder ({gapCount})
+        <span className="gap-section-dot" aria-hidden="true" /> Noch zu lernen ({gapCount})
       </label>
       <div className="skill-detail-list">
         {gapCount ? (
@@ -5402,55 +5435,48 @@ function GapStep({
         </button>
       )}
 
-      <section aria-label="Passende Weiterbildungen" style={{ marginTop: "28px" }}>
-        <div style={{ marginBottom: "12px" }}>
-          <div style={{ fontSize: "18px", fontWeight: 850 }}>Passende Weiterbildungen</div>
-          <div className="hint" style={{ marginTop: "4px" }}>
-            Wir gleichen deine offenen Lernfelder direkt mit den Skills ab, die in den verfügbaren Weiterbildungen vermittelt werden.
-          </div>
+      <div style={{ marginTop: "24px", padding: "18px", borderRadius: "20px", border: "1px solid var(--border-soft)", background: "var(--surface, #fff)" }}>
+        <div style={{ fontSize: "16px", fontWeight: 850 }}>Passende Weiterbildungen</div>
+        <div className="hint" style={{ marginTop: "5px", lineHeight: 1.5 }}>
+          Wir gleichen deine offenen Skills direkt mit den Fähigkeiten ab, die echte Kurse aus dem Katalog abdecken.
+          Wenn kein Skill direkt getroffen wird, zeigen wir passende Weiterbildungen aus deinem Zielbereich.
         </div>
 
         {primaryGapCourses.length ? (
-          <div style={{ display: "grid", gap: "10px" }}>
+          <div style={{ display: "grid", gap: "10px", marginTop: "14px" }}>
             {primaryGapCourses.map(({ course, matchedGapSkills, areaMatch }) => (
-              <div key={course.course_id} style={{ padding: "15px", borderRadius: "16px", border: "1px solid var(--border-soft)", background: "var(--surface, #fff)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start" }}>
-                  <div>
-                    <strong style={{ display: "block", fontSize: "15px" }}>{course.course_name}</strong>
-                    <span className="hint">{course.provider || "Weiterbildung"}{course.duration_weeks ? ` · ${course.duration_weeks} Wochen` : ""}</span>
-                  </div>
-                  <span style={{ flex: "0 0 auto", fontSize: "12px", fontWeight: 800, padding: "6px 9px", borderRadius: "999px", background: "rgba(95,220,153,.10)" }}>
-                    {matchedGapSkills.length > 0 ? `${matchedGapSkills.length} Lernfeld${matchedGapSkills.length === 1 ? "" : "er"}` : "passend zum Bereich"}
-                  </span>
+              <div key={course.course_id} style={{ padding: "14px", borderRadius: "15px", border: "1px solid var(--border-soft)", background: "rgba(47,143,214,.035)" }}>
+                <div style={{ fontWeight: 850 }}>{course.course_name}</div>
+                {course.provider && <div className="hint" style={{ marginTop: "3px" }}>{course.provider}</div>}
+                <div style={{ display: "flex", gap: "7px", flexWrap: "wrap", marginTop: "8px" }}>
+                  {course.duration_weeks != null && <span className="chip">{course.duration_weeks} Wochen</span>}
+                  {matchedGapSkills.length > 0 ? (
+                    <span className="chip">{matchedGapSkills.length} offene Skill{matchedGapSkills.length === 1 ? "" : "s"} abgedeckt</span>
+                  ) : areaMatch ? <span className="chip">Passend zum Zielbereich</span> : null}
                 </div>
                 {matchedGapSkills.length > 0 && (
-                  <div className="hint" style={{ marginTop: "9px" }}>
-                    Deckt ab: {matchedGapSkills.slice(0, 3).map((s) => s.preferred_label).join(" · ")}
-                    {matchedGapSkills.length > 3 ? ` · +${matchedGapSkills.length - 3}` : ""}
+                  <div style={{ marginTop: "8px", fontSize: "12px", opacity: .72 }}>
+                    Deckt ab: {matchedGapSkills.map((s) => s.preferred_label).join(", ")}
                   </div>
                 )}
-                {areaMatch && <div className="hint" style={{ marginTop: "5px" }}>Passt zu deinem gewählten Bereich.</div>}
               </div>
             ))}
           </div>
         ) : (
-          <div style={{ padding: "15px", borderRadius: "16px", border: "1px solid var(--border-soft)", background: "rgba(47,143,214,.04)" }}>
-            <strong>Aktuell kein direkter Skill-Treffer</strong>
-            <div className="hint" style={{ marginTop: "4px" }}>
-              Es gibt im aktuellen Kurskatalog keine Weiterbildung, die eines deiner offenen Lernfelder direkt abdeckt. Wir zeigen dir trotzdem weitere Möglichkeiten im nächsten Schritt.
-            </div>
+          <div className="hint" style={{ marginTop: "12px" }}>
+            Aktuell ist kein aktiver Kurs im Katalog direkt mit deinen offenen Skills oder deinem Zielbereich verknüpft.
           </div>
         )}
 
         {additionalGapCourses.length > 0 && (
-          <details style={{ marginTop: "10px" }}>
-            <summary style={{ cursor: "pointer", fontWeight: 800, padding: "10px 2px" }}>Weitere passende Möglichkeiten ({additionalGapCourses.length})</summary>
-            <div style={{ display: "grid", gap: "8px", marginTop: "8px" }}>
+          <details style={{ marginTop: "12px" }}>
+            <summary style={{ cursor: "pointer", fontWeight: 800 }}>Weitere passende Möglichkeiten ({additionalGapCourses.length})</summary>
+            <div style={{ display: "grid", gap: "8px", marginTop: "10px" }}>
               {additionalGapCourses.map(({ course, matchedGapSkills }) => (
-                <div key={course.course_id} style={{ padding: "12px 14px", borderRadius: "14px", border: "1px solid var(--border-soft)" }}>
-                  <strong>{course.course_name}</strong>
+                <div key={course.course_id} style={{ padding: "11px 12px", borderRadius: "13px", border: "1px solid var(--border-soft)" }}>
+                  <div style={{ fontWeight: 800, fontSize: "13px" }}>{course.course_name}</div>
                   <div className="hint" style={{ marginTop: "3px" }}>
-                    {matchedGapSkills.length ? `deckt ${matchedGapSkills.length} deiner Lernfelder ab` : "passt zu deinem Bereich"}
+                    {matchedGapSkills.length > 0 ? `Deckt ${matchedGapSkills.length} deiner offenen Skills ab.` : "Passend zu deinem Zielbereich."}
                   </div>
                 </div>
               ))}
@@ -5459,14 +5485,14 @@ function GapStep({
         )}
 
         {courseRoleNames.length > 0 && (
-          <div style={{ marginTop: "16px", padding: "15px", borderRadius: "16px", background: "rgba(95,220,153,.06)", border: "1px solid rgba(95,220,153,.16)" }}>
-            <strong style={{ display: "block" }}>Berufsrollen, für die diese Weiterbildungen relevant sein können</strong>
-            <div className="hint" style={{ marginTop: "5px" }}>
-              {courseRoleNames.join(" · ")}
+          <div style={{ marginTop: "16px", paddingTop: "14px", borderTop: "1px solid var(--border-soft)" }}>
+            <div style={{ fontSize: "13px", fontWeight: 850 }}>Berufsrollen, für die diese Weiterbildungen relevant sein können</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "7px", marginTop: "8px" }}>
+              {courseRoleNames.map((role) => <span key={role} className="chip">{role}</span>)}
             </div>
           </div>
         )}
-      </section>
+      </div>
 
       {error && (
         <div className="status-line err" aria-live="polite">

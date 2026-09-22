@@ -3691,7 +3691,7 @@ function RoleSuggestStep({
   const [selectedBereich, setSelectedBereich] = useState<Set<string>>(new Set());
   const [selectedInterests, setSelectedInterests] = useState<Set<string>>(new Set());
   const [discoveryMode, setDiscoveryMode] = useState(false);
-  const [showLearningGoals, setShowLearningGoals] = useState(false);
+  const [skillAreaOpen, setSkillAreaOpen] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState(false);
 
   const availableAreaKeys = useMemo(
@@ -3703,9 +3703,10 @@ function RoleSuggestStep({
     setSelectedBereich((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
-      else next.add(key);
+      else if (next.size < 2) next.add(key);
       return next;
     });
+    setSkillAreaOpen(key);
   }
 
   function toggleInterest(key: string) {
@@ -3719,7 +3720,6 @@ function RoleSuggestStep({
 
   const recommendedBereiche = useMemo(() => {
     if (selectedInterests.size === 0) return [];
-
     const score = new Map<string, number>();
     for (const interest of BEREICH_DISCOVERY_OPTIONS) {
       if (!selectedInterests.has(interest.key)) continue;
@@ -3728,7 +3728,6 @@ function RoleSuggestStep({
         score.set(areaKey, (score.get(areaKey) ?? 0) + 1);
       }
     }
-
     return [...score.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([key]) => bereicheOptions.find((bereich) => bereich.key === key))
@@ -3737,11 +3736,8 @@ function RoleSuggestStep({
   }, [selectedInterests, availableAreaKeys, bereicheOptions]);
 
   const effectiveSelectedBereich = useMemo(
-    () =>
-      selectedBereich.size > 0
-        ? selectedBereich
-        : new Set(recommendedBereiche.map((bereich) => bereich.key)),
-    [selectedBereich, recommendedBereiche],
+    () => selectedBereich,
+    [selectedBereich],
   );
 
   const bereichFilteredRoles = useMemo(
@@ -3753,23 +3749,25 @@ function RoleSuggestStep({
   );
 
   const learningSkills = useMemo(
-    () => topSkillsForRoles(bereichFilteredRoles, ROLE_SUGGEST_SKILL_CHIP_LIMIT),
+    () => topSkillsForRoles(bereichFilteredRoles, 24),
     [bereichFilteredRoles],
   );
 
+  const skillsByArea = useMemo(() => {
+    return new Map([["skills", learningSkills]]);
+  }, [learningSkills]);
+
+  const selectedLearningLabels = learningSkills
+    .filter((skill) => selectedSkillIds.has(skill.skill_id))
+    .map((skill) => skill.name);
+
   function selectRecommendedArea(key: string) {
-    setSelectedBereich((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else if (next.size < 2) next.add(key);
-      return next;
-    });
+    toggleBereich(key);
   }
 
   function goWithBereich() {
     const keys = [...effectiveSelectedBereich];
     if (advancing || keys.length === 0) return;
-
     setAdvancing(true);
     onSelectBereich(keys);
     window.setTimeout(onForward, 220);
@@ -3778,118 +3776,69 @@ function RoleSuggestStep({
   const selectedLabels = [...effectiveSelectedBereich]
     .map((key) => bereicheOptions.find((bereich) => bereich.key === key)?.label ?? key)
     .join(" · ");
-  const possibleRoles = useMemo(() => {
-    const seen = new Set<string>();
-    return bereichFilteredRoles.filter((role) => {
-      if (seen.has(role.role_id)) return false;
-      seen.add(role.role_id);
-      return true;
-    }).slice(0, 4);
-  }, [bereichFilteredRoles]);
-
-  const selectedLearningLabels = learningSkills
-    .filter((skill) => selectedSkillIds.has(skill.skill_id))
-    .map((skill) => skill.name);
 
   return (
     <div>
       <JourneyStepHeading
         step="04"
-        kicker="ENTDECKUNG"
-        title="Noch keine klare Richtung? Dann finden wir sie gemeinsam."
-        description="Du musst noch keinen Berufstitel kennen. Starte mit dem, was dich interessiert — ORBIT leitet daraus passende Bereiche und Möglichkeiten ab."
+        kicker="DEINE ENTWICKLUNG"
+        title="Was möchtest du gezielt entwickeln?"
+        description="Wir gehen nicht sofort auf Weiterbildungen. Erst legen wir gemeinsam fest, welche Bereiche und Skills für dich interessant sind. Dein Erfahrungslevel kommt direkt danach."
       />
 
       {!discoveryMode && selectedBereich.size === 0 ? (
         <div>
-          <div
+          <button
+            type="button"
+            onClick={() => setDiscoveryMode(true)}
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-              gap: "10px",
+              width: "100%",
+              border: "1px solid rgba(47,143,214,.22)",
+              borderRadius: "18px",
+              padding: "18px",
+              background: "linear-gradient(135deg, rgba(95,220,153,.10), rgba(47,143,214,.08))",
+              cursor: "pointer",
+              textAlign: "left",
+              marginBottom: "18px",
             }}
           >
-            <button
-              type="button"
-              onClick={() => setDiscoveryMode(true)}
-              style={{
-                gridColumn: "1 / -1",
-                border: "1px solid rgba(47,143,214,.22)",
-                borderRadius: "18px",
-                padding: "18px",
-                background: "linear-gradient(135deg, rgba(95,220,153,.10), rgba(47,143,214,.08))",
-                cursor: "pointer",
-                textAlign: "left",
-              }}
-            >
-              <span style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <span style={{ fontSize: "25px" }}>🧭</span>
-                <span>
-                  <strong style={{ display: "block", fontSize: "16px" }}>
-                    Ich bin noch nicht sicher
-                  </strong>
-                  <span className="hint">
-                    Beantworte 2–3 kurze Interessenfragen und wir zeigen dir passende Richtungen.
-                  </span>
-                </span>
-                <span style={{ marginLeft: "auto", fontSize: "20px" }}>→</span>
+            <span style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <span style={{ fontSize: "25px" }}>🧭</span>
+              <span>
+                <strong style={{ display: "block", fontSize: "16px" }}>Ich bin noch nicht sicher</strong>
+                <span className="hint">Beantworte 2–3 kurze Fragen und wir grenzen passende Bereiche für dich ein.</span>
               </span>
-            </button>
-          </div>
+              <span style={{ marginLeft: "auto", fontSize: "20px" }}>→</span>
+            </span>
+          </button>
 
-          <div style={{ margin: "20px 0 10px", textAlign: "center" }} className="hint">
+          <div style={{ margin: "0 0 10px", textAlign: "center" }} className="hint">
             Oder wähle direkt einen Bereich:
           </div>
-
           <div className="role-grid">
-            {bereicheOptions.map((bereich) => {
-              const active = selectedBereich.has(bereich.key);
-              return (
-                <div
-                  key={bereich.key}
-                  className={`role-card ${active ? "selected" : ""}`}
-                  onClick={() => toggleBereich(bereich.key)}
-                  role="button"
-                  tabIndex={0}
-                  aria-pressed={active}
-                  onKeyDown={(event) =>
-                    handleCardKeyDown(event, () => toggleBereich(bereich.key))
-                  }
-                >
-                  {active && <span className="role-card-check" aria-hidden="true">✓</span>}
-                  <div className="role-card-icon" aria-hidden="true">
-                    {BEREICH_ICONS[bereich.key] ?? "🧭"}
-                  </div>
-                  <div className="role-card-name">{bereich.label}</div>
-                </div>
-              );
-            })}
+            {bereicheOptions.map((bereich) => (
+              <button
+                key={bereich.key}
+                type="button"
+                className={`role-card ${selectedBereich.has(bereich.key) ? "selected" : ""}`}
+                onClick={() => toggleBereich(bereich.key)}
+                aria-pressed={selectedBereich.has(bereich.key)}
+                style={{ textAlign: "left", cursor: "pointer" }}
+              >
+                {selectedBereich.has(bereich.key) && <span className="role-card-check" aria-hidden="true">✓</span>}
+                <div className="role-card-icon" aria-hidden="true">{BEREICH_ICONS[bereich.key] ?? "🧭"}</div>
+                <div className="role-card-name">{bereich.label}</div>
+              </button>
+            ))}
           </div>
         </div>
       ) : discoveryMode && selectedBereich.size === 0 ? (
         <div>
-          <div
-            style={{
-              marginBottom: "14px",
-              padding: "13px 15px",
-              borderRadius: "14px",
-              background: "rgba(127,127,127,.04)",
-              border: "1px solid var(--border-soft)",
-            }}
-          >
-            <strong style={{ fontSize: "14px" }}>Was macht dir am meisten Spaß?</strong>
-            <div className="hint" style={{ marginTop: "4px" }}>
-              Wähle bis zu 3 Dinge. Es gibt kein richtig oder falsch.
-            </div>
+          <div style={{ marginBottom: "14px", padding: "13px 15px", borderRadius: "14px", background: "rgba(127,127,127,.04)", border: "1px solid var(--border-soft)" }}>
+            <strong style={{ fontSize: "14px" }}>Was interessiert dich am meisten?</strong>
+            <div className="hint" style={{ marginTop: "4px" }}>Wähle bis zu 3 Dinge. Daraus schlagen wir dir Bereiche vor.</div>
           </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-              gap: "10px",
-            }}
-          >
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "10px" }}>
             {BEREICH_DISCOVERY_OPTIONS.map((interest) => {
               const active = selectedInterests.has(interest.key);
               return (
@@ -3899,282 +3848,115 @@ function RoleSuggestStep({
                   onClick={() => toggleInterest(interest.key)}
                   aria-pressed={active}
                   style={{
-                    border: active
-                      ? "1.5px solid rgba(47,143,214,.55)"
-                      : "1px solid var(--border-soft)",
+                    border: active ? "1.5px solid rgba(47,143,214,.55)" : "1px solid var(--border-soft)",
                     borderRadius: "16px",
                     padding: "15px",
-                    background: active
-                      ? "linear-gradient(135deg, rgba(95,220,153,.11), rgba(47,143,214,.08))"
-                      : "var(--surface, #fff)",
+                    background: active ? "linear-gradient(135deg, rgba(95,220,153,.11), rgba(47,143,214,.08))" : "var(--surface, #fff)",
                     cursor: "pointer",
                     textAlign: "left",
-                    boxShadow: active ? "0 7px 20px rgba(47,143,214,.08)" : "none",
                   }}
                 >
                   <div style={{ fontSize: "21px", marginBottom: "8px" }}>{interest.icon}</div>
                   <strong style={{ display: "block", fontSize: "14px" }}>{interest.title}</strong>
-                  <span className="hint" style={{ display: "block", marginTop: "5px", lineHeight: 1.45 }}>
-                    {interest.description}
-                  </span>
+                  <span className="hint" style={{ display: "block", marginTop: "5px", lineHeight: 1.45 }}>{interest.description}</span>
                 </button>
               );
             })}
           </div>
-
           {recommendedBereiche.length > 0 && (
             <div style={{ marginTop: "20px" }}>
-              <div style={{ marginBottom: "10px" }}>
-                <strong style={{ fontSize: "15px" }}>Das könnte zu dir passen</strong>
-                <div className="hint" style={{ marginTop: "4px" }}>
-                  Aus deinen Interessen ergeben sich diese Bereiche in diesem Kursangebot.
-                </div>
-              </div>
-
+              <strong style={{ fontSize: "15px" }}>Diese Bereiche könnten passen</strong>
+              <div className="hint" style={{ margin: "4px 0 10px" }}>Wähle einen oder zwei Bereiche, die dich wirklich interessieren.</div>
               <div className="role-grid">
                 {recommendedBereiche.map((bereich) => (
-                  <button
-                    key={bereich.key}
-                    type="button"
-                    onClick={() => selectRecommendedArea(bereich.key)}
-                    className={`role-card ${
-                      selectedBereich.has(bereich.key) ? "selected" : ""
-                    }`}
-                    style={{ textAlign: "left", cursor: "pointer" }}
-                    aria-pressed={selectedBereich.has(bereich.key)}
-                  >
-                    {selectedBereich.has(bereich.key) && (
-                      <span className="role-card-check" aria-hidden="true">✓</span>
-                    )}
-                    <div className="role-card-icon" aria-hidden="true">
-                      {BEREICH_ICONS[bereich.key] ?? "🧭"}
-                    </div>
+                  <button key={bereich.key} type="button" onClick={() => selectRecommendedArea(bereich.key)} className={`role-card ${selectedBereich.has(bereich.key) ? "selected" : ""}`} style={{ textAlign: "left", cursor: "pointer" }} aria-pressed={selectedBereich.has(bereich.key)}>
+                    {selectedBereich.has(bereich.key) && <span className="role-card-check" aria-hidden="true">✓</span>}
+                    <div className="role-card-icon" aria-hidden="true">{BEREICH_ICONS[bereich.key] ?? "🧭"}</div>
                     <div className="role-card-name">{bereich.label}</div>
                   </button>
                 ))}
               </div>
             </div>
           )}
-
-          {selectedBereich.size === 0 && selectedInterests.size >= 2 && (
-            <div className="hint" style={{ textAlign: "center", marginTop: "12px" }}>
-              Wähle mindestens einen vorgeschlagenen Bereich, dann schauen wir uns konkrete Möglichkeiten an.
-            </div>
-          )}
         </div>
       ) : (
         <div>
-          <div
-            style={{
-              marginBottom: "12px",
-              padding: "12px 14px",
-              borderRadius: "14px",
-              background: "rgba(95,220,153,.07)",
-              border: "1px solid rgba(95,220,153,.18)",
-            }}
-          >
+          <div style={{ marginBottom: "16px", padding: "13px 15px", borderRadius: "16px", background: "rgba(95,220,153,.07)", border: "1px solid rgba(95,220,153,.18)" }}>
             <strong style={{ fontSize: "14px" }}>Deine Richtung: {selectedLabels}</strong>
-            <div className="hint" style={{ marginTop: "4px" }}>
-              Jetzt schauen wir, welche konkreten Fähigkeiten und Möglichkeiten dahinterstecken.
-            </div>
+            <div className="hint" style={{ marginTop: "4px" }}>Jetzt wird es konkreter: Wähle die Skills aus, die du wirklich entwickeln möchtest.</div>
           </div>
 
-          <div className="role-grid" style={{ marginBottom: "14px" }}>
-            {bereicheOptions.map((bereich) => {
-              const active = selectedBereich.has(bereich.key);
+          <div style={{ marginBottom: "12px" }}>
+            <div style={{ fontSize: "21px", fontWeight: 850, lineHeight: 1.2 }}>Was möchtest du lernen oder vertiefen?</div>
+            <div className="hint" style={{ marginTop: "5px" }}>Du kannst einen ganzen Bereich öffnen oder nur einzelne Skills auswählen. Keine Auswahl bedeutet nicht, dass dir der Skill fehlt.</div>
+          </div>
+
+          <div style={{ display: "grid", gap: "10px" }}>
+            {[...skillsByArea.entries()].map(([areaKey, skills]) => {
+              const open = skillAreaOpen === areaKey;
+              const selectedCount = skills.filter((skill) => selectedSkillIds.has(skill.skill_id)).length;
               return (
-                <div
-                  key={bereich.key}
-                  className={`role-card ${active ? "selected" : ""}`}
-                  onClick={() => toggleBereich(bereich.key)}
-                  role="button"
-                  tabIndex={0}
-                  aria-pressed={active}
-                  onKeyDown={(event) =>
-                    handleCardKeyDown(event, () => toggleBereich(bereich.key))
-                  }
-                >
-                  {active && <span className="role-card-check" aria-hidden="true">✓</span>}
-                  <div className="role-card-icon" aria-hidden="true">
-                    {BEREICH_ICONS[bereich.key] ?? "🧭"}
-                  </div>
-                  <div className="role-card-name">{bereich.label}</div>
+                <div key={areaKey} style={{ border: "1px solid var(--border-soft)", borderRadius: "18px", overflow: "hidden", background: "var(--surface, #fff)" }}>
+                  <button
+                    type="button"
+                    onClick={() => setSkillAreaOpen(open ? null : areaKey)}
+                    style={{ width: "100%", border: 0, padding: "16px", background: open ? "rgba(95,220,153,.07)" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", gap: "12px", textAlign: "left" }}
+                  >
+                    <span style={{ fontSize: "22px" }}>{BEREICH_ICONS[[...effectiveSelectedBereich][0]] ?? "✦"}</span>
+                    <span style={{ flex: 1 }}>
+                      <strong style={{ display: "block", fontSize: "15px" }}>Relevante Skills für {selectedLabels}</strong>
+                      <span className="hint">{skills.length} relevante Skills{selectedCount > 0 ? ` · ${selectedCount} ausgewählt` : ""}</span>
+                    </span>
+                    <span aria-hidden="true" style={{ fontSize: "18px", opacity: .55 }}>{open ? "⌃" : "→"}</span>
+                  </button>
+                  {open && (
+                    <div style={{ padding: "0 12px 12px", display: "grid", gap: "8px" }}>
+                      {skills.map((skill) => {
+                        const active = selectedSkillIds.has(skill.skill_id);
+                        return (
+                          <button
+                            key={skill.skill_id}
+                            type="button"
+                            onClick={() => onToggleSkill(skill.skill_id)}
+                            aria-pressed={active}
+                            style={{ width: "100%", border: active ? "1.5px solid rgba(47,143,214,.55)" : "1px solid var(--border-soft)", borderRadius: "14px", padding: "12px 13px", background: active ? "rgba(47,143,214,.07)" : "var(--surface, #fff)", cursor: "pointer", display: "flex", alignItems: "center", gap: "11px", textAlign: "left" }}
+                          >
+                            <span style={{ width: "24px", height: "24px", borderRadius: "7px", display: "grid", placeItems: "center", border: active ? "0" : "1px solid var(--border-soft)", background: active ? "var(--accent, #2f8fd6)" : "transparent", color: active ? "#fff" : "inherit", fontWeight: 850, flex: "0 0 auto" }}>{active ? "✓" : ""}</span>
+                            <span style={{ flex: 1 }}>
+                              <strong style={{ display: "block", fontSize: "14px" }}>{skill.name}</strong>
+                              <span className="hint" style={{ fontSize: "12px" }}>Als Entwicklungsziel auswählen</span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
 
-          {possibleRoles.length > 0 && (
-            <div style={{ marginTop: "16px" }}>
-              <div style={{ marginBottom: "10px" }}>
-                <strong style={{ display: "block", fontSize: "15px" }}>
-                  Mögliche Wege für dich
-                </strong>
-                <span className="hint">
-                  Das sind konkrete Zielrichtungen, die in diesem Bereich bereits im Angebot vorkommen.
-                </span>
-              </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
-                  gap: "9px",
-                }}
-              >
-                {possibleRoles.map((role) => (
-                  <div
-                    key={role.role_id}
-                    style={{
-                      padding: "13px 14px",
-                      border: "1px solid var(--border-soft)",
-                      borderRadius: "14px",
-                      background: "var(--surface, #fff)",
-                    }}
-                  >
-                    <strong style={{ display: "block", fontSize: "14px", lineHeight: 1.35 }}>
-                      {role.role_name}
-                    </strong>
-                    {role.bereich_label && (
-                      <span className="hint" style={{ display: "block", marginTop: "4px" }}>
-                        {role.bereich_label}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {effectiveSelectedBereich.size > 0 && (
-            <div style={{ marginTop: "12px" }}>
-              <button
-                type="button"
-                onClick={() => setShowLearningGoals((value) => !value)}
-                style={{
-                  width: "100%",
-                  border: "1px solid var(--border-soft)",
-                  borderRadius: "16px",
-                  padding: "15px 17px",
-                  background: showLearningGoals
-                    ? "var(--surface-soft, rgba(95,220,153,.08))"
-                    : "var(--surface, #fff)",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "14px",
-                  textAlign: "left",
-                }}
-              >
-                <span style={{ display: "flex", alignItems: "center", gap: "11px" }}>
-                  <span style={{ fontSize: "19px" }}>✦</span>
-                  <span>
-                    <strong style={{ display: "block", fontSize: "15px" }}>
-                      Schon eine Idee, was du lernen möchtest?
-                    </strong>
-                    <span className="hint">
-                      {selectedSkillIds.size > 0
-                        ? `${selectedSkillIds.size} Lernziel${selectedSkillIds.size === 1 ? "" : "e"} ausgewählt`
-                        : "Optional — nur auswählen, wenn du bereits konkrete Interessen hast"}
-                    </span>
-                  </span>
-                </span>
-                <span aria-hidden="true">{showLearningGoals ? "⌃" : "→"}</span>
-              </button>
-
-              {showLearningGoals && (
-                <div
-                  style={{
-                    marginTop: "10px",
-                    padding: "15px",
-                    borderRadius: "16px",
-                    background: "rgba(127,127,127,.035)",
-                    border: "1px solid var(--border-soft)",
-                  }}
-                >
-                  <div style={{ marginBottom: "12px" }}>
-                    <strong style={{ display: "block", fontSize: "15px" }}>
-                      Was möchtest du in {selectedLabels} lernen?
-                    </strong>
-                    <span className="hint">
-                      Diese Auswahl ist ein persönlicher Zusatz — ORBIT kann sie später mit deinem Skill-Gap abgleichen.
-                    </span>
-                  </div>
-
-                  <div className="quiz-list">
-                    {learningSkills.map((skill) => {
-                      const active = selectedSkillIds.has(skill.skill_id);
-                      return (
-                        <div
-                          key={skill.skill_id}
-                          className={`quiz-item ${active ? "checked" : ""}`}
-                          onClick={() => onToggleSkill(skill.skill_id)}
-                          role="checkbox"
-                          aria-checked={active}
-                          tabIndex={0}
-                          onKeyDown={(event) =>
-                            handleCardKeyDown(event, () => onToggleSkill(skill.skill_id))
-                          }
-                        >
-                          <div className="check-box" aria-hidden="true">✓</div>
-                          <div className="quiz-item-label">{skill.name}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {selectedLearningLabels.length > 0 && (
-                    <div className="hint" style={{ marginTop: "10px" }}>
-                      Deine Lernziele: {selectedLearningLabels.slice(0, 4).join(" · ")}
-                      {selectedLearningLabels.length > 4
-                        ? ` +${selectedLearningLabels.length - 4}`
-                        : ""}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+          <div style={{ marginTop: "14px", padding: "14px 15px", borderRadius: "16px", background: selectedSkillIds.size > 0 ? "rgba(47,143,214,.06)" : "rgba(127,127,127,.035)", border: "1px solid var(--border-soft)" }}>
+            <strong style={{ display: "block", fontSize: "14px" }}>{selectedSkillIds.size > 0 ? `${selectedSkillIds.size} Entwicklungsziel${selectedSkillIds.size === 1 ? "" : "e"} ausgewählt` : "Noch keine konkreten Skills ausgewählt"}</strong>
+            <span className="hint" style={{ display: "block", marginTop: "4px" }}>
+              {selectedSkillIds.size > 0 ? `${selectedLearningLabels.slice(0, 5).join(" · ")}${selectedLearningLabels.length > 5 ? ` +${selectedLearningLabels.length - 5}` : ""}` : "Kein Problem. Im nächsten Schritt prüfen wir trotzdem dein vorhandenes Skill-Profil."}
+            </span>
+          </div>
 
           <div className="cta-block" style={{ marginTop: "18px" }}>
-            <button
-              type="button"
-              className={`btn-cta-primary ${advancing ? "loading" : ""}`}
-              onClick={goWithBereich}
-            >
-              {advancing ? (
-                <>
-                  <span className="btn-spinner" aria-hidden="true" /> Wir bereiten deine Möglichkeiten vor…
-                </>
-              ) : (
-                <>
-                  {selectedSkillIds.size > 0
-                    ? "Mit meinen Interessen weiter"
-                    : "Möglichkeiten entdecken"}
-                  <span className="arrow">→</span>
-                </>
-              )}
+            <button type="button" className={`btn-cta-primary ${advancing ? "loading" : ""}`} onClick={goWithBereich}>
+              {advancing ? <><span className="btn-spinner" aria-hidden="true" /> Profil wird vorbereitet…</> : <>Weiter zum Erfahrungscheck <span className="arrow">→</span></>}
             </button>
             <div className="hint" style={{ textAlign: "center", marginTop: "9px" }}>
-              {selectedSkillIds.size > 0
-                ? `${selectedSkillIds.size} Lernziel${selectedSkillIds.size === 1 ? "" : "e"} fließen in deine Empfehlungen ein.`
-                : "Im nächsten Schritt wird daraus eine konkrete Zielrichtung."}
+              Als Nächstes gibst du für die ausgewählten bzw. relevanten Skills dein Erfahrungslevel an.
             </div>
           </div>
         </div>
       )}
 
-      <div
-        className="method-switch"
-        onClick={onBrowseAll}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(event) => handleCardKeyDown(event, onBrowseAll)}
-        style={{ marginTop: "14px", display: "block", textAlign: "center" }}
-      >
+      <div className="method-switch" onClick={onBrowseAll} role="button" tabIndex={0} onKeyDown={(event) => handleCardKeyDown(event, onBrowseAll)} style={{ marginTop: "14px", display: "block", textAlign: "center" }}>
         🎯 Ich kenne meine genaue Zielrolle bereits
       </div>
-
       <ActionsRow onBack={onBack} hideForward />
     </div>
   );
@@ -4811,6 +4593,34 @@ function FragebogenMethod({
           >
             ← Antworten noch anpassen
           </button>
+
+          <div style={{ marginTop: "18px", textAlign: "left" }}>
+            <div style={{ fontSize: "15px", fontWeight: 850, marginBottom: "8px" }}>Dein Erfahrungsprofil</div>
+            <div style={{ display: "grid", gap: "8px" }}>
+              {questionSkills.map((s) => {
+                const answer = answers[s.esco_uri];
+                const levelLabel = answer && answer !== "no"
+                  ? ({ grundkenntnisse: "Grundkenntnisse", fortgeschritten: "Fortgeschritten", experte: "Sehr sicher" } as Record<ProficiencyBucket, string>)[answer.proficiency]
+                  : "Noch keine Erfahrung";
+                const recencyLabel = answer && answer !== "no"
+                  ? answer.recency === "aktuell" ? "aktuell" : "vor einiger Zeit"
+                  : "";
+                const isGoal = selectedSkillIds.has(s.skill_id);
+                return (
+                  <div key={s.esco_uri} style={{ padding: "12px 13px", borderRadius: "14px", border: "1px solid var(--border-soft)", background: "var(--surface, #fff)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <span style={{ flex: 1, fontWeight: 800, fontSize: "13px" }}>{s.preferred_label}</span>
+                      {isGoal && <span style={{ fontSize: "10px", fontWeight: 800, padding: "4px 7px", borderRadius: "999px", background: "rgba(47,143,214,.09)" }}>ENTWICKLUNGSZIEL</span>}
+                    </div>
+                    <div style={{ display: "flex", gap: "7px", flexWrap: "wrap", marginTop: "7px" }}>
+                      <span style={{ fontSize: "11px", fontWeight: 750, padding: "5px 8px", borderRadius: "999px", background: answer === "no" ? "rgba(127,127,127,.08)" : "rgba(95,220,153,.10)" }}>{levelLabel}</span>
+                      {recencyLabel && <span style={{ fontSize: "11px", padding: "5px 8px", borderRadius: "999px", background: "rgba(127,127,127,.06)" }}>{recencyLabel}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
 
           {extraSkills.length > 0 && (
             <div className="quiz-extra-section">

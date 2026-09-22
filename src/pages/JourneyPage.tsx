@@ -3301,6 +3301,7 @@ async function runDemoAnalysis() {
                     checkedSkills={checkedSkills}
                     toggleSkill={toggleSkill}
                     skillDepthByUri={skillDepthByUri}
+                    learningGoalSkillIds={roleSuggestSkillIds}
                     onAnswerSkill={answerQuizSkill}
                     onSubmitQuiz={submitQuizMethod}
                     skillsBusy={skillsBusy}
@@ -4126,6 +4127,8 @@ interface SkillsMethodStepProps {
   /** Teil 2 (22.09.2026, siehe SkillDepth-Kommentar in JourneyPage): Grad +
    *  Aktualität je bestätigtem Skill — parallel zu checkedSkills. */
   skillDepthByUri: Map<string, SkillDepth>;
+  /** Skills, die zuvor als persönliches Entwicklungsziel markiert wurden. */
+  learningGoalSkillIds?: ReadonlySet<string>;
   /** Einziger Schreibpfad im Fragebogen-Pfad für Teil 2 (ersetzt toggleSkill
    *  dort) — siehe answerQuizSkill() in JourneyPage. */
   onAnswerSkill: (uri: string, depth: SkillDepth | null) => void;
@@ -4458,6 +4461,7 @@ function FragebogenMethod({
   // Interaktion neu/ungewohnt ist. Erscheint nur bei der ersten Frage, nicht
   // bei jeder — sonst würde sie schnell nerven statt zu helfen.
   const [tipDismissed, setTipDismissed] = useState(false);
+  const learningGoalSkillIds = props.learningGoalSkillIds ?? new Set<string>();
 
   useEffect(() => {
     setIndex(0);
@@ -4612,7 +4616,7 @@ function FragebogenMethod({
                 const recencyLabel = answer && answer !== "no"
                   ? answer.recency === "aktuell" ? "aktuell" : "vor einiger Zeit"
                   : "";
-                const isGoal = selectedSkillIds.has(s.skill_id);
+                const isGoal = learningGoalSkillIds.has(s.skill_id);
                 return (
                   <div key={s.esco_uri} style={{ padding: "12px 13px", borderRadius: "14px", border: "1px solid var(--border-soft)", background: "var(--surface, #fff)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>

@@ -631,9 +631,9 @@ function applyManualSkillMove(gapResult: GapAnalysisResponse, escoUri: string, t
  * einer (im aktuellen Katalog nicht vorkommenden) sehr flachen
  * Gewichtsverteilung.
  */
-const MAX_QUIZ_QUESTIONS = 12;
+const MAX_QUIZ_QUESTIONS = 7;
 function pickCoreQuestionSkills(skills: RoleSkillStatus[]): RoleSkillStatus[] {
-  if (skills.length <= 3) return skills;
+  if (skills.length <= MAX_QUIZ_QUESTIONS) return skills;
 
   const sorted = [...skills].sort((a, b) => b.weight - a.weight);
   const withPriority = sorted as (RoleSkillStatus & { priority?: "kern" | "ergaenzend" })[];
@@ -647,76 +647,61 @@ function pickCoreQuestionSkills(skills: RoleSkillStatus[]): RoleSkillStatus[] {
     const cutoff = totalWeight * 0.7;
     let running = 0;
     kern = [];
-    for (const s of sorted) {
-      if (running >= cutoff) break;
-      kern.push(s);
-      running += s.weight;
+    for (const skill of sorted) {
+      if (running >= cutoff && kern.length >= 4) break;
+      kern.push(skill);
+      running += skill.weight;
+      if (kern.length >= MAX_QUIZ_QUESTIONS) break;
     }
   }
 
   return (kern.length ? kern : sorted).slice(0, MAX_QUIZ_QUESTIONS);
 }
 
-/**
- * Teil 2 des Fragebogen-Redesigns (22.09.2026, "sei maximal detailverliebt
- * ... aber nicht zu viele Schritte ... maximal innovativer UX Prozess"):
- * Ein reines Ja/Nein pro Skill blendet aus, WIE GUT und WIE AKTUELL eine
- * Fähigkeit ist — zwei Personen, beide "Ja" bei "SQL", können real sehr
- * unterschiedlich weit sein. Genau das wurde als fehlend benannt ("wann kann
- * ich das und wie gut bin ich darin nicht beachtet").
- *
- * Statt dafür (verboten laut Vorgabe) einen zusätzlichen Frage-Schritt
- * einzuführen, erfasst EIN Tap auf eine 3×3-Matrix (Grad × Aktualität, siehe
- * FragebogenMethod weiter unten) beides gleichzeitig — exakt derselbe
- * Interaktionsaufwand (ein Tap) wie die bisherige Ja/Nein-Karte, aber neun
- * statt zwei möglichen Antworten.
- *
- * Aus der gewählten Zelle wird rein deterministisch (keine KI, keine
- * erfundenen Werte) ein Score 0–100 abgeleitet, der über exakt dieselbe
- * gewichtete Formel wie überall sonst im Projekt einfließt (siehe
- * moveSkillManually oben: weight * (matched_score/100)) — ein "Grundkenntnisse,
- * länger her"-Skill zählt dadurch ehrlich als teilweise vorhanden, nicht
- * als voller Treffer und nicht als Lücke.
- */
-type ProficiencyBucket = "grundkenntnisse" | "fortgeschritten" | "experte";
-type RecencyBucket = "aktuell" | "letzte_jahre" | "laenger_her";
-interface SkillDepth {
-  proficiency: ProficiencyBucket;
-  recency: RecencyBucket;
+function skillQuestionContext(skill: RoleSkillStatus, targetRoleName: string | null): {
+  title: string;
+  body: string;
+  signal: string;
+} {
+  const role = targetRoleName || "dein Ziel";
+  const name = skill.preferred_label;
+  const normalized = name.toLowerCase();
+
+  if (/kommunikation|präsentation|praesentation|moderation|kunden|beratung/.test(normalized)) {
+    return {
+      title: `Wo begegnet dir ${name} in der Praxis?`,
+      body: `Denk an Situationen, in denen du bereits für ${role} relevante Aufgaben übernommen hast.`,
+      signal: "Wir suchen echte Anwendung — nicht nur theoretisches Wissen.",
+    };
+  }
+  if (/analyse|daten|statistik|report|excel|sql|power bi|dashboard/.test(normalized)) {
+    return {
+      title: `Wie sicher bist du mit ${name}, wenn es praktisch wird?`,
+      body: `Zum Beispiel beim Auswerten, Strukturieren oder Ableiten von Entscheidungen für ${role}.`,
+      signal: "Praxis zählt stärker als ein reines 'schon einmal gesehen'.",
+    };
+  }
+  if (/projekt|planung|management|agil|scrum|prozess/.test(normalized)) {
+    return {
+      title: `Wie viel Verantwortung hast du mit ${name} schon übernommen?`,
+      body: `Denk an echte Aufgaben, Projekte oder Abläufe, die du selbst gesteuert oder begleitet hast.`,
+      signal: "Verantwortung und Selbstständigkeit helfen uns, dein Level besser einzuordnen.",
+    };
+  }
+  if (/marketing|seo|content|social|kampagne|ads|branding/.test(normalized)) {
+    return {
+      title: `Hast du ${name} schon für echte Ergebnisse eingesetzt?`,
+      body: `Zum Beispiel in Kampagnen, Projekten oder eigenen Vorhaben, die zu ${role} passen.`,
+      signal: "Wir unterscheiden zwischen Kennen, Anwenden und sicherem Beherrschen.",
+    };
+  }
+  return {
+    title: `Wie vertraut bist du mit ${name}?`,
+    body: `Denk an deine bisherige praktische Erfahrung und daran, wie selbstständig du damit in Richtung ${role} arbeiten könntest.`,
+    signal: "Eine ehrliche Einschätzung ist hilfreicher als eine perfekte Selbstdarstellung.",
+  };
 }
-/** Reihenfolge/Beschriftung der Matrix-Zeilen (Grad) — höchste Stufe oben,
- *  liest sich wie eine Leiter nach oben. */
-const PROFICIENCY_ROWS: { key: ProficiencyBucket; label: string }[] = [
-  { key: "experte", label: "Experte" },
-  { key: "fortgeschritten", label: "Fortgeschritten" },
-  { key: "grundkenntnisse", label: "Grundkenntnisse" },
-];
-/** Reihenfolge/Beschriftung der Matrix-Spalten (Aktualität) — aktuellstes
- *  zuerst (Leserichtung). */
-const RECENCY_COLS: { key: RecencyBucket; label: string; short: string }[] = [
-  { key: "aktuell", label: "Aktuell im Einsatz", short: "Aktuell" },
-  { key: "letzte_jahre", label: "Letzte Jahre", short: "Letzte Jahre" },
-  { key: "laenger_her", label: "Länger her", short: "Länger her" },
-];
-/** Basiswert je Grad — bewusst nicht 0/50/100: selbst "Grundkenntnisse"
- *  zählt real als teilweise vorhanden, nicht als halbe Lücke. Dieselbe
- *  Größenordnung wie proficiency_level in der cv-depth-analysis Edge
- *  Function (dort als LLM-Einschätzung, hier deterministisch aus der
- *  eigenen Angabe der Person). */
-const PROFICIENCY_BASE_SCORE: Record<ProficiencyBucket, number> = {
-  grundkenntnisse: 55,
-  fortgeschritten: 80,
-  experte: 100,
-};
-/** Multiplikator je Aktualität — "aktuell im Einsatz" zählt voll, länger
- *  Zurückliegendes wird moderat (nicht hart auf 0) abgewertet, exakt wie
- *  recencyFactor() im cv-depth-analysis-Backend dieselbe Grundidee auf
- *  Basis von Datumsangaben umsetzt. */
-const RECENCY_FACTOR: Record<RecencyBucket, number> = {
-  aktuell: 1.0,
-  letzte_jahre: 0.9,
-  laenger_her: 0.72,
-};
+
 function quizSkillScore(depth: SkillDepth | undefined | null): number {
   // Fallback (sollte in der neuen UI praktisch nie eintreten - jedes "Ja"
   // setzt depth im selben Tap): entspricht in etwa "Fortgeschritten,
@@ -4520,7 +4505,7 @@ function FragebogenMethod({
         step="06"
         kicker="DEIN PROFIL"
         title="Was bringst du bereits mit?"
-        description={`Wir zeigen dir die ${questionSkills.length} wichtigsten Skills für ${targetRoleName || "deine Zielrolle"} — du tippst pro Skill EINMAL an, wie gut und wie aktuell. Danach siehst du direkt dein Ergebnis.`}
+        description={`Wir haben die für ${targetRoleName || "dein Ziel"} wichtigsten Fähigkeiten herausgefiltert. Du beantwortest nur ${questionSkills.length} kurze Praxisfragen — daraus entsteht dein persönliches Skill-Profil.`}
       />
 
       {showAvatar && !tipDismissed && safeIndex === 0 && (
@@ -4544,55 +4529,70 @@ function FragebogenMethod({
         </div>
       </div>
 
-      <div key={skill.esco_uri} className="quiz-depth-card">
-        <div className="quiz-depth-card-kicker">KOMPETENZ</div>
-        <div className="quiz-depth-card-title">{skill.preferred_label}</div>
-        <div className="hint quiz-depth-card-hint">
-          Ein Tipp genügt: wie gut, und wann zuletzt eingesetzt?
-        </div>
-
-        <div className="quiz-depth-grid" role="group" aria-label={`Grad und Aktualität für ${skill.preferred_label}`}>
-          <div className="quiz-depth-grid-corner" aria-hidden="true" />
-          {RECENCY_COLS.map((col) => (
-            <div key={col.key} className="quiz-depth-col-label">
-              {col.short}
+      {(() => {
+        const context = skillQuestionContext(skill, targetRoleName);
+        return (
+          <div key={skill.esco_uri} className="quiz-depth-card" style={{ padding: "24px", borderRadius: "24px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "flex-start", marginBottom: "18px" }}>
+              <div>
+                <div className="quiz-depth-card-kicker">SKILL {safeIndex + 1} · DEIN PROFIL</div>
+                <div className="quiz-depth-card-title" style={{ fontSize: "28px", lineHeight: 1.12 }}>{skill.preferred_label}</div>
+              </div>
+              <div style={{ fontSize: "12px", fontWeight: 750, padding: "8px 11px", borderRadius: "999px", background: "rgba(47,143,214,.08)", whiteSpace: "nowrap" }}>
+                {Math.round(skill.weight * 100)}% Relevanz
+              </div>
             </div>
-          ))}
-          {PROFICIENCY_ROWS.flatMap((row) => [
-            <div key={`${row.key}-label`} className="quiz-depth-row-label">
-              {row.label}
-            </div>,
-            ...RECENCY_COLS.map((col) => {
-              const isSelected =
-                !!answered && answered !== "no" && answered.proficiency === row.key && answered.recency === col.key;
-              return (
-                <button
-                  key={`${row.key}-${col.key}`}
-                  type="button"
-                  className={`quiz-depth-cell ${isSelected ? "selected" : ""}`}
-                  onClick={() => selectDepth(row.key, col.key)}
-                  aria-pressed={isSelected}
-                  title={`${row.label} · ${col.label}`}
-                >
-                  {isSelected ? "✓" : ""}
-                </button>
-              );
-            }),
-          ])}
-        </div>
 
-        {answered && answered !== "no" && (
-          <div className="quiz-depth-selected-label">
-            Ausgewählt:{" "}
-            <strong>{PROFICIENCY_ROWS.find((r) => r.key === answered.proficiency)?.label}</strong> ·{" "}
-            {RECENCY_COLS.find((c) => c.key === answered.recency)?.label}
+            <div style={{ fontSize: "20px", fontWeight: 820, lineHeight: 1.25, marginBottom: "8px" }}>{context.title}</div>
+            <div className="hint" style={{ fontSize: "14px", lineHeight: 1.55, marginBottom: "6px" }}>{context.body}</div>
+            <div style={{ fontSize: "12px", opacity: .62, marginBottom: "20px" }}>{context.signal}</div>
+
+            <div style={{ display: "grid", gap: "10px" }}>
+              {[
+                { key: "strong", title: "Ich kann das selbstständig", body: "Ich setze es aktuell praktisch ein.", depth: { proficiency: "experte" as ProficiencyBucket, recency: "aktuell" as RecencyBucket } },
+                { key: "solid", title: "Ich habe damit gearbeitet", body: "Ich kann Aufgaben damit selbstständig lösen, aber nicht regelmäßig.", depth: { proficiency: "fortgeschritten" as ProficiencyBucket, recency: "letzte_jahre" as RecencyBucket } },
+                { key: "basic", title: "Ich kenne die Grundlagen", body: "Ich habe erste Erfahrung oder theoretisches Wissen.", depth: { proficiency: "grundkenntnisse" as ProficiencyBucket, recency: "letzte_jahre" as RecencyBucket } },
+                { key: "gap", title: "Das ist für mich neu", body: "Genau hier könnte eine Weiterbildung ansetzen.", depth: null },
+              ].map((option) => {
+                const selected = option.key === "gap"
+                  ? answered === "no"
+                  : !!answered && answered !== "no" && answered.proficiency === option.depth?.proficiency && answered.recency === option.depth?.recency;
+                return (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => option.depth ? selectDepth(option.depth.proficiency, option.depth.recency) : markNotYet()}
+                    aria-pressed={selected}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "16px 17px",
+                      borderRadius: "16px",
+                      border: selected ? "2px solid var(--accent, #2f8fd6)" : "1px solid var(--border-soft)",
+                      background: selected ? "rgba(47,143,214,.07)" : "var(--surface, #fff)",
+                      cursor: "pointer",
+                      transition: "transform .16s ease, border-color .16s ease, background .16s ease",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <span style={{ width: "28px", height: "28px", borderRadius: "50%", display: "grid", placeItems: "center", flex: "0 0 auto", border: selected ? "0" : "1px solid var(--border-soft)", background: selected ? "var(--accent, #2f8fd6)" : "transparent", color: selected ? "#fff" : "inherit", fontWeight: 850 }}>{selected ? "✓" : ""}</span>
+                      <span style={{ flex: 1 }}>
+                        <span style={{ display: "block", fontWeight: 800, fontSize: "15px" }}>{option.title}</span>
+                        <span style={{ display: "block", marginTop: "3px", fontSize: "12px", opacity: .68, lineHeight: 1.45 }}>{option.body}</span>
+                      </span>
+                      <span aria-hidden="true" style={{ opacity: .42, fontSize: "18px" }}>→</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ marginTop: "16px", paddingTop: "14px", borderTop: "1px solid var(--border-soft)", fontSize: "12px", opacity: .65 }}>
+              Deine Antwort verändert direkt, welche Lernfelder ORBIT dir anschließend zeigt.
+            </div>
           </div>
-        )}
-
-        <button type="button" className={`quiz-not-yet-btn ${answered === "no" ? "selected" : ""}`} onClick={markNotYet}>
-          <span aria-hidden="true">○</span> Noch nicht — möchte ich lernen
-        </button>
-      </div>
+        );
+      })()}
 
       <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", marginTop: "12px" }}>
         <button type="button" className="btn-back" onClick={previous} disabled={safeIndex === 0}>

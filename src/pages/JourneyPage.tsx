@@ -5132,6 +5132,9 @@ function GapStep({
   earlyCaptureError,
   earlyLeadSaved,
   onSaveEarly,
+  allCourses,
+  targetBereichKey,
+  portfolioRoles,
 }: {
   gapResult: GapAnalysisResponse;
   /** Wie die Person ihre Angaben gemacht hat (Freitext/CV vs. Fragebogen) —
@@ -5176,6 +5179,9 @@ function GapStep({
   earlyCaptureError: string | null;
   earlyLeadSaved: boolean;
   onSaveEarly: () => void;
+  allCourses: OrbitCourse[];
+  targetBereichKey: string | null;
+  portfolioRoles: CatalogRole[];
 }) {
   const earlyEmailValid = leadEmail.trim().length > 0 && EMAIL_RE.test(leadEmail.trim());
   const coveredCount = gapResult.covered_skills.length;

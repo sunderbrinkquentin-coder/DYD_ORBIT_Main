@@ -51,7 +51,7 @@ import { AnimatedNumber } from "../components/AnimatedNumber";
 import { JourneyTour, type JourneyStepKey } from "../components/JourneyTour";
 import "../styles/journey.css";
 
-type StepKey = "ziel" | "praeferenzen" | "bereich" | "zielrolle" | "skills" | "gap" | "kurs";
+type StepKey = "ziel" | "praeferenzen" | "bereich" | "zielrolle" | "skills" | "motivation" | "gap" | "kurs";
 
 /** Nur fuer den gefuehrten Rundgang (JourneyTour, siehe runDemoAnalysis
  * unten): Rolle + Beispielprofil, damit die Schritte "Skill-Gap" und
@@ -145,6 +145,14 @@ function pickShowcaseCourses(allCourses: OrbitCourse[], limit: number): CourseRe
 const CORE_STEPS: { key: StepKey; label: string }[] = [
   { key: "zielrolle", label: "Zielrolle" },
   { key: "skills", label: "Profil" },
+  // Kurze Motivations-Zwischenseite (22.09.2026, ähnlich Taxfix & Co.)
+  // zwischen Profil-Eingabe und der (dichten) Match-Auswertung — bewusst ein
+  // ECHTER, gezählter Schritt im Stepper statt eines flüchtigen Overlays:
+  // dieselbe Lektion wie beim Fragebogen-Pfad in GapStep ("Rückmeldung
+  // 17.09.": zu schnelles Auto-Weiterspringen lässt einen Schritt nur kurz
+  // aufblitzen statt sichtbar zu sein). Der Übergang wartet deshalb auf
+  // einen aktiven Klick (siehe MotivationStep), kein Auto-Advance.
+  { key: "motivation", label: "Geschafft" },
   { key: "gap", label: "Match" },
   { key: "kurs", label: "Weiterbildung" },
 ];
@@ -1144,8 +1152,9 @@ export function JourneyPage({
   const [done, setDone] = useState(false);
   const widgetBodyRef = useRef<HTMLDivElement>(null);
   // Welche Schritt-Sequenz gerade gilt, haengt davon ab, ob die Zielrolle
-  // schon bekannt ist (5 Schritte) oder erst per Bereich gefunden werden muss
-  // (6 Schritte, mit vorgeschaltetem "Bereich"-Schritt).
+  // schon bekannt ist (6 Schritte, inkl. Motivations-Zwischenseite) oder
+  // erst per Bereich gefunden werden muss (7 Schritte, mit vorgeschaltetem
+  // "Bereich"-Schritt).
   const steps = knowsRole === false ? WITH_BEREICH_STEPS : BASE_STEPS;
   const stepKey: StepKey | undefined = current >= 0 ? steps[current]?.key : undefined;
   /** Liefert den Index eines Schritts in der AKTUELL gueltigen Schritt-Folge
@@ -1992,7 +2001,9 @@ async function runDemoAnalysis() {
           });
       setGapResult(res);
       setText(textToUse);
-      setCurrent(stepIndex("gap"));
+      // Erst die Motivations-Zwischenseite (siehe CORE_STEPS-Kommentar),
+      // nicht direkt "gap" — die Person klickt dort selbst weiter.
+      setCurrent(stepIndex("motivation"));
       setTestId(null);
       setDepthByUri(new Map());
       setDepthOverallAssessment(null);
@@ -2124,13 +2135,18 @@ async function runDemoAnalysis() {
       `Ich möchte mich im Bereich „${targetRoleName}“ gezielt weiterentwickeln.`;
     setText(synthetic);
     setGapResult(result);
-    setCurrent(stepIndex("gap"));
+    // Erst die Motivations-Zwischenseite (siehe CORE_STEPS-Kommentar), dann
+    // erst der Gap-Schritt — Person klickt sich jeweils selbst weiter.
+    setCurrent(stepIndex("motivation"));
     setTestId(null);
-    // Nutzer landet jetzt wie im Lebenslauf-Pfad auf dem Gap-Schritt und
-    // klickt selbst auf "Kursempfehlung ansehen →" (siehe ActionsRow in
-    // GapStep, onForward={goToKurs}) — vorher sprang der Fragebogen-Pfad
-    // hier automatisch nach 240ms weiter, wodurch der Gap-Schritt nur kurz
-    // aufblitzte, statt sichtbar/lesbar zu sein (Rückmeldung 17.09.).
+    // Nutzer landet jetzt wie im Lebenslauf-Pfad zuerst auf der
+    // Motivations-Zwischenseite und danach auf dem Gap-Schritt, klickt sich
+    // von dort jeweils selbst weiter zu "Kursempfehlung ansehen →" (siehe
+    // ActionsRow in GapStep, onForward={goToKurs}) — vorher sprang der
+    // Fragebogen-Pfad hier automatisch nach 240ms weiter, wodurch der
+    // Gap-Schritt nur kurz aufblitzte, statt sichtbar/lesbar zu sein
+    // (Rückmeldung 17.09.). Dieselbe Lektion gilt jetzt auch für die neue
+    // Motivations-Zwischenseite — deshalb dort ebenfalls kein Auto-Advance.
     // Der Fragebogen-Pfad hat keine eigene KI-Tiefenanalyse (siehe Kommentar
     // an buildQuizGapResult) - eine evtl. noch von einer vorherigen
     // Freitext-Analyse (selbe Sitzung, zurück + Methode gewechselt) übrig
@@ -2887,6 +2903,14 @@ async function runDemoAnalysis() {
                     onBack={() => setCurrent(stepIndex("zielrolle"))}
                     onCvConsentGiven={() => setCvProcessingConsentAt(new Date().toISOString())}
                     privacyPolicyUrl={privacyPolicyUrl}
+                  />
+                )}
+                {stepKey === "motivation" && gapResult && (
+                  <MotivationStep
+                    gapResult={gapResult}
+                    goalLabel={GOAL_OPTIONS.find((g) => g.key === careerGoal)?.label}
+                    onForward={() => setCurrent(stepIndex("gap"))}
+                    onBack={() => setCurrent(stepIndex("skills"))}
                   />
                 )}
                 {stepKey === "gap" && gapResult && (
@@ -4217,6 +4241,88 @@ function skillReasonInfo(
   if (method === "fragebogen") return { text: "Von dir noch nicht als vorhanden bestätigt." };
   return { text: "In deinen bisherigen Angaben konnten wir dazu keinen klaren Beleg finden." };
 }
+
+/**
+ * Kurze Motivations-Zwischenseite direkt nach der Profil-/Skill-Eingabe,
+ * bevor die dichte Match-Auswertung (GapStep) kommt — nach dem Vorbild von
+ * Taxfix & Co.: ein bewusster, ruhiger Moment mit einer einzigen klaren
+ * Botschaft ("das hast du geschafft"), statt direkt in die nächste
+ * Informationsdichte zu fallen. Bewusst NICHT mit JourneyStepHeading
+ * (Kicker/Titel/Beschreibung wie ein normaler Formular-Schritt), sondern
+ * eigenständig zentriert gehalten — genau das soll den Unterschied zu einem
+ * "Schritt mit Arbeit" spürbar machen.
+ *
+ * Verwendet bewusst dieselben Daten wie GapStep (gapResult), damit direkt
+ * dahinter keine zweite, leicht abweichende Berechnung entsteht — hier wird
+ * nichts neu bewertet, nur das bereits vorliegende Ergebnis gefeiert.
+ *
+ * Kein Auto-Advance (siehe Kommentar an runGapAnalysis/submitQuizMethod):
+ * die Person klickt sich über onForward selbst weiter.
+ */
+function MotivationStep({
+  gapResult,
+  goalLabel,
+  onForward,
+  onBack,
+}: {
+  gapResult: GapAnalysisResponse;
+  goalLabel?: string;
+  onForward: () => void;
+  onBack: () => void;
+}) {
+  const coveredCount = gapResult.covered_skills.length;
+  const gapCount = gapResult.gap_skills.length;
+  const totalCount = coveredCount + gapCount;
+
+  const headline =
+    coveredCount === 0
+      ? `Alles klar — jetzt kennen wir deinen Startpunkt für ${gapResult.target_role_name}.`
+      : gapCount === 0
+        ? `Stark! Du bringst schon alle wichtigen Kompetenzen für ${gapResult.target_role_name} mit.`
+        : `Stark! Dein Profil für ${gapResult.target_role_name} steht.`;
+
+  const sub =
+    totalCount === 0
+      ? "Wir werten deine Angaben jetzt aus."
+      : coveredCount === 0
+        ? `Wir haben ${totalCount} zentrale Kompetenzen für diese Rolle im Blick — als Nächstes zeigen wir dir, wie du sie gezielt aufbaust.`
+        : gapCount === 0
+          ? "Eine gezielte Vertiefung kann dein Profil trotzdem noch schärfen — wir zeigen dir gleich, wie."
+          : `Du bringst bereits ${coveredCount} von ${totalCount} zentralen Kompetenzen mit. Wir zeigen dir jetzt genau, was noch fehlt${goalLabel ? ` auf dem Weg zu „${goalLabel}"` : ""}.`;
+
+  return (
+    <div className="motivation-step">
+      <div className="motivation-step-ring">
+        {/* MatchRing zeigt den Prozentwert bereits selbst mittig im Ring an
+            (.ring-value, siehe MatchRing-Komponente) — hier keine zweite,
+            duplizierte Zahl daneben. */}
+        <MatchRing percent={gapResult.match_percentage} size={132} />
+      </div>
+      <div className="motivation-step-headline">{headline}</div>
+      <div className="motivation-step-sub">{sub}</div>
+      {totalCount > 0 && (
+        <div className="motivation-step-stats">
+          <div className="motivation-step-stat">
+            <strong>{coveredCount}</strong>
+            <span>schon vorhanden</span>
+          </div>
+          <div className="motivation-step-stat-divider" aria-hidden="true" />
+          <div className="motivation-step-stat">
+            <strong>{gapCount}</strong>
+            <span>als Lernfeld</span>
+          </div>
+        </div>
+      )}
+      <button type="button" className="btn-cta-primary" onClick={onForward}>
+        Weiter zu deiner Auswertung <span className="arrow">→</span>
+      </button>
+      <button type="button" className="dyd-btn-ghost motivation-step-back" onClick={onBack}>
+        Angaben noch anpassen
+      </button>
+    </div>
+  );
+}
+
 function GapStep({
   gapResult,
   method,

@@ -4867,3 +4867,133 @@ input.big-input:focus {
     padding: 18px 12px;
   }
 }
+
+/* ================================================================
+   Avatar/Guide (22.09.2026): bewusst abstrakte, animierte Marken-Form
+   (Farbverlauf-Orb) statt gezeichnetem Charakter — siehe ausführlichen
+   Kommentar an GuideAvatarBubble in JourneyPage.tsx (White-Label- und
+   Positionierungs-Gründe). --guide-accent ist eine optionale, pro Tenant
+   per Inline-Style gesetzte CSS-Variable (siehe accentColor-Prop) — ohne
+   sie greift der Fallback-Farbverlauf unten (dieselbe Mint→Blau-Familie
+   wie MatchRing/dydMatchRingGradient), ganz ohne eigenes :root-Overwrite,
+   also ohne jede andere Stelle der App zu beeinflussen.
+   ================================================================ */
+.guide-avatar-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+  animation: fadeInUp 0.4s ease both;
+}
+.guide-avatar-orb {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--guide-accent, linear-gradient(135deg, var(--dyd-mint), var(--dyd-blue)));
+  box-shadow: 0 6px 18px rgba(47, 143, 214, 0.28), var(--shadow-sm);
+  overflow: hidden;
+  animation: guideOrbBreathe 3.6s ease-in-out infinite;
+}
+.guide-avatar-orb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.65), transparent 55%);
+}
+.guide-avatar-orb-sheen {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.4) 12%,
+    rgba(255, 255, 255, 0) 26%
+  );
+  mix-blend-mode: screen;
+  animation: guideOrbSheen 5s linear infinite;
+}
+.guide-avatar-bubble {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
+  border-top-left-radius: 4px;
+  padding: 12px 34px 12px 14px;
+  background: var(--surface, #fff);
+  box-shadow: var(--shadow-sm);
+}
+.guide-avatar-bubble-name {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--dyd-blue-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 3px;
+}
+.guide-avatar-bubble-text {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+.guide-avatar-bubble-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.guide-avatar-bubble-close:hover {
+  background: rgba(127, 127, 127, 0.1);
+  color: var(--text-primary);
+}
+@keyframes guideOrbBreathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+@keyframes guideOrbSheen {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guide-avatar-row,
+  .guide-avatar-orb,
+  .guide-avatar-orb-sheen {
+    animation: none;
+  }
+}
+@media (max-width: 480px) {
+  .guide-avatar-orb {
+    width: 38px;
+    height: 38px;
+  }
+  .guide-avatar-bubble {
+    padding: 10px 30px 10px 12px;
+  }
+  .guide-avatar-bubble-text {
+    font-size: 12.5px;
+  }
+}

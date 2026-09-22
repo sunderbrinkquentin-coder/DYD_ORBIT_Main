@@ -572,7 +572,30 @@ export function rankCoursesForGap(
     return { course, coveredGapUris, coveredGapWeight, prefScore, prereq };
   });
 
-  const gapMatches = withGapCoverage.filter((c) => c.coveredGapUris.length > 0);
+  // Fachlicher Schutzfilter: Sobald die Zielrolle einem Bereich zugeordnet ist,
+  // dürfen Gap-Treffer nur aus diesem Bereich empfohlen werden. Ein einzelner
+  // zufällig übereinstimmender Skill (z.B. "Projektmanagement") darf keinen
+  // IT-Kurs in Gesundheit oder einen Gesundheitskurs in IT nach oben spülen.
+  // Mehrbereichs-Kurse sind erlaubt, wenn sie den Zielbereich ausdrücklich
+  // tragen. Für synthetische Bereichsrollen werden alle gewählten Bereiche
+  // berücksichtigt.
+  const targetRole = (preferences.roles ?? ROLES_CATALOG).find((r) => r.role_id === gapResult.target_role_id);
+  const targetBereichKeys = targetRole
+    ? targetRole.role_id.startsWith("bereich:")
+      ? targetRole.role_id.slice("bereich:".length).split(":")[0].split(",").filter(Boolean)
+      : [targetRole.bereich_key]
+    : [];
+  const courseMatchesTargetBereich = (course: CourseCatalogEntry): boolean => {
+    if (targetBereichKeys.length === 0) return true;
+    const courseBereiche = new Set<string>();
+    if (course.bereich_key) courseBereiche.add(course.bereich_key);
+    for (const key of course.bereich_keys ?? []) courseBereiche.add(key);
+    return targetBereichKeys.some((key) => courseBereiche.has(key));
+  };
+
+  const gapMatches = withGapCoverage.filter(
+    (c) => c.coveredGapUris.length > 0 && courseMatchesTargetBereich(c.course)
+  );
 
   if (gapMatches.length > 0) {
     return gapMatches
@@ -624,7 +647,6 @@ export function rankCoursesForGap(
   // wird jetzt NICHTS zurueckgegeben statt eines zufaelligen fachfremden
   // Kurses — KursStep (JourneyPage.tsx) zeigt dann die ehrliche "kein Kurs
   // hinterlegt"-Meldung statt einer falschen Empfehlung.
-  const targetRole = (preferences.roles ?? ROLES_CATALOG).find((r) => r.role_id === gapResult.target_role_id);
   // Bei einer synthetischen "Bereichs-Rolle" (role_id "bereich:a,b" oder,
   // seit der Ziel-Gewichtung (15.09.), "bereich:a,b:fuehrung", siehe
   // buildBereichRole() in gapAnalysis.ts) steckt bereich_key nur den ERSTEN
@@ -633,11 +655,6 @@ export function rankCoursesForGap(
   // abgeschnitten, sonst würde er faelschlich am letzten Bereichs-Key
   // haengen bleiben. Bei einer normalen Rolle bleibt es der eine
   // bereich_key.
-  const targetBereichKeys = targetRole
-    ? targetRole.role_id.startsWith("bereich:")
-      ? targetRole.role_id.slice("bereich:".length).split(":")[0].split(",")
-      : [targetRole.bereich_key]
-    : [];
   const bereichSkillIds = targetBereichKeys.length
     ? new Set(
         ROLES_CATALOG.filter((r) => targetBereichKeys.includes(r.bereich_key)).flatMap((r) =>

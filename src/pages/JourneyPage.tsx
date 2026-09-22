@@ -572,6 +572,60 @@ function moveSkillManually(gapResult: GapAnalysisResponse, escoUri: string, toCo
   };
 }
 
+/**
+ * Bugfix 22.09.2026 ("der Prozess mit den Skills muss viel besser sein"):
+ * Der Fragebogen-Pfad fragte bisher IMMER pauschal `roleSkills.slice(0, 8)`
+ * ab — unabhängig davon, wie viele Skills eine Rolle tatsächlich hat (laut
+ * rolesCatalog.ts 13-16 pro Rolle). Das hatte zwei Effekte: (1) die Auswahl
+ * wirkte willkürlich, weil nirgends erklärt wurde, warum genau diese 8; (2)
+ * schwerwiegender — buildQuizGapResult() berechnete die Match-Prozentzahl
+ * über ALLE Rollen-Skills, nicht nur die gefragten 8. Die 5-8 nie gefragten
+ * Skills zählten dadurch IMMER als Lücke, egal wie geantwortet wurde — 100%
+ * war für die meisten Rollen rechnerisch unerreichbar.
+ *
+ * Fix: diese Funktion ist jetzt die EINE Quelle der Wahrheit dafür, welche
+ * Skills überhaupt gefragt werden — sowohl FragebogenMethod (Anzeige) als
+ * auch buildQuizGapResult() (Berechnung) nutzen exakt dieselbe Liste, damit
+ * "gefragt" und "gewertet" nie wieder auseinanderlaufen können.
+ *
+ * Auswahlregel: die schon vorhandene ABC/Pareto-Klassifikation aus
+ * gapAnalysis.ts (`priority: "kern" | "ergaenzend"`, siehe dortiger
+ * Kommentar an classifyPriority() — die höchstgewichteten Skills bis 70%
+ * des kumulierten Rollen-Gewichts) statt eines Festwerts. `roleSkills`
+ * trägt dieses Feld normalerweise schon (lokaler Katalog-Pfad in
+ * loadRoleSkills()) — nur im seltenen Server-Fallback (Rolle nicht im
+ * lokalen Katalog) fehlt es, dann wird dieselbe 70%-Regel hier lokal
+ * nachgebildet, statt ersatzlos auf "erste 8" zurückzufallen. Eine
+ * defensive Obergrenze verhindert einen unangemessen langen Fragebogen bei
+ * einer (im aktuellen Katalog nicht vorkommenden) sehr flachen
+ * Gewichtsverteilung.
+ */
+const MAX_QUIZ_QUESTIONS = 12;
+function pickCoreQuestionSkills(skills: RoleSkillStatus[]): RoleSkillStatus[] {
+  if (skills.length <= 3) return skills;
+
+  const sorted = [...skills].sort((a, b) => b.weight - a.weight);
+  const withPriority = sorted as (RoleSkillStatus & { priority?: "kern" | "ergaenzend" })[];
+  const hasPriority = withPriority.some((s) => s.priority != null);
+
+  let kern: RoleSkillStatus[];
+  if (hasPriority) {
+    kern = withPriority.filter((s) => s.priority === "kern");
+  } else {
+    const totalWeight = sorted.reduce((sum, s) => sum + s.weight, 0);
+    const cutoff = totalWeight * 0.7;
+    let running = 0;
+    kern = [];
+    for (const s of sorted) {
+      if (running >= cutoff) break;
+      kern.push(s);
+      running += s.weight;
+    }
+  }
+
+  return (kern.length ? kern : sorted).slice(0, MAX_QUIZ_QUESTIONS);
+}
+
 /** Passt eine GapAnalysisResponse (API-Form, siehe core.ts) auf die von
  * rankCoursesForGap() (courseMatcher.ts) erwartete GapAnalysisResult-Form an
  * (Version 29) — der einzige Unterschied ist das zusätzliche `priority`-Feld
@@ -1379,6 +1433,12 @@ async function runDemoAnalysis() {
   const [roleSkills, setRoleSkills] = useState<RoleSkillStatus[]>([]);
   const [loadingRoleSkills, setLoadingRoleSkills] = useState(false);
   const [roleSkillsError, setRoleSkillsError] = useState<string | null>(null);
+  // Bugfix 22.09.2026 (siehe ausführlicher Kommentar an pickCoreQuestionSkills
+  // oben): die EINE Quelle der Wahrheit dafür, welche Skills im
+  // Fragebogen-Pfad gefragt werden — FragebogenMethod (Anzeige) UND
+  // buildQuizGapResult() (Berechnung) nutzen beide genau diese Liste, damit
+  // "gefragt" und "gewertet" nie wieder auseinanderlaufen.
+  const questionSkills = useMemo(() => pickCoreQuestionSkills(roleSkills), [roleSkills]);
   const [checkedSkills, setCheckedSkills] = useState<Set<string>>(new Set());
   const [skillsBusy, setSkillsBusy] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
@@ -2079,7 +2139,12 @@ async function runDemoAnalysis() {
     const covered: RoleSkillStatus[] = [];
     const gap: RoleSkillStatus[] = [];
 
-    for (const s of roleSkills) {
+    // Bugfix 22.09.2026 (siehe pickCoreQuestionSkills-Kommentar oben):
+    // NUR über questionSkills iterieren, nicht über das komplette
+    // roleSkills — sonst zählen Skills, die nie gefragt wurden, weiterhin
+    // automatisch als Lücke, und 100% bleibt unerreichbar, egal wie
+    // geantwortet wird.
+    for (const s of questionSkills) {
       totalWeight += s.weight;
       if (checkedSkills.has(s.esco_uri)) {
         coveredWeight += s.weight;
@@ -2893,6 +2958,7 @@ async function runDemoAnalysis() {
                     fileInputRef={fileInputRef}
                     onFileChange={handleFileChange}
                     roleSkills={roleSkills}
+                    questionSkills={questionSkills}
                     loadingRoleSkills={loadingRoleSkills}
                     roleSkillsError={roleSkillsError}
                     checkedSkills={checkedSkills}
@@ -3584,6 +3650,11 @@ interface SkillsMethodStepProps {
   fileInputRef: RefObject<HTMLInputElement>;
   onFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
   roleSkills: RoleSkillStatus[];
+  /** Die tatsächlich abgefragte Teilmenge von roleSkills (siehe
+   *  pickCoreQuestionSkills() in JourneyPage) — einzige Quelle der Wahrheit
+   *  dafür, welche Skills FragebogenMethod stellt UND buildQuizGapResult()
+   *  auswertet. */
+  questionSkills: RoleSkillStatus[];
   loadingRoleSkills: boolean;
   roleSkillsError: string | null;
   checkedSkills: Set<string>;
@@ -3850,7 +3921,7 @@ function CvMethod({
   );
 }
 function FragebogenMethod({
-  setMethod, targetRoleName, roleSkills, loadingRoleSkills, roleSkillsError, checkedSkills, toggleSkill, onSubmitQuiz, skillsBusy, skillsError,
+  setMethod, targetRoleName, questionSkills, loadingRoleSkills, roleSkillsError, checkedSkills, toggleSkill, onSubmitQuiz, skillsBusy, skillsError,
 }: SkillsMethodStepProps) {
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, "yes" | "no">>({});
@@ -3858,12 +3929,13 @@ function FragebogenMethod({
   useEffect(() => {
     setIndex(0);
     setAnswers({});
-  }, [roleSkills.length]);
+  }, [questionSkills.length]);
 
-  // Bewusst auf die wichtigsten Skills begrenzen: Niemand soll sich durch
-  // eine lange Skill-Liste klicken. Die Auswahl entspricht damit maximal
-  // 8 kurzen Fragen.
-  const questionSkills = useMemo(() => roleSkills.slice(0, 8), [roleSkills]);
+  // Bugfix 22.09.2026: questionSkills kommt jetzt fertig aus JourneyPage
+  // (pickCoreQuestionSkills() — Pareto-Kern-Skills statt fixer "erste 8",
+  // siehe dortiger Kommentar), nicht mehr lokal hier berechnet. Wichtig:
+  // buildQuizGapResult() in JourneyPage wertet EXAKT dieselbe Liste aus —
+  // die beiden dürfen nie wieder auseinanderlaufen.
 
   if (loadingRoleSkills) {
     return (

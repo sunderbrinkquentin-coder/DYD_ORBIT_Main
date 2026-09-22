@@ -273,6 +273,17 @@ input.big-input:focus {
   color: var(--text-muted);
   margin-top: 8px;
 }
+/* Voraussetzungs-Hinweis an Kurskarten (Version 34, 22.09., siehe
+   prerequisite_status/course-prereq in JourneyPage.tsx) — .hint-warn für
+   "nicht_erfuellt" (echter, belegter Widerspruch), .hint-ok für "erfuellt"
+   (bestätigend). "unklar" bleibt bewusst beim neutralen .hint oben (keine
+   Ampel-Farbe für eine bloß fehlende Angabe, kein Widerspruch). */
+.hint-warn {
+  color: var(--red-text);
+}
+.hint-ok {
+  color: var(--green-text);
+}
 
 /* ---------- Method choice cards (Profil-Text/Upload vs Fragebogen) ---------- */
 .method-grid {

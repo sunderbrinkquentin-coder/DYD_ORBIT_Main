@@ -789,6 +789,7 @@ function quizSkillScore(depth: SkillDepth | undefined | null): number {
  *  Schritte" für echte Zusatzinteraktionen erst recht gilt. "Fortgeschritten,
  *  aktuell" ist eine ehrliche Mitte, keine Bestnote. */
 const DEFAULT_EXTRA_SKILL_DEPTH: SkillDepth = { proficiency: "fortgeschritten", recency: "aktuell" };
+const EMPTY_STRING_SET: ReadonlySet<string> = new Set<string>();
 
 /** Passt eine GapAnalysisResponse (API-Form, siehe core.ts) auf die von
  * rankCoursesForGap() (courseMatcher.ts) erwartete GapAnalysisResult-Form an
@@ -2442,10 +2443,13 @@ async function runDemoAnalysis() {
     // Explizit gewünschte Lernziele aus dem Bereich-Schritt zuerst zeigen.
     // Sie bleiben trotzdem nur dann "Lücke", wenn der Skill im Skill-Check
     // nicht als vorhanden bestätigt wurde.
-    const learningGoalIds = new Set(roleSuggestSkillIds);
+    // roleSuggestSkillIds is keyed by catalog skill_id. Do not compare it
+    // with esco_uri: both are stable identifiers, but they are different
+    // namespaces. Keeping the domains explicit prevents silent mismatches.
+    const learningGoalIds = roleSuggestSkillIds;
     gap.sort((a, b) => {
-      const aGoal = learningGoalIds.has(a.esco_uri) ? 0 : 1;
-      const bGoal = learningGoalIds.has(b.esco_uri) ? 0 : 1;
+      const aGoal = learningGoalIds.has(a.skill_id) ? 0 : 1;
+      const bGoal = learningGoalIds.has(b.skill_id) ? 0 : 1;
       if (aGoal !== bGoal) return aGoal - bGoal;
       return b.weight - a.weight;
     });
@@ -2474,7 +2478,7 @@ async function runDemoAnalysis() {
       .filter((s) => checkedSkills.has(s.esco_uri))
       .map((s) => s.preferred_label);
     const learningGoals = roleSkills
-      .filter((s) => roleSuggestSkillIds.has(s.esco_uri))
+      .filter((s) => roleSuggestSkillIds.has(s.skill_id))
       .map((s) => s.preferred_label);
     const syntheticParts = [
       learningGoals.length ? `Ich möchte folgende Fähigkeiten gezielt lernen: ${learningGoals.join(", ")}.` : "",
@@ -4115,6 +4119,9 @@ interface SkillsMethodStepProps {
   loadingRoleSkills: boolean;
   roleSkillsError: string | null;
   checkedSkills: Set<string>;
+  /** Explicit development goals selected in the preceding discovery step.
+   *  This Set is keyed by catalog skill_id (not esco_uri). */
+  learningGoalSkillIds?: ReadonlySet<string>;
   toggleSkill: (uri: string) => void;
   /** Teil 2 (22.09.2026, siehe SkillDepth-Kommentar in JourneyPage): Grad +
    *  Aktualität je bestätigtem Skill — parallel zu checkedSkills. */
@@ -4433,6 +4440,7 @@ function FragebogenMethod({
   loadingRoleSkills,
   roleSkillsError,
   checkedSkills,
+  learningGoalSkillIds = EMPTY_STRING_SET,
   onAnswerSkill,
   onSubmitQuiz,
   skillsBusy,
@@ -4605,7 +4613,7 @@ function FragebogenMethod({
                 const recencyLabel = answer && answer !== "no"
                   ? answer.recency === "aktuell" ? "aktuell" : "vor einiger Zeit"
                   : "";
-                const isGoal = selectedSkillIds.has(s.skill_id);
+                const isGoal = learningGoalSkillIds.has(s.skill_id);
                 return (
                   <div key={s.esco_uri} style={{ padding: "12px 13px", borderRadius: "14px", border: "1px solid var(--border-soft)", background: "var(--surface, #fff)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>

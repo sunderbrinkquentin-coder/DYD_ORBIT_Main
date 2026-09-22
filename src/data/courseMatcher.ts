@@ -119,6 +119,16 @@ export interface CourseCatalogEntry {
    * Ablehnung zu tragen).
    */
   course_category?: string | null;
+  /**
+   * Strukturierte Kurs-Voraussetzungen (siehe min_qualification_level/
+   * min_experience_years/required_language_level an OrbitCourse in
+   * orbit.ts) — Grundlage fuer checkPrerequisites() unten. Wie alle
+   * Praeferenz-Felder optional; fehlt eines, stellt der Kurs dazu schlicht
+   * keine Anforderung.
+   */
+  min_qualification_level?: string | null;
+  min_experience_years?: number | null;
+  required_language_level?: string | null;
 }
 
 /** Wie viele Tage nach dem gewünschten Startzeitpunkt (START_OPTIONS in
@@ -308,6 +318,123 @@ export function describePreferenceMismatches(
   return mismatches;
 }
 
+/** CEFR-Sprachniveaus in aufsteigender Reihenfolge (A1..C2) — Grundlage fuer
+ *  den Sprachniveau-Vergleich in checkPrerequisites() unten. Ein Wert, der
+ *  hier nicht drinsteht (Tippfehler, ungewoehnliche Angabe), wird NICHT
+ *  geraten, sondern wie "kein vergleichbarer Rang" behandelt — siehe dort. */
+const CEFR_RANK: Record<string, number> = { A1: 0, A2: 1, B1: 2, B2: 3, C1: 4, C2: 5 };
+
+/** Reihenfolge der drei QualificationLevel-Stufen (siehe QualificationLevel
+ *  in orbit.ts) — "studium" deckt "berufsausbildung" mit ab, das wiederum
+ *  "keine" mit abdeckt. */
+const QUALIFICATION_RANK: Record<string, number> = { keine: 0, berufsausbildung: 1, studium: 2 };
+
+/** Anzeige-Labels zu QualificationLevel (orbit.ts) — fuers UI (z.B. Badge/
+ *  Hinweistext in JourneyPage.tsx/DashboardPage.tsx), an einer Stelle
+ *  gepflegt statt an jeder Anzeigestelle einzeln uebersetzt. */
+export const QUALIFICATION_LABELS: Record<string, string> = {
+  keine: "keine formale Vorbildung",
+  berufsausbildung: "abgeschlossene Berufsausbildung",
+  studium: "Hochschulabschluss",
+};
+
+export interface PrerequisiteCheckResult {
+  /** "erfuellt": entweder stellt der Kurs gar keine der drei Anforderungen,
+   *  oder alle gestellten sind durch eine belegte Angabe der Person
+   *  nachweislich erfuellt. "unklar": der Kurs stellt mindestens eine
+   *  Anforderung, zu der die Person NICHTS angegeben hat (oder deren Wert
+   *  sich nicht eindeutig einordnen laesst) — KEIN Widerspruch nachgewiesen,
+   *  nur nichts belegt. "nicht_erfuellt": mindestens eine Anforderung ist
+   *  durch eine belegte Angabe der Person nachweislich NICHT erfuellt. */
+  status: "erfuellt" | "unklar" | "nicht_erfuellt";
+  /** Menschenlesbare Dimensionen mit echtem, belegtem Widerspruch (nur bei
+   *  status "nicht_erfuellt" nicht-leer) — analog zu describePreferenceMismatches
+   *  oben, damit die UI konkret benennen kann, WORAN es liegt statt nur
+   *  pauschal "Voraussetzungen evtl. nicht erfuellt". */
+  unmet: string[];
+}
+
+/**
+ * Gleicht die drei strukturierten Kurs-Voraussetzungen (min_qualification_level/
+ * min_experience_years/required_language_level, siehe OrbitCourse in
+ * orbit.ts) gegen die Selbstauskunft der Person aus dem Journey-
+ * "Praeferenzen"-Schritt ab (qualification_level/experience_years/
+ * german_level, siehe LeadCreateRequest in orbit.ts). Strikt nach demselben
+ * Prinzip wie preferenceMatchScore/describePreferenceMismatches oben: KEIN
+ * harter Filter (rankCoursesForGap blendet dadurch nie einen Kurs aus,
+ * nutzt das Ergebnis nur als zusaetzlichen Tiebreak — siehe dort), und vor
+ * allem: eine fehlende Angabe auf IRGENDEINER Seite (Kurs stellt keine
+ * Anforderung, ODER Person hat dazu nichts gesagt) wird NIE als "nicht
+ * erfuellt" gewertet, hoechstens als "unklar" — Grundprinzip "keine
+ * erfundenen Fakten" auch hier: ohne echte Angabe der Person wird ihr nie
+ * unterstellt, eine Voraussetzung NICHT zu erfuellen.
+ */
+export function checkPrerequisites(
+  course: {
+    min_qualification_level?: string | null;
+    min_experience_years?: number | null;
+    required_language_level?: string | null;
+  },
+  person: {
+    qualificationLevel?: string | null;
+    experienceYears?: number | null;
+    germanLevel?: string | null;
+  }
+): PrerequisiteCheckResult {
+  const unmet: string[] = [];
+  let unclear = false;
+
+  if (course.min_qualification_level) {
+    if (person.qualificationLevel) {
+      const courseRank = QUALIFICATION_RANK[course.min_qualification_level];
+      const personRank = QUALIFICATION_RANK[person.qualificationLevel];
+      if (courseRank != null && personRank != null) {
+        if (personRank < courseRank) unmet.push("Mindestabschluss");
+      } else {
+        unclear = true;
+      }
+    } else {
+      unclear = true;
+    }
+  }
+
+  if (course.min_experience_years != null) {
+    if (person.experienceYears != null) {
+      if (person.experienceYears < course.min_experience_years) unmet.push("Berufserfahrung");
+    } else {
+      unclear = true;
+    }
+  }
+
+  if (course.required_language_level) {
+    const courseRank = CEFR_RANK[course.required_language_level];
+    if (person.germanLevel) {
+      const personRank = CEFR_RANK[person.germanLevel];
+      if (courseRank != null && personRank != null) {
+        if (personRank < courseRank) unmet.push("Sprachniveau");
+      } else {
+        unclear = true;
+      }
+    } else {
+      unclear = true;
+    }
+  }
+
+  if (unmet.length > 0) return { status: "nicht_erfuellt", unmet };
+  if (unclear) return { status: "unklar", unmet: [] };
+  return { status: "erfuellt", unmet: [] };
+}
+
+/** Numerischer Rang zu PrerequisiteCheckResult.status fuer den Sortier-
+ *  Tiebreak in rankCoursesForGap unten — "erfuellt" schlaegt "unklar"
+ *  schlaegt "nicht_erfuellt", aber NUR unter fachlich (Gap-Abdeckung)
+ *  gleichwertigen Kursen (siehe dortiger Kommentar). */
+function prerequisiteRank(status: PrerequisiteCheckResult["status"]): number {
+  if (status === "erfuellt") return 2;
+  if (status === "unklar") return 1;
+  return 0;
+}
+
 export interface CourseRecommendationResult {
   course_id: string;
   course_name: string;
@@ -330,6 +457,16 @@ export interface CourseRecommendationResult {
    * Sortierung, nie ob ein Kurs ueberhaupt auftaucht.
    */
   preference_match?: number;
+  /**
+   * Ergebnis von checkPrerequisites() oben — nur gesetzt, wenn der Kurs
+   * MINDESTENS eine der drei strukturierten Voraussetzungen traegt (siehe
+   * min_qualification_level/min_experience_years/required_language_level an
+   * CourseCatalogEntry). Wie preference_match rein informativ fuers UI und
+   * NUR ein Sortier-Tiebreak — blendet nie einen Kurs aus (siehe
+   * rankCoursesForGap unten).
+   */
+  prerequisite_status?: "erfuellt" | "unklar" | "nicht_erfuellt";
+  prerequisite_unmet?: string[];
 }
 
 export interface CourseMatchResult {
@@ -360,6 +497,17 @@ export function rankCoursesForGap(
     /** Version 28/17.09. — siehe preferenceMatchScore()/DURATION_OPTIONS in
      *  JourneyPage.tsx. */
     desiredDuration?: string | null;
+    /**
+     * Selbstauskunft der Person zu den drei strukturierten Voraussetzungs-
+     * Dimensionen (siehe QUALIFICATION_OPTIONS/EXPERIENCE_OPTIONS/
+     * LANGUAGE_LEVEL_OPTIONS in JourneyPage.tsx) — Eingabe fuer
+     * checkPrerequisites() oben. Wie alle Praeferenzen optional: fehlt eine
+     * Angabe, zaehlt die jeweilige Dimension als "unklar", nie als
+     * Widerspruch (siehe dort).
+     */
+    qualificationLevel?: string | null;
+    experienceYears?: number | null;
+    germanLevel?: string | null;
     /** Rollenkatalog fuer den Bereichs-Fallback unten (FIX 4/5) — Default
      *  ROLES_CATALOG. Ueberschreibbar, damit gapResult.target_role_id auch
      *  auf eine synthetische "Bereichs-Rolle" zeigen kann, die NICHT in
@@ -385,6 +533,15 @@ export function rankCoursesForGap(
     (Boolean(preferences.categoryPreference) && preferences.categoryPreference !== "weiss-noch-nicht") ||
     (Boolean(preferences.desiredDuration) && preferences.desiredDuration !== "lang");
 
+  // Nur gesetzt, wenn die Person zu MINDESTENS einer der drei Dimensionen
+  // etwas angegeben hat — gleiches Prinzip wie hasPreference oben, damit ein
+  // Kurs ohne jede Angabe nicht faelschlich ueberall als "unklar" markiert
+  // wird, obwohl der Kurs selbst gar keine Voraussetzung stellt.
+  const hasPersonPrereqInfo =
+    Boolean(preferences.qualificationLevel) ||
+    preferences.experienceYears != null ||
+    Boolean(preferences.germanLevel);
+
   const withGapCoverage = courses.map((course) => {
     const coveredGapUris = course.covered_skill_uris.filter((uri) => gapWeightByUri.has(uri));
     const coveredGapWeight = coveredGapUris.reduce((sum, uri) => sum + (gapWeightByUri.get(uri) ?? 0), 0);
@@ -397,7 +554,22 @@ export function rankCoursesForGap(
       preferences.categoryPreference,
       preferences.desiredDuration
     );
-    return { course, coveredGapUris, coveredGapWeight, prefScore };
+    // Ein Kurs "hat" Voraussetzungen nur, wenn er selbst mindestens eines
+    // der drei Felder gesetzt hat — sonst bleibt prerequisite_status
+    // ungesetzt (siehe CourseRecommendationResult oben), damit im UI kein
+    // Badge fuer Kurse OHNE jede Voraussetzung erscheint.
+    const hasCoursePrereqs =
+      Boolean(course.min_qualification_level) ||
+      course.min_experience_years != null ||
+      Boolean(course.required_language_level);
+    const prereq = hasCoursePrereqs
+      ? checkPrerequisites(course, {
+          qualificationLevel: preferences.qualificationLevel,
+          experienceYears: preferences.experienceYears,
+          germanLevel: preferences.germanLevel,
+        })
+      : null;
+    return { course, coveredGapUris, coveredGapWeight, prefScore, prereq };
   });
 
   const gapMatches = withGapCoverage.filter((c) => c.coveredGapUris.length > 0);
@@ -407,6 +579,14 @@ export function rankCoursesForGap(
       .sort((a, b) => {
         // FIX 1 — primaer nach gewichteter Gap-Abdeckung, nicht nach roher Anzahl.
         if (b.coveredGapWeight !== a.coveredGapWeight) return b.coveredGapWeight - a.coveredGapWeight;
+        // "vor allem Qualifikationen" (Auftrag 22.09.) — bei gleicher
+        // Gap-Abdeckung entscheidet zuerst, ob die Person die Voraussetzungen
+        // des Kurses erfuellt, DANACH erst Ort/Zeit/Foerderung/etc.
+        // (prefScore). Wie ueberall hier: NIE vor der Gap-Abdeckung, ein
+        // fachlich schlechterer Kurs wird dadurch nie bevorzugt — siehe
+        // checkPrerequisites().
+        const prereqDiff = prerequisiteRank(b.prereq?.status ?? "erfuellt") - prerequisiteRank(a.prereq?.status ?? "erfuellt");
+        if (prereqDiff !== 0) return prereqDiff;
         // Version 25 — bei gleicher Gap-Abdeckung entscheidet, welcher Kurs
         // zu Beschaeftigungsart/Arbeitsort passt. NIE vor der Gap-Abdeckung:
         // ein fachlich schlechterer Treffer wird dadurch nie bevorzugt, nur
@@ -416,7 +596,7 @@ export function rankCoursesForGap(
         // FIX 2 — featured nur als letzter Tiebreak, nie davor.
         return Number(!!b.course.is_featured) - Number(!!a.course.is_featured);
       })
-      .map(({ course, coveredGapUris, prefScore }) => ({
+      .map(({ course, coveredGapUris, prefScore, prereq }) => ({
         course_id: course.course_id,
         course_name: course.course_name,
         provider: course.provider,
@@ -425,6 +605,7 @@ export function rankCoursesForGap(
         covers_gap_percentage:
           gapSkills.length > 0 ? Math.round((coveredGapUris.length / gapSkills.length) * 1000) / 10 : 0,
         ...(hasPreference ? { preference_match: prefScore } : {}),
+        ...(prereq && hasPersonPrereqInfo ? { prerequisite_status: prereq.status, prerequisite_unmet: prereq.unmet } : {}),
       }));
   }
 
@@ -514,25 +695,43 @@ export function rankCoursesForGap(
   // Katalog (courses) ist leer, ODER (FIX 4) er enthält nichts zum Bereich
   // der Zielrolle.
   return bereichRelevantCourses
-    .map((course) => ({
-      course,
-      coveredRoleUris: course.covered_skill_uris.filter((uri) => allRoleUris.has(uri)),
-      prefScore: preferenceMatchScore(
+    .map((course) => {
+      const hasCoursePrereqs =
+        Boolean(course.min_qualification_level) ||
+        course.min_experience_years != null ||
+        Boolean(course.required_language_level);
+      const prereq = hasCoursePrereqs
+        ? checkPrerequisites(course, {
+            qualificationLevel: preferences.qualificationLevel,
+            experienceYears: preferences.experienceYears,
+            germanLevel: preferences.germanLevel,
+          })
+        : null;
+      return {
         course,
-        preferences.employmentType,
-        preferences.workLocation,
-        preferences.desiredStart,
-        preferences.fundingPreference,
-        preferences.categoryPreference,
-        preferences.desiredDuration
-      ),
-    }))
+        coveredRoleUris: course.covered_skill_uris.filter((uri) => allRoleUris.has(uri)),
+        prefScore: preferenceMatchScore(
+          course,
+          preferences.employmentType,
+          preferences.workLocation,
+          preferences.desiredStart,
+          preferences.fundingPreference,
+          preferences.categoryPreference,
+          preferences.desiredDuration
+        ),
+        prereq,
+      };
+    })
     .sort((a, b) => {
       if (b.coveredRoleUris.length !== a.coveredRoleUris.length) return b.coveredRoleUris.length - a.coveredRoleUris.length;
+      // Siehe Kommentar im Gap-Match-Zweig oben — dieselbe Prioritaet:
+      // Voraussetzungen vor den uebrigen Praeferenzen.
+      const prereqDiff = prerequisiteRank(b.prereq?.status ?? "erfuellt") - prerequisiteRank(a.prereq?.status ?? "erfuellt");
+      if (prereqDiff !== 0) return prereqDiff;
       if (b.prefScore !== a.prefScore) return b.prefScore - a.prefScore;
       return Number(!!b.course.is_featured) - Number(!!a.course.is_featured);
     })
-    .map(({ course, coveredRoleUris, prefScore }) => ({
+    .map(({ course, coveredRoleUris, prefScore, prereq }) => ({
       course_id: course.course_id,
       course_name: course.course_name,
       provider: course.provider,
@@ -544,6 +743,7 @@ export function rankCoursesForGap(
         allRoleUris.size > 0 ? Math.round((coveredRoleUris.length / allRoleUris.size) * 1000) / 10 : 0,
       is_role_fallback: true,
       ...(hasPreference ? { preference_match: prefScore } : {}),
+      ...(prereq && hasPersonPrereqInfo ? { prerequisite_status: prereq.status, prerequisite_unmet: prereq.unmet } : {}),
     }));
 }
 
@@ -564,6 +764,11 @@ export interface MatchCoursesOptions {
    *  erweitert — siehe preferenceMatchScore()/rankCoursesForGap() oben. */
   categoryPreference?: string | null;
   desiredDuration?: string | null;
+  /** Version 29, 22.09. ("Voraussetzungen") — siehe checkPrerequisites()/
+   *  rankCoursesForGap() oben. */
+  qualificationLevel?: string | null;
+  experienceYears?: number | null;
+  germanLevel?: string | null;
 }
 
 /** TS-Entsprechung von match_courses_to_gap() aus course_matcher.py — ruft
@@ -595,6 +800,9 @@ export function matchCoursesToGap(
       fundingPreference: opts.fundingPreference,
       categoryPreference: opts.categoryPreference,
       desiredDuration: opts.desiredDuration,
+      qualificationLevel: opts.qualificationLevel,
+      experienceYears: opts.experienceYears,
+      germanLevel: opts.germanLevel,
       roles,
     }),
   };

@@ -3343,6 +3343,9 @@ async function runDemoAnalysis() {
                     busy={gapBusy}
                     error={gapError}
                     goalLabel={GOAL_OPTIONS.find((g) => g.key === careerGoal)?.label}
+                    allCourses={allCourses}
+                    targetBereichKey={bereichRole?.bereich_key ?? rolesInPortfolio.find((r) => r.role_id === targetRoleId)?.bereich_key ?? null}
+                    portfolioRoles={rolesInPortfolio}
                     onForward={goToKurs}
                     onBack={() => setCurrent(stepIndex("skills"))}
                     leadEmail={leadEmail}
@@ -4954,11 +4957,17 @@ function skillReasonInfo(
 function MotivationStep({
   gapResult,
   goalLabel,
+  allCourses,
+  targetBereichKey,
+  portfolioRoles,
   onForward,
   onBack,
 }: {
   gapResult: GapAnalysisResponse;
   goalLabel?: string;
+  allCourses: OrbitCourse[];
+  targetBereichKey: string | null;
+  portfolioRoles: CatalogRole[];
   onForward: () => void;
   onBack: () => void;
 }) {
@@ -5013,6 +5022,52 @@ function MotivationStep({
       </button>
     </div>
   );
+}
+
+function courseAreaKeys(course: OrbitCourse): string[] {
+  const keys = new Set<string>();
+  if (course.bereich_key) keys.add(course.bereich_key);
+  if (Array.isArray(course.bereich_keys)) {
+    for (const key of course.bereich_keys) if (key) keys.add(key);
+  }
+  return [...keys];
+}
+
+/**
+ * Kurse werden im Gap-Schritt nicht pauschal als "passend" bezeichnet.
+ * Zuerst wird exakt gegen die offenen ESCO-Skills gematcht. Wenn bereits alle
+ * Skills vorhanden sind, bleiben sinnvolle Weiterbildungen trotzdem sichtbar:
+ * dann wird auf den echten Bereich des Kurses und die aktuelle Zielrolle
+ * zurückgegriffen. So bedeutet "0 Lernfelder" nicht mehr "0 Möglichkeiten".
+ */
+function buildGapCourseView(
+  gapSkills: RoleSkillStatus[],
+  allCourses: OrbitCourse[],
+  targetRoleName: string | null,
+  targetBereichKey: string | null,
+): Array<{
+  course: OrbitCourse;
+  matchedGapSkills: RoleSkillStatus[];
+  areaMatch: boolean;
+  relevance: number;
+}> {
+  const gapIds = new Set(gapSkills.map((s) => s.esco_uri));
+  const activeCourses = allCourses.filter((course) => isCourseActive(course));
+  return activeCourses
+    .map((course) => {
+      const covered = new Set(course.covered_skill_uris ?? []);
+      const matchedGapSkills = gapSkills.filter((skill) => covered.has(skill.esco_uri));
+      const areaMatch = Boolean(targetBereichKey && courseAreaKeys(course).includes(targetBereichKey));
+      const currentRoleMatch = Boolean(
+        targetRoleName &&
+        typeof course.target_group === "string" &&
+        course.target_group.toLowerCase().includes(targetRoleName.toLowerCase())
+      );
+      const relevance = matchedGapSkills.length * 100 + (areaMatch ? 25 : 0) + (currentRoleMatch ? 10 : 0);
+      return { course, matchedGapSkills, areaMatch, relevance };
+    })
+    .filter((item) => item.matchedGapSkills.length > 0 || item.areaMatch)
+    .sort((a, b) => b.relevance - a.relevance || a.course.course_name.localeCompare(b.course.course_name, "de"));
 }
 
 function GapStep({
@@ -5101,6 +5156,18 @@ function GapStep({
     ? gapResult.covered_skills
     : gapResult.covered_skills.slice(0, GAP_SKILL_PREVIEW_LIMIT);
   const visibleGapSkills = showAllGap ? gapResult.gap_skills : gapResult.gap_skills.slice(0, GAP_SKILL_PREVIEW_LIMIT);
+  const gapCourseView = useMemo(
+    () => buildGapCourseView(gapResult.gap_skills, allCourses, gapResult.target_role_name, targetBereichKey),
+    [gapResult.gap_skills, allCourses, gapResult.target_role_name, targetBereichKey]
+  );
+  const primaryGapCourses = gapCourseView.slice(0, 3);
+  const additionalGapCourses = gapCourseView.slice(3, 8);
+  const courseRoleNames = useMemo(() => {
+    const areaRoles = targetBereichKey
+      ? portfolioRoles.filter((r) => r.bereich_key === targetBereichKey)
+      : portfolioRoles;
+    return areaRoles.map((r) => r.role_name).filter(Boolean).slice(0, 5);
+  }, [portfolioRoles, targetBereichKey]);
   return (
     <div>
       <JourneyStepHeading
@@ -5275,7 +5342,7 @@ function GapStep({
         </button>
       )}
       <label className="field-label gap-section-label gap" style={{ marginTop: "18px" }}>
-        <span className="gap-section-dot" aria-hidden="true" /> Noch zu lernen ({gapCount})
+        <span className="gap-section-dot" aria-hidden="true" /> Lernfelder ({gapCount})
       </label>
       <div className="skill-detail-list">
         {gapCount ? (
@@ -5334,6 +5401,73 @@ function GapStep({
           {showAllGap ? "▲ Weniger anzeigen" : `▼ ${gapCount - GAP_SKILL_PREVIEW_LIMIT} weitere anzeigen`}
         </button>
       )}
+
+      <section aria-label="Passende Weiterbildungen" style={{ marginTop: "28px" }}>
+        <div style={{ marginBottom: "12px" }}>
+          <div style={{ fontSize: "18px", fontWeight: 850 }}>Passende Weiterbildungen</div>
+          <div className="hint" style={{ marginTop: "4px" }}>
+            Wir gleichen deine offenen Lernfelder direkt mit den Skills ab, die in den verfügbaren Weiterbildungen vermittelt werden.
+          </div>
+        </div>
+
+        {primaryGapCourses.length ? (
+          <div style={{ display: "grid", gap: "10px" }}>
+            {primaryGapCourses.map(({ course, matchedGapSkills, areaMatch }) => (
+              <div key={course.course_id} style={{ padding: "15px", borderRadius: "16px", border: "1px solid var(--border-soft)", background: "var(--surface, #fff)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start" }}>
+                  <div>
+                    <strong style={{ display: "block", fontSize: "15px" }}>{course.course_name}</strong>
+                    <span className="hint">{course.provider || "Weiterbildung"}{course.duration_weeks ? ` · ${course.duration_weeks} Wochen` : ""}</span>
+                  </div>
+                  <span style={{ flex: "0 0 auto", fontSize: "12px", fontWeight: 800, padding: "6px 9px", borderRadius: "999px", background: "rgba(95,220,153,.10)" }}>
+                    {matchedGapSkills.length > 0 ? `${matchedGapSkills.length} Lernfeld${matchedGapSkills.length === 1 ? "" : "er"}` : "passend zum Bereich"}
+                  </span>
+                </div>
+                {matchedGapSkills.length > 0 && (
+                  <div className="hint" style={{ marginTop: "9px" }}>
+                    Deckt ab: {matchedGapSkills.slice(0, 3).map((s) => s.preferred_label).join(" · ")}
+                    {matchedGapSkills.length > 3 ? ` · +${matchedGapSkills.length - 3}` : ""}
+                  </div>
+                )}
+                {areaMatch && <div className="hint" style={{ marginTop: "5px" }}>Passt zu deinem gewählten Bereich.</div>}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ padding: "15px", borderRadius: "16px", border: "1px solid var(--border-soft)", background: "rgba(47,143,214,.04)" }}>
+            <strong>Aktuell kein direkter Skill-Treffer</strong>
+            <div className="hint" style={{ marginTop: "4px" }}>
+              Es gibt im aktuellen Kurskatalog keine Weiterbildung, die eines deiner offenen Lernfelder direkt abdeckt. Wir zeigen dir trotzdem weitere Möglichkeiten im nächsten Schritt.
+            </div>
+          </div>
+        )}
+
+        {additionalGapCourses.length > 0 && (
+          <details style={{ marginTop: "10px" }}>
+            <summary style={{ cursor: "pointer", fontWeight: 800, padding: "10px 2px" }}>Weitere passende Möglichkeiten ({additionalGapCourses.length})</summary>
+            <div style={{ display: "grid", gap: "8px", marginTop: "8px" }}>
+              {additionalGapCourses.map(({ course, matchedGapSkills }) => (
+                <div key={course.course_id} style={{ padding: "12px 14px", borderRadius: "14px", border: "1px solid var(--border-soft)" }}>
+                  <strong>{course.course_name}</strong>
+                  <div className="hint" style={{ marginTop: "3px" }}>
+                    {matchedGapSkills.length ? `deckt ${matchedGapSkills.length} deiner Lernfelder ab` : "passt zu deinem Bereich"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
+
+        {courseRoleNames.length > 0 && (
+          <div style={{ marginTop: "16px", padding: "15px", borderRadius: "16px", background: "rgba(95,220,153,.06)", border: "1px solid rgba(95,220,153,.16)" }}>
+            <strong style={{ display: "block" }}>Berufsrollen, für die diese Weiterbildungen relevant sein können</strong>
+            <div className="hint" style={{ marginTop: "5px" }}>
+              {courseRoleNames.join(" · ")}
+            </div>
+          </div>
+        )}
+      </section>
+
       {error && (
         <div className="status-line err" aria-live="polite">
           {error}

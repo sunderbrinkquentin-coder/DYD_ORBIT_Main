@@ -626,6 +626,83 @@ function pickCoreQuestionSkills(skills: RoleSkillStatus[]): RoleSkillStatus[] {
   return (kern.length ? kern : sorted).slice(0, MAX_QUIZ_QUESTIONS);
 }
 
+/**
+ * Teil 2 des Fragebogen-Redesigns (22.09.2026, "sei maximal detailverliebt
+ * ... aber nicht zu viele Schritte ... maximal innovativer UX Prozess"):
+ * Ein reines Ja/Nein pro Skill blendet aus, WIE GUT und WIE AKTUELL eine
+ * Fähigkeit ist — zwei Personen, beide "Ja" bei "SQL", können real sehr
+ * unterschiedlich weit sein. Genau das wurde als fehlend benannt ("wann kann
+ * ich das und wie gut bin ich darin nicht beachtet").
+ *
+ * Statt dafür (verboten laut Vorgabe) einen zusätzlichen Frage-Schritt
+ * einzuführen, erfasst EIN Tap auf eine 3×3-Matrix (Grad × Aktualität, siehe
+ * FragebogenMethod weiter unten) beides gleichzeitig — exakt derselbe
+ * Interaktionsaufwand (ein Tap) wie die bisherige Ja/Nein-Karte, aber neun
+ * statt zwei möglichen Antworten.
+ *
+ * Aus der gewählten Zelle wird rein deterministisch (keine KI, keine
+ * erfundenen Werte) ein Score 0–100 abgeleitet, der über exakt dieselbe
+ * gewichtete Formel wie überall sonst im Projekt einfließt (siehe
+ * moveSkillManually oben: weight * (matched_score/100)) — ein "Grundkenntnisse,
+ * länger her"-Skill zählt dadurch ehrlich als teilweise vorhanden, nicht
+ * als voller Treffer und nicht als Lücke.
+ */
+type ProficiencyBucket = "grundkenntnisse" | "fortgeschritten" | "experte";
+type RecencyBucket = "aktuell" | "letzte_jahre" | "laenger_her";
+interface SkillDepth {
+  proficiency: ProficiencyBucket;
+  recency: RecencyBucket;
+}
+/** Reihenfolge/Beschriftung der Matrix-Zeilen (Grad) — höchste Stufe oben,
+ *  liest sich wie eine Leiter nach oben. */
+const PROFICIENCY_ROWS: { key: ProficiencyBucket; label: string }[] = [
+  { key: "experte", label: "Experte" },
+  { key: "fortgeschritten", label: "Fortgeschritten" },
+  { key: "grundkenntnisse", label: "Grundkenntnisse" },
+];
+/** Reihenfolge/Beschriftung der Matrix-Spalten (Aktualität) — aktuellstes
+ *  zuerst (Leserichtung). */
+const RECENCY_COLS: { key: RecencyBucket; label: string; short: string }[] = [
+  { key: "aktuell", label: "Aktuell im Einsatz", short: "Aktuell" },
+  { key: "letzte_jahre", label: "Letzte Jahre", short: "Letzte Jahre" },
+  { key: "laenger_her", label: "Länger her", short: "Länger her" },
+];
+/** Basiswert je Grad — bewusst nicht 0/50/100: selbst "Grundkenntnisse"
+ *  zählt real als teilweise vorhanden, nicht als halbe Lücke. Dieselbe
+ *  Größenordnung wie proficiency_level in der cv-depth-analysis Edge
+ *  Function (dort als LLM-Einschätzung, hier deterministisch aus der
+ *  eigenen Angabe der Person). */
+const PROFICIENCY_BASE_SCORE: Record<ProficiencyBucket, number> = {
+  grundkenntnisse: 55,
+  fortgeschritten: 80,
+  experte: 100,
+};
+/** Multiplikator je Aktualität — "aktuell im Einsatz" zählt voll, länger
+ *  Zurückliegendes wird moderat (nicht hart auf 0) abgewertet, exakt wie
+ *  recencyFactor() im cv-depth-analysis-Backend dieselbe Grundidee auf
+ *  Basis von Datumsangaben umsetzt. */
+const RECENCY_FACTOR: Record<RecencyBucket, number> = {
+  aktuell: 1.0,
+  letzte_jahre: 0.9,
+  laenger_her: 0.72,
+};
+function quizSkillScore(depth: SkillDepth | undefined | null): number {
+  // Fallback (sollte in der neuen UI praktisch nie eintreten - jedes "Ja"
+  // setzt depth im selben Tap): entspricht in etwa "Fortgeschritten,
+  // aktuell", also einem soliden, aber nicht übertriebenen Treffer.
+  if (!depth) return 80;
+  const base = PROFICIENCY_BASE_SCORE[depth.proficiency];
+  const factor = RECENCY_FACTOR[depth.recency];
+  return Math.round(Math.max(0, Math.min(100, base * factor)));
+}
+/** Vereinfachter Default für "ergänzende" (nicht abgefragte Kern-)Skills, die
+ *  jemand freiwillig über den "+ N weitere"-Link zusätzlich bestätigt (siehe
+ *  FragebogenMethod) — dort bewusst EIN Tap statt der vollen 3×3-Matrix, weil
+ *  es sich um optionale Zusatzangaben handelt und die Vorgabe "nicht zu viele
+ *  Schritte" für echte Zusatzinteraktionen erst recht gilt. "Fortgeschritten,
+ *  aktuell" ist eine ehrliche Mitte, keine Bestnote. */
+const DEFAULT_EXTRA_SKILL_DEPTH: SkillDepth = { proficiency: "fortgeschritten", recency: "aktuell" };
+
 /** Passt eine GapAnalysisResponse (API-Form, siehe core.ts) auf die von
  * rankCoursesForGap() (courseMatcher.ts) erwartete GapAnalysisResult-Form an
  * (Version 29) — der einzige Unterschied ist das zusätzliche `priority`-Feld
@@ -1385,6 +1462,7 @@ async function runDemoAnalysis() {
     setText("");
     setRoleSkills([]);
     setCheckedSkills(new Set());
+    setSkillDepthByUri(new Map());
     setGapResult(null);
     setDepthByUri(new Map());
     setDepthOverallAssessment(null);
@@ -1440,6 +1518,14 @@ async function runDemoAnalysis() {
   // "gefragt" und "gewertet" nie wieder auseinanderlaufen.
   const questionSkills = useMemo(() => pickCoreQuestionSkills(roleSkills), [roleSkills]);
   const [checkedSkills, setCheckedSkills] = useState<Set<string>>(new Set());
+  // Teil 2 (22.09.2026, siehe ausführlicher Kommentar an SkillDepth/
+  // quizSkillScore oben): Grad + Aktualität je Skill, parallel zu
+  // checkedSkills geführt (checkedSkills bleibt die schnelle "vorhanden?"-
+  // Abfrage, die an vielen Stellen im Datei schon genutzt wird — z.B.
+  // submitQuizMethod weiter unten). Wird ausschließlich über
+  // answerQuizSkill() unten verändert, damit beide States nie auseinander-
+  // laufen können.
+  const [skillDepthByUri, setSkillDepthByUri] = useState<Map<string, SkillDepth>>(new Map());
   const [skillsBusy, setSkillsBusy] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   // Gap / Kurs
@@ -1768,6 +1854,7 @@ async function runDemoAnalysis() {
     // nicht bereits vorhandene Skills. Der anschließende Skill-Check startet
     // deshalb bewusst ohne Vorbelegung.
     setCheckedSkills(new Set());
+    setSkillDepthByUri(new Map());
     setGapResult(null);
     setCourseResult(null);
     setSelectedCourseId(null);
@@ -1798,6 +1885,7 @@ async function runDemoAnalysis() {
     // Bereichs-Skills sind Lernziele. Der Skill-Check soll danach separat
     // ermitteln, welche dieser und weiteren Skills bereits vorhanden sind.
     setCheckedSkills(new Set());
+    setSkillDepthByUri(new Map());
     setGapResult(null);
     setCourseResult(null);
     setSelectedCourseId(null);
@@ -1888,6 +1976,35 @@ async function runDemoAnalysis() {
       const next = new Set(prev);
       if (next.has(uri)) next.delete(uri);
       else next.add(uri);
+      return next;
+    });
+  }
+  /** Teil 2 (22.09.2026): einziger Schreibpfad für Fragebogen-Antworten mit
+   *  Tiefe — hält checkedSkills (schnelle "vorhanden?"-Abfrage, u.a. in
+   *  buildQuizGapResult/submitQuizMethod genutzt) und skillDepthByUri (Grad +
+   *  Aktualität) synchron. depth !== null → "vorhanden" mit dieser Tiefe;
+   *  depth === null → "nicht vorhanden"/zurückgenommen, löscht eine evtl.
+   *  vorherige Tiefen-Angabe vollständig (kein Rest-Zustand). Ersetzt
+   *  toggleSkill() für den Fragebogen-Pfad (toggleSkill bleibt unverändert
+   *  für alles andere, das binäres Setzen ohne Tiefe braucht). */
+  function answerQuizSkill(uri: string, depth: SkillDepth | null) {
+    setCheckedSkills((prev) => {
+      const has = prev.has(uri);
+      if (depth !== null ? has : !has) return prev;
+      const next = new Set(prev);
+      if (depth !== null) next.add(uri);
+      else next.delete(uri);
+      return next;
+    });
+    setSkillDepthByUri((prev) => {
+      if (depth !== null) {
+        const next = new Map(prev);
+        next.set(uri, depth);
+        return next;
+      }
+      if (!prev.has(uri)) return prev;
+      const next = new Map(prev);
+      next.delete(uri);
       return next;
     });
   }
@@ -2139,16 +2256,34 @@ async function runDemoAnalysis() {
     const covered: RoleSkillStatus[] = [];
     const gap: RoleSkillStatus[] = [];
 
-    // Bugfix 22.09.2026 (siehe pickCoreQuestionSkills-Kommentar oben):
-    // NUR über questionSkills iterieren, nicht über das komplette
-    // roleSkills — sonst zählen Skills, die nie gefragt wurden, weiterhin
-    // automatisch als Lücke, und 100% bleibt unerreichbar, egal wie
-    // geantwortet wird.
-    for (const s of questionSkills) {
+    // Bugfix 22.09.2026 (siehe pickCoreQuestionSkills-Kommentar oben): NUR
+    // über Skills iterieren, zu denen die Person tatsächlich eine Angabe
+    // gemacht hat — nie über das komplette roleSkills — sonst zählen nie
+    // gefragte Skills automatisch als Lücke, und 100% bleibt unerreichbar,
+    // egal wie geantwortet wird.
+    //
+    // Teil 2 (22.09.2026): dieses "tatsächlich gefragt" ist jetzt nicht mehr
+    // nur questionSkills (die Kern-Skills), sondern zusätzlich jeder
+    // "ergänzende" Skill, den die Person freiwillig über den "+ N weitere"-
+    // Link in FragebogenMethod mitbeantwortet hat (checkedSkills enthält
+    // dann auch dessen URI, siehe answerQuizSkill oben) — bewusst genauso
+    // strikt wie beim Kern-Fix: ein nie angezeigter/angetippter Zusatz-Skill
+    // zählt weiterhin nicht als Lücke.
+    const extraAnsweredSkills = roleSkills.filter(
+      (s) => checkedSkills.has(s.esco_uri) && !questionSkills.some((q) => q.esco_uri === s.esco_uri)
+    );
+    const quizUniverse = [...questionSkills, ...extraAnsweredSkills];
+
+    for (const s of quizUniverse) {
       totalWeight += s.weight;
       if (checkedSkills.has(s.esco_uri)) {
-        coveredWeight += s.weight;
-        covered.push({ ...s, covered: true, matched_score: 100 });
+        // Teil 2: statt eines pauschalen Volltreffers (100) fließt jetzt der
+        // deterministische Score aus Grad + Aktualität ein (siehe
+        // quizSkillScore/SkillDepth oben) — dieselbe gewichtete
+        // Teil-Konfidenz-Formel wie in moveSkillManually.
+        const score = quizSkillScore(skillDepthByUri.get(s.esco_uri));
+        coveredWeight += s.weight * (score / 100);
+        covered.push({ ...s, covered: true, matched_score: score });
       } else {
         gap.push({ ...s, covered: false, matched_score: null });
       }
@@ -2963,6 +3098,8 @@ async function runDemoAnalysis() {
                     roleSkillsError={roleSkillsError}
                     checkedSkills={checkedSkills}
                     toggleSkill={toggleSkill}
+                    skillDepthByUri={skillDepthByUri}
+                    onAnswerSkill={answerQuizSkill}
                     onSubmitQuiz={submitQuizMethod}
                     skillsBusy={skillsBusy}
                     skillsError={skillsError}
@@ -3659,6 +3796,12 @@ interface SkillsMethodStepProps {
   roleSkillsError: string | null;
   checkedSkills: Set<string>;
   toggleSkill: (uri: string) => void;
+  /** Teil 2 (22.09.2026, siehe SkillDepth-Kommentar in JourneyPage): Grad +
+   *  Aktualität je bestätigtem Skill — parallel zu checkedSkills. */
+  skillDepthByUri: Map<string, SkillDepth>;
+  /** Einziger Schreibpfad im Fragebogen-Pfad für Teil 2 (ersetzt toggleSkill
+   *  dort) — siehe answerQuizSkill() in JourneyPage. */
+  onAnswerSkill: (uri: string, depth: SkillDepth | null) => void;
   onSubmitQuiz: () => void;
   skillsBusy: boolean;
   skillsError: string | null;
@@ -3920,22 +4063,80 @@ function CvMethod({
     </div>
   );
 }
+/**
+ * Teil 2 (22.09.2026) — vollständig neu gegenüber der Ja/Nein-Karte:
+ *
+ * - Statt zwei Buttons eine 3×3-Matrix (Grad × Aktualität, siehe
+ *   PROFICIENCY_ROWS/RECENCY_COLS oben) — EIN Tap auf eine Zelle beantwortet
+ *   "Ja" UND erfasst Grad + Aktualität gleichzeitig. Genau ein Tap pro Skill,
+ *   wie vorher — nur mit neun statt zwei möglichen, aussagekräftigeren
+ *   Antworten. Ein separater Button bleibt für "Noch nicht".
+ * - Ein kleiner, live mitwachsender Match-Ring ersetzt/ergänzt die reine
+ *   "Frage X von Y"-Zählung — macht sichtbar, wie sich jede Antwort direkt
+ *   auf das Ergebnis auswirkt, statt es bis zur Motivations-Zwischenseite
+ *   komplett zu verstecken.
+ * - Nach der letzten Kern-Frage kein sofortiges Auto-Submit mehr, sondern ein
+ *   kurzer "erfasst"-Zwischenstand INNERHALB desselben Schritts (kein neuer
+ *   Stepper-Eintrag!) mit einem optionalen "+ N weitere (ergänzend)"-Link für
+ *   Skills außerhalb der Kern-Auswahl — bewusst als einfacher Ein-Tap-Chip
+ *   (nicht die volle Matrix), weil es sich um freiwillige Zusatzangaben
+ *   handelt und Vorgabe "nicht zu viele Schritte" für Zusatzinteraktionen
+ *   erst recht gilt.
+ */
 function FragebogenMethod({
-  setMethod, targetRoleName, questionSkills, loadingRoleSkills, roleSkillsError, checkedSkills, toggleSkill, onSubmitQuiz, skillsBusy, skillsError,
+  setMethod,
+  targetRoleName,
+  roleSkills,
+  questionSkills,
+  loadingRoleSkills,
+  roleSkillsError,
+  checkedSkills,
+  onAnswerSkill,
+  onSubmitQuiz,
+  skillsBusy,
+  skillsError,
 }: SkillsMethodStepProps) {
   const [index, setIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, "yes" | "no">>({});
+  const [answers, setAnswers] = useState<Record<string, SkillDepth | "no">>({});
+  const [phase, setPhase] = useState<"asking" | "done">("asking");
+  const [extraOpen, setExtraOpen] = useState(false);
 
   useEffect(() => {
     setIndex(0);
     setAnswers({});
+    setPhase("asking");
+    setExtraOpen(false);
   }, [questionSkills.length]);
 
-  // Bugfix 22.09.2026: questionSkills kommt jetzt fertig aus JourneyPage
+  // Bugfix 22.09.2026: questionSkills kommt fertig aus JourneyPage
   // (pickCoreQuestionSkills() — Pareto-Kern-Skills statt fixer "erste 8",
   // siehe dortiger Kommentar), nicht mehr lokal hier berechnet. Wichtig:
-  // buildQuizGapResult() in JourneyPage wertet EXAKT dieselbe Liste aus —
-  // die beiden dürfen nie wieder auseinanderlaufen.
+  // buildQuizGapResult() in JourneyPage wertet dieselbe Kern-Liste (plus
+  // freiwillig beantwortete Zusatz-Skills, siehe extraSkills unten) aus —
+  // "gefragt" und "gewertet" dürfen nie wieder auseinanderlaufen.
+
+  // Teil 2: alle Rollen-Skills außerhalb der Kern-Auswahl — Kandidaten für
+  // den "+ N weitere"-Link im "done"-Zwischenstand unten.
+  const extraSkills = useMemo(
+    () => roleSkills.filter((s) => !questionSkills.some((q) => q.esco_uri === s.esco_uri)),
+    [roleSkills, questionSkills]
+  );
+
+  // Live-Match: exakt dieselbe gewichtete Formel wie buildQuizGapResult()
+  // in JourneyPage, aber laufend über den lokalen answers-State statt über
+  // das erst am Ende gebaute gapResult — jede beantwortete Frage lässt den
+  // Ring sofort sichtbar wachsen, bis er am Ende exakt dem Wert entspricht,
+  // den die Motivations-Zwischenseite direkt danach zeigt.
+  const liveMatch = useMemo(() => {
+    let totalWeight = 0;
+    let coveredWeight = 0;
+    for (const s of questionSkills) {
+      totalWeight += s.weight;
+      const a = answers[s.esco_uri];
+      if (a && a !== "no") coveredWeight += s.weight * (quizSkillScore(a) / 100);
+    }
+    return totalWeight > 0 ? Math.round((coveredWeight / totalWeight) * 1000) / 10 : 0;
+  }, [answers, questionSkills]);
 
   if (loadingRoleSkills) {
     return (
@@ -3972,33 +4173,122 @@ function FragebogenMethod({
   const answered = answers[skill.esco_uri];
   const answeredCount = Object.keys(answers).length;
   const remaining = questionSkills.length - answeredCount;
+  const isLast = safeIndex === questionSkills.length - 1;
 
-  function answer(value: "yes" | "no") {
-    const next = { ...answers, [skill.esco_uri]: value };
-    setAnswers(next);
-
-    const shouldBeCovered = value === "yes";
-    const currentlyCovered = checkedSkills.has(skill.esco_uri);
-
-    if (shouldBeCovered !== currentlyCovered) {
-      toggleSkill(skill.esco_uri);
-    }
-
+  function advance() {
     if (safeIndex < questionSkills.length - 1) {
-      window.setTimeout(() => setIndex((i) => Math.min(questionSkills.length - 1, i + 1)), 180);
+      window.setTimeout(() => setIndex((i) => Math.min(questionSkills.length - 1, i + 1)), 260);
     } else {
-      // Nach der letzten Antwort automatisch weiter — kein zusätzlicher
-      // Klick nötig. Die kleine Verzögerung lässt die letzte Auswahl erst
-      // sichtbar werden, bevor die Ergebnisanalyse startet.
-      window.setTimeout(() => onSubmitQuiz(), 220);
+      // Nach der letzten Kern-Frage: kurzer Zwischenstand statt sofortigem
+      // Auto-Submit (siehe Funktionskommentar oben) — die Person sieht ihr
+      // Ergebnis wachsen und kann optional noch ergänzende Skills angeben,
+      // statt direkt weitergerissen zu werden.
+      window.setTimeout(() => setPhase("done"), 320);
     }
+  }
+
+  function selectDepth(proficiency: ProficiencyBucket, recency: RecencyBucket) {
+    const depth: SkillDepth = { proficiency, recency };
+    setAnswers((prev) => ({ ...prev, [skill.esco_uri]: depth }));
+    onAnswerSkill(skill.esco_uri, depth);
+    advance();
+  }
+
+  function markNotYet() {
+    setAnswers((prev) => ({ ...prev, [skill.esco_uri]: "no" }));
+    onAnswerSkill(skill.esco_uri, null);
+    advance();
   }
 
   function previous() {
     setIndex((i) => Math.max(0, i - 1));
   }
 
-  const isLast = safeIndex === questionSkills.length - 1;
+  function toggleExtra(uri: string) {
+    if (checkedSkills.has(uri)) onAnswerSkill(uri, null);
+    else onAnswerSkill(uri, DEFAULT_EXTRA_SKILL_DEPTH);
+  }
+
+  if (phase === "done") {
+    return (
+      <div>
+        <button
+          type="button"
+          className="method-switch"
+          onClick={() => setMethod(null)}
+          style={{ marginBottom: "10px" }}
+        >
+          ← Andere Methode wählen
+        </button>
+
+        <div className="quiz-done">
+          <div className="quiz-done-ring">
+            <MatchRing percent={liveMatch} size={88} />
+          </div>
+          <div className="quiz-done-headline">Kern-Skills erfasst ✓</div>
+          <div className="quiz-done-sub">
+            Du hast alle {questionSkills.length} wichtigsten Skills für{" "}
+            {targetRoleName || "deine Zielrolle"} beantwortet — mit Grad und Aktualität statt
+            nur Ja/Nein.
+          </div>
+          <button
+            type="button"
+            className="quiz-edit-answers"
+            onClick={() => {
+              setPhase("asking");
+              setIndex(questionSkills.length - 1);
+            }}
+          >
+            ← Antworten noch anpassen
+          </button>
+
+          {extraSkills.length > 0 && (
+            <div className="quiz-extra-section">
+              {!extraOpen ? (
+                <button type="button" className="quiz-extra-toggle" onClick={() => setExtraOpen(true)}>
+                  + {extraSkills.length} weitere (ergänzend) auch angeben
+                </button>
+              ) : (
+                <div className="quiz-extra-list">
+                  <div className="quiz-extra-hint">
+                    Optional — zählt zusätzlich mit, sobald du eine Fähigkeit antippst.
+                  </div>
+                  <div className="quiz-extra-chips">
+                    {extraSkills.map((s) => {
+                      const isChecked = checkedSkills.has(s.esco_uri);
+                      return (
+                        <button
+                          key={s.esco_uri}
+                          type="button"
+                          className={`quiz-extra-chip ${isChecked ? "checked" : ""}`}
+                          onClick={() => toggleExtra(s.esco_uri)}
+                          aria-pressed={isChecked}
+                        >
+                          <span className="quiz-extra-chip-check" aria-hidden="true">
+                            {isChecked ? "✓" : ""}
+                          </span>
+                          {s.preferred_label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {skillsError && <div className="status-line err" aria-live="polite">{skillsError}</div>}
+
+        <ActionsRow
+          forwardLabel={skillsBusy ? "Ergebnis wird erstellt…" : "Mein Skill-Profil ansehen →"}
+          onForward={onSubmitQuiz}
+          forwardDisabled={skillsBusy}
+          busy={skillsBusy}
+        />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -4015,98 +4305,73 @@ function FragebogenMethod({
         step="06"
         kicker="DEIN PROFIL"
         title="Was bringst du bereits mit?"
-        description={`Wir zeigen dir die ${questionSkills.length} wichtigsten Skills für ${targetRoleName || "deine Zielrolle"} — du hakst ab, was du schon einsetzt. Danach siehst du direkt dein Ergebnis.`}
+        description={`Wir zeigen dir die ${questionSkills.length} wichtigsten Skills für ${targetRoleName || "deine Zielrolle"} — du tippst pro Skill EINMAL an, wie gut und wie aktuell. Danach siehst du direkt dein Ergebnis.`}
       />
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "12px",
-          marginBottom: "12px",
-          fontSize: "13px",
-        }}
-      >
-        <span className="hint">
-          Frage {safeIndex + 1} von {questionSkills.length}
-        </span>
-        <span className="hint">
-          {remaining > 0 ? `${remaining} offen` : "Check abgeschlossen"}
-        </span>
+      <div className="quiz-progress-row">
+        <div className="quiz-live-ring">
+          <MatchRing percent={liveMatch} size={52} />
+        </div>
+        <div className="quiz-progress-text">
+          <div className="quiz-progress-count">
+            Skill {safeIndex + 1} von {questionSkills.length}
+          </div>
+          <div className="hint">{remaining > 0 ? `${remaining} offen` : "Kern-Check abgeschlossen"}</div>
+        </div>
       </div>
 
-      <div
-        key={skill.esco_uri}
-        style={{
-          border: "1px solid var(--border-soft)",
-          borderRadius: "20px",
-          padding: "24px 20px",
-          background: "var(--surface, #fff)",
-          boxShadow: "0 12px 34px rgba(0,0,0,.055)",
-          minHeight: "220px",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          textAlign: "center",
-        }}
-      >
-        <div style={{ fontSize: "12px", fontWeight: 700, opacity: 0.58, marginBottom: "10px" }}>
-          KOMPETENZ
-        </div>
-        <div style={{ fontSize: "clamp(22px, 4vw, 30px)", fontWeight: 800, lineHeight: 1.15, marginBottom: "10px" }}>
-          {skill.preferred_label}
-        </div>
-        <div className="hint" style={{ maxWidth: "520px", margin: "0 auto 20px" }}>
-          Hast du diese Fähigkeit bereits praktisch eingesetzt?
+      <div key={skill.esco_uri} className="quiz-depth-card">
+        <div className="quiz-depth-card-kicker">KOMPETENZ</div>
+        <div className="quiz-depth-card-title">{skill.preferred_label}</div>
+        <div className="hint quiz-depth-card-hint">
+          Ein Tipp genügt: wie gut, und wann zuletzt eingesetzt?
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", maxWidth: "560px", width: "100%", margin: "0 auto" }}>
-          <button
-            type="button"
-            onClick={() => answer("no")}
-            style={{
-              border: `2px solid ${answered === "no" ? "currentColor" : "var(--border-soft)"}`,
-              borderRadius: "14px",
-              padding: "15px 12px",
-              background: answered === "no" ? "rgba(47,143,214,.07)" : "transparent",
-              cursor: "pointer",
-              fontWeight: 700,
-              fontSize: "14px",
-            }}
-          >
-            <span style={{ display: "block", fontSize: "20px", marginBottom: "4px" }}>○</span>
-            Noch nicht
-            <span className="hint" style={{ display: "block", marginTop: "3px" }}>möchte ich lernen</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => answer("yes")}
-            style={{
-              border: `2px solid ${answered === "yes" ? "currentColor" : "var(--border-soft)"}`,
-              borderRadius: "14px",
-              padding: "15px 12px",
-              background: answered === "yes" ? "rgba(95,220,153,.09)" : "transparent",
-              cursor: "pointer",
-              fontWeight: 700,
-              fontSize: "14px",
-            }}
-          >
-            <span style={{ display: "block", fontSize: "20px", marginBottom: "4px" }}>✓</span>
-            Ja, bringe ich mit
-            <span className="hint" style={{ display: "block", marginTop: "3px" }}>zählt als vorhanden</span>
-          </button>
+        <div className="quiz-depth-grid" role="group" aria-label={`Grad und Aktualität für ${skill.preferred_label}`}>
+          <div className="quiz-depth-grid-corner" aria-hidden="true" />
+          {RECENCY_COLS.map((col) => (
+            <div key={col.key} className="quiz-depth-col-label">
+              {col.short}
+            </div>
+          ))}
+          {PROFICIENCY_ROWS.flatMap((row) => [
+            <div key={`${row.key}-label`} className="quiz-depth-row-label">
+              {row.label}
+            </div>,
+            ...RECENCY_COLS.map((col) => {
+              const isSelected =
+                !!answered && answered !== "no" && answered.proficiency === row.key && answered.recency === col.key;
+              return (
+                <button
+                  key={`${row.key}-${col.key}`}
+                  type="button"
+                  className={`quiz-depth-cell ${isSelected ? "selected" : ""}`}
+                  onClick={() => selectDepth(row.key, col.key)}
+                  aria-pressed={isSelected}
+                  title={`${row.label} · ${col.label}`}
+                >
+                  {isSelected ? "✓" : ""}
+                </button>
+              );
+            }),
+          ])}
         </div>
+
+        {answered && answered !== "no" && (
+          <div className="quiz-depth-selected-label">
+            Ausgewählt:{" "}
+            <strong>{PROFICIENCY_ROWS.find((r) => r.key === answered.proficiency)?.label}</strong> ·{" "}
+            {RECENCY_COLS.find((c) => c.key === answered.recency)?.label}
+          </div>
+        )}
+
+        <button type="button" className={`quiz-not-yet-btn ${answered === "no" ? "selected" : ""}`} onClick={markNotYet}>
+          <span aria-hidden="true">○</span> Noch nicht — möchte ich lernen
+        </button>
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", marginTop: "12px" }}>
-        <button
-          type="button"
-          className="btn-back"
-          onClick={previous}
-          disabled={safeIndex === 0}
-        >
+        <button type="button" className="btn-back" onClick={previous} disabled={safeIndex === 0}>
           ← Zurück
         </button>
         {!isLast && answered && (
@@ -4134,13 +4399,6 @@ function FragebogenMethod({
       </div>
 
       {skillsError && <div className="status-line err" aria-live="polite">{skillsError}</div>}
-
-      <ActionsRow
-        forwardLabel={skillsBusy ? "Ergebnis wird erstellt…" : "Mein Skill-Profil ansehen →"}
-        onForward={onSubmitQuiz}
-        forwardDisabled={skillsBusy || answeredCount === 0}
-        busy={skillsBusy}
-      />
     </div>
   );
 }

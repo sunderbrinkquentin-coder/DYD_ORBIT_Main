@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type RefObject } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type CSSProperties,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 import {
   ESCO_LANG,
   extractDocumentText,
@@ -1206,6 +1215,23 @@ interface JourneyPageProps {
    * unverlinkter Fließtext, statt auf eine tote Seite zu zeigen.
    */
   privacyPolicyUrl?: string;
+  /**
+   * Avatar/Guide (22.09.2026, siehe ausführlichen Kommentar an
+   * GuideAvatarBubble oben): eigenes, unabhängiges Tenant-Flag nach exakt
+   * demselben Muster wie showTour — Default `true`, aber ausdrücklich
+   * abschaltbar, falls ein White-Label-Partner den Guide nicht zeigen
+   * möchte (z.B. weil er ein eigenes Beratungs-/Support-Konzept hat). */
+  showAvatar?: boolean;
+  /**
+   * Name, mit dem sich der Guide vorstellt (siehe GuideAvatarBubble). Frei
+   * durch den Tenant überschreibbar — z.B. der Name der realen
+   * Beratungsperson eines Bildungsträgers, statt des DYD-Standardnamens. */
+  avatarName?: string;
+  /**
+   * Optionale Akzentfarbe für den Guide-Orb (jeder gültige CSS-Farbwert,
+   * z.B. Hex/RGB der Tenant-Marke). Leer/undefined = Standard-DYD-
+   * Farbverlauf (Mint → Blau, dieselbe Familie wie MatchRing). */
+  avatarAccentColor?: string;
 }
 /**
  * Interface B: der Endnutzer-/Lead-Assistent (React-Fassung von
@@ -1223,6 +1249,9 @@ export function JourneyPage({
   showConnectionPanel = Boolean(import.meta.env?.DEV ?? true) || !defaultApiKey,
   showTour = true,
   privacyPolicyUrl = "",
+  showAvatar = true,
+  avatarName = "Mia",
+  avatarAccentColor,
 }: JourneyPageProps = {}) {
   // Demo-Verbindungseinstellungen (unten rechts im Zahnrad-Menü, nur im
   // Dev-Modus sichtbar) — Version 26: Startwert kommt zuerst aus
@@ -3106,6 +3135,9 @@ async function runDemoAnalysis() {
                     onBack={() => setCurrent(stepIndex("zielrolle"))}
                     onCvConsentGiven={() => setCvProcessingConsentAt(new Date().toISOString())}
                     privacyPolicyUrl={privacyPolicyUrl}
+                    showAvatar={showAvatar}
+                    avatarName={avatarName}
+                    avatarAccentColor={avatarAccentColor}
                   />
                 )}
                 {stepKey === "motivation" && gapResult && (
@@ -3334,6 +3366,63 @@ function MatchRing({ percent, size = 96 }: { percent: number; size?: number }) {
         </defs>
       </svg>
       <div className="ring-value">{safePercent}%</div>
+    </div>
+  );
+}
+
+/**
+ * Avatar/Guide (22.09.2026, "kriegen wir noch einen kleinen Avatar mit dazu
+ * hin, der Erklärungen bringt ... soll sich am Anfang auch kurz vorstellen"):
+ * bewusst KEIN gezeichneter Charakter/Maskottchen, sondern eine abstrakte,
+ * animierte Marken-Form (Farbverlauf-Orb) mit Sprechblase — aus zwei Gründen,
+ * beide mit dem Nutzer abgestimmt:
+ *
+ * 1. White-Label (dieses Projekt ist explizit "API/White Label"!): das
+ *    zentrale Versprechen an Bildungsträger/Berater-Partner ist "DYD läuft
+ *    im Hintergrund, Ihre Kundinnen und Kunden sehen ausschließlich Ihr
+ *    Branding" (siehe claude/whitelabel-api-strategie.md). Ein fest
+ *    gezeichneter DYD-Charakter würde dem widersprechen. Eine abstrakte Form
+ *    lässt sich dagegen pro Tenant einfärben (accentColor-Prop) oder ganz
+ *    abschalten (showAvatar in JourneyPageProps, siehe dort — exakt
+ *    dasselbe Muster wie das bereits vorhandene showTour-Flag), ohne dass
+ *    irgendwo eine neue Illustration beauftragt werden müsste.
+ * 2. Positionierung: DYD tritt bewusst seriös auf (DSGVO-konform,
+ *    ESCO-Standard, Kooperationspartner Hochschule Fresenius). Ein
+ *    Cartoon-Gesicht hätte dazu einen spürbaren Stilbruch riskiert, ein
+ *    ruhiger, glasig schimmernder Orb in den Marken-Farben nicht.
+ *
+ * Reine Anzeige-Komponente, hält keinen eigenen Zustand — Sichtbarkeit/
+ * Dismiss wird von der aufrufenden Stelle gesteuert (siehe avatarDismissed
+ * in SkillsMethodStep / tipDismissed in FragebogenMethod unten), damit jede
+ * Einsatzstelle selbst entscheiden kann, wann/wie oft sie erscheint. */
+function GuideAvatarBubble({
+  name,
+  message,
+  accentColor,
+  onDismiss,
+}: {
+  name: string;
+  message: string;
+  accentColor?: string;
+  onDismiss?: () => void;
+}) {
+  return (
+    <div
+      className="guide-avatar-row"
+      style={accentColor ? ({ "--guide-accent": accentColor } as CSSProperties) : undefined}
+    >
+      <div className="guide-avatar-orb" aria-hidden="true">
+        <span className="guide-avatar-orb-sheen" />
+      </div>
+      <div className="guide-avatar-bubble">
+        {onDismiss && (
+          <button type="button" className="guide-avatar-bubble-close" onClick={onDismiss} aria-label="Schließen">
+            ×
+          </button>
+        )}
+        <div className="guide-avatar-bubble-name">{name}</div>
+        <div className="guide-avatar-bubble-text">{message}</div>
+      </div>
     </div>
   );
 }
@@ -3814,12 +3903,34 @@ interface SkillsMethodStepProps {
   onCvConsentGiven: () => void;
   /** Siehe privacyPolicyUrl in JourneyPageProps (Version 28). */
   privacyPolicyUrl: string;
+  /** Avatar/Guide (22.09.2026, siehe GuideAvatarBubble-Kommentar) — alle drei
+   *  1:1 aus JourneyPageProps durchgereicht, kein eigener Zustand hier. */
+  showAvatar: boolean;
+  avatarName: string;
+  avatarAccentColor: string | undefined;
 }
 function SkillsMethodStep(props: SkillsMethodStepProps) {
-  const { method, setMethod, onBack, targetRoleName } = props;
+  const { method, setMethod, onBack, targetRoleName, showAvatar, avatarName, avatarAccentColor } = props;
+  // Avatar-Vorstellung (siehe GuideAvatarBubble-Kommentar): erscheint einmal
+  // auf dem allerersten Bildschirm des Skills-Schritts — dem natürlichen
+  // "Anfang" der Kompetenzerhebung, noch vor der Wahl zwischen CV-Upload und
+  // Fragebogen, also unabhängig vom später gewählten Pfad. Lokaler State
+  // (nicht in JourneyPage gehoben): reine Anzeige-Entscheidung, kein Wert,
+  // der irgendwo sonst gebraucht wird — bleibt bewusst auch beim Wechsel
+  // zwischen CvMethod/FragebogenMethod erhalten, weil SkillsMethodStep dabei
+  // nicht neu gemountet wird (nur method wechselt).
+  const [avatarDismissed, setAvatarDismissed] = useState(false);
   if (!method) {
     return (
       <div>
+        {showAvatar && !avatarDismissed && (
+          <GuideAvatarBubble
+            name={avatarName}
+            message={`Hi, ich bin ${avatarName} — dein digitaler Guide für den Skill-Check. Ich zeig dir kurz, worauf es ankommt, und melde mich, wenn's wichtig wird.`}
+            accentColor={avatarAccentColor}
+            onDismiss={() => setAvatarDismissed(true)}
+          />
+        )}
         <JourneyStepHeading
           step="06"
           kicker="DEIN PROFIL"
@@ -4095,17 +4206,27 @@ function FragebogenMethod({
   onSubmitQuiz,
   skillsBusy,
   skillsError,
+  showAvatar,
+  avatarName,
+  avatarAccentColor,
 }: SkillsMethodStepProps) {
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, SkillDepth | "no">>({});
   const [phase, setPhase] = useState<"asking" | "done">("asking");
   const [extraOpen, setExtraOpen] = useState(false);
+  // Avatar-Tipp (22.09.2026, siehe GuideAvatarBubble-Kommentar): erklärt
+  // gezielt die neue 3×3-Matrix (Teil 2 desselben Tages) — genau die Stelle
+  // im Prozess, an der eine kurze Erklärung den größten Nutzen hat, weil die
+  // Interaktion neu/ungewohnt ist. Erscheint nur bei der ersten Frage, nicht
+  // bei jeder — sonst würde sie schnell nerven statt zu helfen.
+  const [tipDismissed, setTipDismissed] = useState(false);
 
   useEffect(() => {
     setIndex(0);
     setAnswers({});
     setPhase("asking");
     setExtraOpen(false);
+    setTipDismissed(false);
   }, [questionSkills.length]);
 
   // Bugfix 22.09.2026: questionSkills kommt fertig aus JourneyPage
@@ -4307,6 +4428,15 @@ function FragebogenMethod({
         title="Was bringst du bereits mit?"
         description={`Wir zeigen dir die ${questionSkills.length} wichtigsten Skills für ${targetRoleName || "deine Zielrolle"} — du tippst pro Skill EINMAL an, wie gut und wie aktuell. Danach siehst du direkt dein Ergebnis.`}
       />
+
+      {showAvatar && !tipDismissed && safeIndex === 0 && (
+        <GuideAvatarBubble
+          name={avatarName}
+          message="Tipp: Ein Antippen genügt — wähle einfach die Zelle, die am besten zu deinem Grad und deiner Aktualität passt. 'Noch nicht' bleibt als eigener Button darunter."
+          accentColor={avatarAccentColor}
+          onDismiss={() => setTipDismissed(true)}
+        />
+      )}
 
       <div className="quiz-progress-row">
         <div className="quiz-live-ring">

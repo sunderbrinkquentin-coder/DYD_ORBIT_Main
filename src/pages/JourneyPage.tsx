@@ -876,6 +876,29 @@ type Method = "cv" | "fragebogen" | null;
  *  der Person im Gap-Schritt (siehe selfLevelByUri) - dieselben drei Stufen,
  *  damit der KI-Vorschlag 1:1 als Vorbelegung dienen kann. */
 type ProficiencyLevel = "grundkenntnisse" | "fortgeschritten" | "experte";
+type ProficiencyBucket = ProficiencyLevel;
+type RecencyBucket = "aktuell" | "letzte_jahre";
+
+interface SkillDepth {
+  proficiency: ProficiencyBucket;
+  recency: RecencyBucket;
+}
+
+/**
+ * Scoring für die Tiefenabfrage im Fragebogen.
+ * "Fortgeschritten + aktuell" ergibt wie der Fallback in quizSkillScore()
+ * einen Score von 80.
+ */
+const PROFICIENCY_BASE_SCORE: Record<ProficiencyBucket, number> = {
+  grundkenntnisse: 50,
+  fortgeschritten: 80,
+  experte: 100,
+};
+
+const RECENCY_FACTOR: Record<RecencyBucket, number> = {
+  aktuell: 1,
+  letzte_jahre: 0.8,
+};
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /**
  * Version des Einwilligungstexts, dem eine Person beim Absenden des

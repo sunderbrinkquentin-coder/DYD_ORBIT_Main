@@ -975,8 +975,27 @@ export interface InterviewTurnResponse {
    * keine Antwort vorliegt, oder wenn die Bewertung fehlgeschlagen ist
    * (Interview laeuft dann trotzdem weiter, siehe Backend-Kommentar). */
   assessed_skill: InterviewSkillAssessment | null;
+  /**
+   * Geführtes Gespräch statt Fragenkatalog (22.09.2026, zweite Ausbaustufe):
+   * ein kurzer, konkreter Satz, der widerspiegelt, was die Person in ihrer
+   * letzten Antwort gesagt hat - genau das, was ein Berater tun würde,
+   * bevor er zur nächsten Frage übergeht. `null` nur beim allerersten
+   * Aufruf (`turn_index === 1`, noch keine Antwort vorhanden). In der UI
+   * als eigene, der nächsten Frage vorausgehende Chat-Bubble rendern.
+   */
+  acknowledgement: string | null;
+  /** Warme Eröffnung vor der allerersten Frage - nur gesetzt, wenn
+   * `turn_index === 1`. Als erste Chat-Bubble rendern, bevor
+   * `next_question` erscheint. */
+  opening_message: string | null;
+  /** Kurzer, würdigender Abschluss - nur gesetzt, wenn `interview_complete`
+   * true ist. Als letzte Chat-Bubble rendern, bevor zum nächsten
+   * Journey-Schritt übergegangen wird. */
+  closing_message: string | null;
   /** Naechste zu stellende Frage - `null`, wenn `interview_complete` true
-   * ist. */
+   * ist. Kann sich auf denselben Skill wie die vorherige Frage beziehen
+   * (gezielte Nachfrage bei einer zu vagen Antwort, max. einmal pro
+   * Skill) statt zwingend auf einen neuen. */
   next_question: { esco_uri: string; question: string } | null;
   /** true, wenn keine weiteren Fragen mehr folgen (alle Ziel-Skills
    * abgedeckt, KI-Einschaetzung "genug Substanz" oder `max_turns`

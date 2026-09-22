@@ -789,7 +789,6 @@ function quizSkillScore(depth: SkillDepth | undefined | null): number {
  *  Schritte" für echte Zusatzinteraktionen erst recht gilt. "Fortgeschritten,
  *  aktuell" ist eine ehrliche Mitte, keine Bestnote. */
 const DEFAULT_EXTRA_SKILL_DEPTH: SkillDepth = { proficiency: "fortgeschritten", recency: "aktuell" };
-const EMPTY_STRING_SET: ReadonlySet<string> = new Set<string>();
 
 /** Passt eine GapAnalysisResponse (API-Form, siehe core.ts) auf die von
  * rankCoursesForGap() (courseMatcher.ts) erwartete GapAnalysisResult-Form an
@@ -2443,9 +2442,6 @@ async function runDemoAnalysis() {
     // Explizit gewünschte Lernziele aus dem Bereich-Schritt zuerst zeigen.
     // Sie bleiben trotzdem nur dann "Lücke", wenn der Skill im Skill-Check
     // nicht als vorhanden bestätigt wurde.
-    // roleSuggestSkillIds is keyed by catalog skill_id. Do not compare it
-    // with esco_uri: both are stable identifiers, but they are different
-    // namespaces. Keeping the domains explicit prevents silent mismatches.
     const learningGoalIds = roleSuggestSkillIds;
     gap.sort((a, b) => {
       const aGoal = learningGoalIds.has(a.skill_id) ? 0 : 1;
@@ -3303,6 +3299,7 @@ async function runDemoAnalysis() {
                     loadingRoleSkills={loadingRoleSkills}
                     roleSkillsError={roleSkillsError}
                     checkedSkills={checkedSkills}
+                    learningGoalSkillIds={roleSuggestSkillIds}
                     toggleSkill={toggleSkill}
                     skillDepthByUri={skillDepthByUri}
                     onAnswerSkill={answerQuizSkill}
@@ -3673,6 +3670,38 @@ function GoalStep({ selected, onSelect, onSkip, onBack }: { selected: string | n
  *  taucht davon nichts auf. Wer eine konkrete Rolle kennt, nutzt weiterhin
  *  den expliziten Ausweg "Lieber selbst durch alle Rollen stöbern"
  *  (ZielrolleStep) — das ist eine bewusste Wahl, kein erzwungener Schritt. */
+/**
+ * Verständliche Unterbereiche für die Skill-Auswahl.
+ *
+ * Die API/ESCO-Daten bleiben unverändert. Die Unterbereiche sind reine
+ * Präsentationsgruppen: ein Skill gehört immer genau zu einer Gruppe und
+ * kann weiterhin ausschließlich über seine echte `skill_id` ausgewählt
+ * werden. So muss niemand ESCO-Bezeichnungen kennen, um ein Entwicklungsziel
+ * zu finden.
+ */
+function skillSubgroupKey(name: string): { key: string; label: string; icon: string } {
+  const n = name.toLowerCase();
+  if (/kommunikation|präsent|praesent|moderation|gespräch|gespraech|zuhören|zuhoeren|feedback|verhandlung|argument|rhetor|sprache|kunden|beratung|empath/.test(n))
+    return { key: "kommunikation", label: "Kommunikation & Auftreten", icon: "💬" };
+  if (/führung|fuehrung|leadership|team|mitarbeit|konflikt|deleg|coaching|zusammenarbeit|motivation/.test(n))
+    return { key: "zusammenarbeit", label: "Führung & Zusammenarbeit", icon: "🤝" };
+  if (/projekt|planung|organisation|prozess|management|scrum|agil|zeitmanagement|prior/.test(n))
+    return { key: "organisation", label: "Organisation & Projekte", icon: "🧭" };
+  if (/analyse|daten|statistik|sql|excel|power bi|dashboard|report|kennzahl|controlling|recherche/.test(n))
+    return { key: "analyse", label: "Analyse & Entscheidungen", icon: "📊" };
+  if (/programm|software|entwick|code|digital|technolog|it |cloud|datenbank|web|automatis|system|cyber|computer/.test(n))
+    return { key: "digital", label: "Digital & Technik", icon: "💻" };
+  if (/marketing|seo|content|social|kampagne|branding|marke|werbung|design|kreat|text|grafik|medien/.test(n))
+    return { key: "kreativ", label: "Kreativität & Wirkung", icon: "✨" };
+  if (/verkauf|sales|vertrieb|kunde|akquise|geschäft|geschaeft|service|handel/.test(n))
+    return { key: "business", label: "Kunden & Business", icon: "🚀" };
+  if (/handwerk|montage|reparatur|maschinen|technik|produktion|bau|werkzeug|praktisch/.test(n))
+    return { key: "praxis", label: "Praxis & Umsetzung", icon: "🛠️" };
+  if (/gesund|pflege|medizin|patient|therapie|sozial|pädagog|paedagog|bildung|lernen|didakt/.test(n))
+    return { key: "menschen", label: "Menschen & Entwicklung", icon: "❤️" };
+  return { key: "fachwissen", label: "Fachwissen & Praxis", icon: "🎯" };
+}
+
 function RoleSuggestStep({
   selectedSkillIds,
   onToggleSkill,
@@ -3695,13 +3724,10 @@ function RoleSuggestStep({
   const [selectedBereich, setSelectedBereich] = useState<Set<string>>(new Set());
   const [selectedInterests, setSelectedInterests] = useState<Set<string>>(new Set());
   const [discoveryMode, setDiscoveryMode] = useState(false);
-  const [skillAreaOpen, setSkillAreaOpen] = useState<string | null>(null);
+  const [openSubgroups, setOpenSubgroups] = useState<Set<string>>(new Set());
   const [advancing, setAdvancing] = useState(false);
 
-  const availableAreaKeys = useMemo(
-    () => new Set(bereicheOptions.map((bereich) => bereich.key)),
-    [bereicheOptions],
-  );
+  const availableAreaKeys = useMemo(() => new Set(bereicheOptions.map((b) => b.key)), [bereicheOptions]);
 
   function toggleBereich(key: string) {
     setSelectedBereich((prev) => {
@@ -3710,7 +3736,6 @@ function RoleSuggestStep({
       else if (next.size < 2) next.add(key);
       return next;
     });
-    setSkillAreaOpen(key);
   }
 
   function toggleInterest(key: string) {
@@ -3723,62 +3748,69 @@ function RoleSuggestStep({
   }
 
   const recommendedBereiche = useMemo(() => {
-    if (selectedInterests.size === 0) return [];
+    if (!selectedInterests.size) return [];
     const score = new Map<string, number>();
     for (const interest of BEREICH_DISCOVERY_OPTIONS) {
       if (!selectedInterests.has(interest.key)) continue;
       for (const areaKey of interest.areaHints) {
-        if (!availableAreaKeys.has(areaKey)) continue;
-        score.set(areaKey, (score.get(areaKey) ?? 0) + 1);
+        if (availableAreaKeys.has(areaKey)) score.set(areaKey, (score.get(areaKey) ?? 0) + 1);
       }
     }
     return [...score.entries()]
       .sort((a, b) => b[1] - a[1])
-      .map(([key]) => bereicheOptions.find((bereich) => bereich.key === key))
-      .filter((bereich): bereich is BereichOption => Boolean(bereich))
+      .map(([key]) => bereicheOptions.find((b) => b.key === key))
+      .filter((b): b is BereichOption => Boolean(b))
       .slice(0, 4);
   }, [selectedInterests, availableAreaKeys, bereicheOptions]);
 
-  const effectiveSelectedBereich = useMemo(
-    () => selectedBereich,
-    [selectedBereich],
-  );
-
   const bereichFilteredRoles = useMemo(
-    () =>
-      effectiveSelectedBereich.size > 0
-        ? rolesInPortfolio.filter((role) => effectiveSelectedBereich.has(role.bereich_key))
-        : rolesInPortfolio,
-    [effectiveSelectedBereich, rolesInPortfolio],
+    () => selectedBereich.size ? rolesInPortfolio.filter((r) => selectedBereich.has(r.bereich_key)) : rolesInPortfolio,
+    [selectedBereich, rolesInPortfolio],
   );
 
-  const learningSkills = useMemo(
-    () => topSkillsForRoles(bereichFilteredRoles, 24),
-    [bereichFilteredRoles],
-  );
+  const learningSkills = useMemo(() => topSkillsForRoles(bereichFilteredRoles, 40), [bereichFilteredRoles]);
 
-  const skillsByArea = useMemo(() => {
-    return new Map([["skills", learningSkills]]);
+  const skillGroups = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; icon: string; skills: typeof learningSkills }>();
+    for (const skill of learningSkills) {
+      const meta = skillSubgroupKey(skill.name);
+      const existing = map.get(meta.key);
+      if (existing) existing.skills.push(skill);
+      else map.set(meta.key, { ...meta, skills: [skill] });
+    }
+    return [...map.values()];
   }, [learningSkills]);
 
-  const selectedLearningLabels = learningSkills
-    .filter((skill) => selectedSkillIds.has(skill.skill_id))
-    .map((skill) => skill.name);
+  const selectedLearningLabels = learningSkills.filter((s) => selectedSkillIds.has(s.skill_id)).map((s) => s.name);
 
-  function selectRecommendedArea(key: string) {
-    toggleBereich(key);
+  function selectRecommendedArea(key: string) { toggleBereich(key); }
+
+  function toggleSubgroup(key: string) {
+    setOpenSubgroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleAllSkills(skills: typeof learningSkills) {
+    const allSelected = skills.every((s) => selectedSkillIds.has(s.skill_id));
+    for (const skill of skills) {
+      if (allSelected && selectedSkillIds.has(skill.skill_id)) onToggleSkill(skill.skill_id);
+      if (!allSelected && !selectedSkillIds.has(skill.skill_id)) onToggleSkill(skill.skill_id);
+    }
   }
 
   function goWithBereich() {
-    const keys = [...effectiveSelectedBereich];
-    if (advancing || keys.length === 0) return;
+    const keys = [...selectedBereich];
+    if (advancing || !keys.length) return;
     setAdvancing(true);
     onSelectBereich(keys);
-    window.setTimeout(onForward, 220);
+    window.setTimeout(onForward, 180);
   }
 
-  const selectedLabels = [...effectiveSelectedBereich]
-    .map((key) => bereicheOptions.find((bereich) => bereich.key === key)?.label ?? key)
+  const selectedLabels = [...selectedBereich]
+    .map((key) => bereicheOptions.find((b) => b.key === key)?.label ?? key)
     .join(" · ");
 
   return (
@@ -3787,173 +3819,103 @@ function RoleSuggestStep({
         step="04"
         kicker="DEINE ENTWICKLUNG"
         title="Was möchtest du gezielt entwickeln?"
-        description="Wir gehen nicht sofort auf Weiterbildungen. Erst legen wir gemeinsam fest, welche Bereiche und Skills für dich interessant sind. Dein Erfahrungslevel kommt direkt danach."
+        description="Wähle zuerst einen Bereich. Danach findest du darin übersichtliche Themenfelder – und darin die konkreten Skills. Alles bleibt auf einer einzigen Ansicht."
       />
 
       {!discoveryMode && selectedBereich.size === 0 ? (
         <div>
-          <button
-            type="button"
-            onClick={() => setDiscoveryMode(true)}
-            style={{
-              width: "100%",
-              border: "1px solid rgba(47,143,214,.22)",
-              borderRadius: "18px",
-              padding: "18px",
-              background: "linear-gradient(135deg, rgba(95,220,153,.10), rgba(47,143,214,.08))",
-              cursor: "pointer",
-              textAlign: "left",
-              marginBottom: "18px",
-            }}
-          >
+          <button type="button" onClick={() => setDiscoveryMode(true)} style={{ width: "100%", border: "1px solid rgba(47,143,214,.22)", borderRadius: "18px", padding: "18px", background: "linear-gradient(135deg, rgba(95,220,153,.10), rgba(47,143,214,.08))", cursor: "pointer", textAlign: "left", marginBottom: "18px" }}>
             <span style={{ display: "flex", alignItems: "center", gap: "12px" }}>
               <span style={{ fontSize: "25px" }}>🧭</span>
-              <span>
-                <strong style={{ display: "block", fontSize: "16px" }}>Ich bin noch nicht sicher</strong>
-                <span className="hint">Beantworte 2–3 kurze Fragen und wir grenzen passende Bereiche für dich ein.</span>
-              </span>
+              <span><strong style={{ display: "block", fontSize: "16px" }}>Ich bin noch nicht sicher</strong><span className="hint">Beantworte 2–3 kurze Fragen und wir grenzen passende Bereiche für dich ein.</span></span>
               <span style={{ marginLeft: "auto", fontSize: "20px" }}>→</span>
             </span>
           </button>
-
-          <div style={{ margin: "0 0 10px", textAlign: "center" }} className="hint">
-            Oder wähle direkt einen Bereich:
-          </div>
+          <div className="hint" style={{ margin: "0 0 10px", textAlign: "center" }}>Oder wähle direkt einen Bereich:</div>
           <div className="role-grid">
-            {bereicheOptions.map((bereich) => (
-              <button
-                key={bereich.key}
-                type="button"
-                className={`role-card ${selectedBereich.has(bereich.key) ? "selected" : ""}`}
-                onClick={() => toggleBereich(bereich.key)}
-                aria-pressed={selectedBereich.has(bereich.key)}
-                style={{ textAlign: "left", cursor: "pointer" }}
-              >
-                {selectedBereich.has(bereich.key) && <span className="role-card-check" aria-hidden="true">✓</span>}
+            {bereicheOptions.map((bereich) => {
+              const active = selectedBereich.has(bereich.key);
+              return <button key={bereich.key} type="button" className={`role-card ${active ? "selected" : ""}`} onClick={() => toggleBereich(bereich.key)} aria-pressed={active} style={{ textAlign: "left", cursor: "pointer" }}>
+                {active && <span className="role-card-check" aria-hidden="true">✓</span>}
                 <div className="role-card-icon" aria-hidden="true">{BEREICH_ICONS[bereich.key] ?? "🧭"}</div>
                 <div className="role-card-name">{bereich.label}</div>
-              </button>
-            ))}
+              </button>;
+            })}
           </div>
         </div>
       ) : discoveryMode && selectedBereich.size === 0 ? (
         <div>
           <div style={{ marginBottom: "14px", padding: "13px 15px", borderRadius: "14px", background: "rgba(127,127,127,.04)", border: "1px solid var(--border-soft)" }}>
             <strong style={{ fontSize: "14px" }}>Was interessiert dich am meisten?</strong>
-            <div className="hint" style={{ marginTop: "4px" }}>Wähle bis zu 3 Dinge. Daraus schlagen wir dir Bereiche vor.</div>
+            <div className="hint" style={{ marginTop: "4px" }}>Wähle bis zu 3 Dinge. Daraus schlagen wir dir passende Bereiche vor.</div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "10px" }}>
             {BEREICH_DISCOVERY_OPTIONS.map((interest) => {
               const active = selectedInterests.has(interest.key);
-              return (
-                <button
-                  key={interest.key}
-                  type="button"
-                  onClick={() => toggleInterest(interest.key)}
-                  aria-pressed={active}
-                  style={{
-                    border: active ? "1.5px solid rgba(47,143,214,.55)" : "1px solid var(--border-soft)",
-                    borderRadius: "16px",
-                    padding: "15px",
-                    background: active ? "linear-gradient(135deg, rgba(95,220,153,.11), rgba(47,143,214,.08))" : "var(--surface, #fff)",
-                    cursor: "pointer",
-                    textAlign: "left",
-                  }}
-                >
-                  <div style={{ fontSize: "21px", marginBottom: "8px" }}>{interest.icon}</div>
-                  <strong style={{ display: "block", fontSize: "14px" }}>{interest.title}</strong>
-                  <span className="hint" style={{ display: "block", marginTop: "5px", lineHeight: 1.45 }}>{interest.description}</span>
-                </button>
-              );
+              return <button key={interest.key} type="button" onClick={() => toggleInterest(interest.key)} aria-pressed={active} style={{ border: active ? "1.5px solid rgba(47,143,214,.55)" : "1px solid var(--border-soft)", borderRadius: "16px", padding: "15px", background: active ? "linear-gradient(135deg, rgba(95,220,153,.11), rgba(47,143,214,.08))" : "var(--surface, #fff)", cursor: "pointer", textAlign: "left" }}>
+                <div style={{ fontSize: "21px", marginBottom: "8px" }}>{interest.icon}</div><strong style={{ display: "block", fontSize: "14px" }}>{interest.title}</strong><span className="hint" style={{ display: "block", marginTop: "5px", lineHeight: 1.45 }}>{interest.description}</span>
+              </button>;
             })}
           </div>
-          {recommendedBereiche.length > 0 && (
-            <div style={{ marginTop: "20px" }}>
-              <strong style={{ fontSize: "15px" }}>Diese Bereiche könnten passen</strong>
-              <div className="hint" style={{ margin: "4px 0 10px" }}>Wähle einen oder zwei Bereiche, die dich wirklich interessieren.</div>
-              <div className="role-grid">
-                {recommendedBereiche.map((bereich) => (
-                  <button key={bereich.key} type="button" onClick={() => selectRecommendedArea(bereich.key)} className={`role-card ${selectedBereich.has(bereich.key) ? "selected" : ""}`} style={{ textAlign: "left", cursor: "pointer" }} aria-pressed={selectedBereich.has(bereich.key)}>
-                    {selectedBereich.has(bereich.key) && <span className="role-card-check" aria-hidden="true">✓</span>}
-                    <div className="role-card-icon" aria-hidden="true">{BEREICH_ICONS[bereich.key] ?? "🧭"}</div>
-                    <div className="role-card-name">{bereich.label}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          {recommendedBereiche.length > 0 && <div style={{ marginTop: "20px" }}>
+            <strong style={{ fontSize: "15px" }}>Diese Bereiche könnten passen</strong>
+            <div className="hint" style={{ margin: "4px 0 10px" }}>Wähle einen oder zwei Bereiche.</div>
+            <div className="role-grid">{recommendedBereiche.map((bereich) => {
+              const active = selectedBereich.has(bereich.key);
+              return <button key={bereich.key} type="button" onClick={() => selectRecommendedArea(bereich.key)} className={`role-card ${active ? "selected" : ""}`} style={{ textAlign: "left", cursor: "pointer" }} aria-pressed={active}>
+                {active && <span className="role-card-check" aria-hidden="true">✓</span>}<div className="role-card-icon" aria-hidden="true">{BEREICH_ICONS[bereich.key] ?? "🧭"}</div><div className="role-card-name">{bereich.label}</div>
+              </button>;
+            })}</div>
+          </div>}
         </div>
       ) : (
         <div>
           <div style={{ marginBottom: "16px", padding: "13px 15px", borderRadius: "16px", background: "rgba(95,220,153,.07)", border: "1px solid rgba(95,220,153,.18)" }}>
             <strong style={{ fontSize: "14px" }}>Deine Richtung: {selectedLabels}</strong>
-            <div className="hint" style={{ marginTop: "4px" }}>Jetzt wird es konkreter: Wähle die Skills aus, die du wirklich entwickeln möchtest.</div>
-          </div>
-
-          <div style={{ marginBottom: "12px" }}>
-            <div style={{ fontSize: "21px", fontWeight: 850, lineHeight: 1.2 }}>Was möchtest du lernen oder vertiefen?</div>
-            <div className="hint" style={{ marginTop: "5px" }}>Du kannst einen ganzen Bereich öffnen oder nur einzelne Skills auswählen. Keine Auswahl bedeutet nicht, dass dir der Skill fehlt.</div>
+            <div className="hint" style={{ marginTop: "4px" }}>Du musst keinen einzelnen Skill kennen. Öffne einfach ein Themenfeld und wähle aus, was du entwickeln möchtest.</div>
           </div>
 
           <div style={{ display: "grid", gap: "10px" }}>
-            {[...skillsByArea.entries()].map(([areaKey, skills]) => {
-              const open = skillAreaOpen === areaKey;
-              const selectedCount = skills.filter((skill) => selectedSkillIds.has(skill.skill_id)).length;
-              return (
-                <div key={areaKey} style={{ border: "1px solid var(--border-soft)", borderRadius: "18px", overflow: "hidden", background: "var(--surface, #fff)" }}>
-                  <button
-                    type="button"
-                    onClick={() => setSkillAreaOpen(open ? null : areaKey)}
-                    style={{ width: "100%", border: 0, padding: "16px", background: open ? "rgba(95,220,153,.07)" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", gap: "12px", textAlign: "left" }}
-                  >
-                    <span style={{ fontSize: "22px" }}>{BEREICH_ICONS[[...effectiveSelectedBereich][0]] ?? "✦"}</span>
-                    <span style={{ flex: 1 }}>
-                      <strong style={{ display: "block", fontSize: "15px" }}>Relevante Skills für {selectedLabels}</strong>
-                      <span className="hint">{skills.length} relevante Skills{selectedCount > 0 ? ` · ${selectedCount} ausgewählt` : ""}</span>
-                    </span>
-                    <span aria-hidden="true" style={{ fontSize: "18px", opacity: .55 }}>{open ? "⌃" : "→"}</span>
-                  </button>
-                  {open && (
-                    <div style={{ padding: "0 12px 12px", display: "grid", gap: "8px" }}>
-                      {skills.map((skill) => {
-                        const active = selectedSkillIds.has(skill.skill_id);
-                        return (
-                          <button
-                            key={skill.skill_id}
-                            type="button"
-                            onClick={() => onToggleSkill(skill.skill_id)}
-                            aria-pressed={active}
-                            style={{ width: "100%", border: active ? "1.5px solid rgba(47,143,214,.55)" : "1px solid var(--border-soft)", borderRadius: "14px", padding: "12px 13px", background: active ? "rgba(47,143,214,.07)" : "var(--surface, #fff)", cursor: "pointer", display: "flex", alignItems: "center", gap: "11px", textAlign: "left" }}
-                          >
-                            <span style={{ width: "24px", height: "24px", borderRadius: "7px", display: "grid", placeItems: "center", border: active ? "0" : "1px solid var(--border-soft)", background: active ? "var(--accent, #2f8fd6)" : "transparent", color: active ? "#fff" : "inherit", fontWeight: 850, flex: "0 0 auto" }}>{active ? "✓" : ""}</span>
-                            <span style={{ flex: 1 }}>
-                              <strong style={{ display: "block", fontSize: "14px" }}>{skill.name}</strong>
-                              <span className="hint" style={{ fontSize: "12px" }}>Als Entwicklungsziel auswählen</span>
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
+            {skillGroups.map((group) => {
+              const open = openSubgroups.has(group.key);
+              const selectedCount = group.skills.filter((s) => selectedSkillIds.has(s.skill_id)).length;
+              const allSelected = group.skills.length > 0 && selectedCount === group.skills.length;
+              return <div key={group.key} style={{ border: "1px solid var(--border-soft)", borderRadius: "18px", overflow: "hidden", background: "var(--surface, #fff)" }}>
+                <button type="button" onClick={() => toggleSubgroup(group.key)} aria-expanded={open} style={{ width: "100%", border: 0, padding: "16px", background: open ? "rgba(95,220,153,.07)" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", gap: "12px", textAlign: "left" }}>
+                  <span style={{ fontSize: "24px" }}>{group.icon}</span>
+                  <span style={{ flex: 1 }}><strong style={{ display: "block", fontSize: "15px" }}>{group.label}</strong><span className="hint">{group.skills.length} Skills{selectedCount ? ` · ${selectedCount} ausgewählt` : ""}</span></span>
+                  {selectedCount > 0 && <span style={{ fontSize: "11px", fontWeight: 850, padding: "5px 8px", borderRadius: "999px", background: "rgba(47,143,214,.10)" }}>{selectedCount}</span>}
+                  <span aria-hidden="true" style={{ fontSize: "18px", opacity: .55 }}>{open ? "⌃" : "→"}</span>
+                </button>
+                {open && <div style={{ padding: "0 12px 12px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 2px 10px" }}>
+                    <span className="hint">Welche davon möchtest du gezielt entwickeln?</span>
+                    <button type="button" onClick={() => toggleAllSkills(group.skills)} style={{ border: 0, background: "transparent", cursor: "pointer", fontSize: "12px", fontWeight: 800 }}>{allSelected ? "Alle abwählen" : "Alle auswählen"}</button>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: "8px" }}>
+                    {group.skills.map((skill) => {
+                      const active = selectedSkillIds.has(skill.skill_id);
+                      return <button key={skill.skill_id} type="button" onClick={() => onToggleSkill(skill.skill_id)} aria-pressed={active} style={{ width: "100%", border: active ? "1.5px solid rgba(47,143,214,.55)" : "1px solid var(--border-soft)", borderRadius: "14px", padding: "12px 13px", background: active ? "rgba(47,143,214,.07)" : "var(--surface, #fff)", cursor: "pointer", display: "flex", alignItems: "center", gap: "11px", textAlign: "left" }}>
+                        <span style={{ width: "24px", height: "24px", borderRadius: "7px", display: "grid", placeItems: "center", border: active ? "0" : "1px solid var(--border-soft)", background: active ? "var(--accent, #2f8fd6)" : "transparent", color: active ? "#fff" : "inherit", fontWeight: 850, flex: "0 0 auto" }}>{active ? "✓" : ""}</span>
+                        <span style={{ flex: 1 }}><strong style={{ display: "block", fontSize: "14px" }}>{skill.name}</strong><span className="hint" style={{ fontSize: "12px" }}>Als Entwicklungsziel markieren</span></span>
+                      </button>;
+                    })}
+                  </div>
+                </div>}
+              </div>;
             })}
           </div>
 
-          <div style={{ marginTop: "14px", padding: "14px 15px", borderRadius: "16px", background: selectedSkillIds.size > 0 ? "rgba(47,143,214,.06)" : "rgba(127,127,127,.035)", border: "1px solid var(--border-soft)" }}>
-            <strong style={{ display: "block", fontSize: "14px" }}>{selectedSkillIds.size > 0 ? `${selectedSkillIds.size} Entwicklungsziel${selectedSkillIds.size === 1 ? "" : "e"} ausgewählt` : "Noch keine konkreten Skills ausgewählt"}</strong>
-            <span className="hint" style={{ display: "block", marginTop: "4px" }}>
-              {selectedSkillIds.size > 0 ? `${selectedLearningLabels.slice(0, 5).join(" · ")}${selectedLearningLabels.length > 5 ? ` +${selectedLearningLabels.length - 5}` : ""}` : "Kein Problem. Im nächsten Schritt prüfen wir trotzdem dein vorhandenes Skill-Profil."}
-            </span>
+          <div style={{ marginTop: "14px", padding: "14px 15px", borderRadius: "16px", background: selectedSkillIds.size ? "rgba(47,143,214,.06)" : "rgba(127,127,127,.035)", border: "1px solid var(--border-soft)" }}>
+            <strong style={{ display: "block", fontSize: "14px" }}>{selectedSkillIds.size ? `${selectedSkillIds.size} Entwicklungsziel${selectedSkillIds.size === 1 ? "" : "e"} ausgewählt` : "Du kannst auch ohne konkrete Skill-Auswahl weitergehen"}</strong>
+            <span className="hint" style={{ display: "block", marginTop: "4px" }}>{selectedSkillIds.size ? `${selectedLearningLabels.slice(0, 6).join(" · ")}${selectedLearningLabels.length > 6 ? ` +${selectedLearningLabels.length - 6}` : ""}` : "Im Erfahrungscheck prüfen wir dein Profil trotzdem gegen die wichtigsten Skills."}</span>
           </div>
 
           <div className="cta-block" style={{ marginTop: "18px" }}>
             <button type="button" className={`btn-cta-primary ${advancing ? "loading" : ""}`} onClick={goWithBereich}>
               {advancing ? <><span className="btn-spinner" aria-hidden="true" /> Profil wird vorbereitet…</> : <>Weiter zum Erfahrungscheck <span className="arrow">→</span></>}
             </button>
-            <div className="hint" style={{ textAlign: "center", marginTop: "9px" }}>
-              Als Nächstes gibst du für die ausgewählten bzw. relevanten Skills dein Erfahrungslevel an.
-            </div>
+            <div className="hint" style={{ textAlign: "center", marginTop: "9px" }}>Danach schauen wir gemeinsam auf dein Erfahrungslevel.</div>
           </div>
         </div>
       )}
@@ -3965,6 +3927,7 @@ function RoleSuggestStep({
     </div>
   );
 }
+
 function ZielrolleStep({
   roles,
   loading,
@@ -4119,8 +4082,7 @@ interface SkillsMethodStepProps {
   loadingRoleSkills: boolean;
   roleSkillsError: string | null;
   checkedSkills: Set<string>;
-  /** Explicit development goals selected in the preceding discovery step.
-   *  This Set is keyed by catalog skill_id (not esco_uri). */
+  /** Entwicklungsziele aus dem Bereich-Explorer; keyed by catalog skill_id. */
   learningGoalSkillIds?: ReadonlySet<string>;
   toggleSkill: (uri: string) => void;
   /** Teil 2 (22.09.2026, siehe SkillDepth-Kommentar in JourneyPage): Grad +
@@ -4432,6 +4394,8 @@ function CvMethod({
  *   handelt und Vorgabe "nicht zu viele Schritte" für Zusatzinteraktionen
  *   erst recht gilt.
  */
+const EMPTY_STRING_SET: ReadonlySet<string> = new Set<string>();
+
 function FragebogenMethod({
   setMethod,
   targetRoleName,

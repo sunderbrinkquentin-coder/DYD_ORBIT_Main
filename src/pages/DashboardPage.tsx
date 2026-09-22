@@ -56,6 +56,7 @@ import {
   type LeadResponse,
   type OrbitCourse,
   type OrbitReportResponse,
+  type QualificationLevel,
   type QualificationType,
 } from "../api/orbit";
 import { guessExperienceLevel } from "../lib/skillLevel";
@@ -352,6 +353,18 @@ interface CourseFormState {
   /** Grobe Einkategorisierung (Version 37, siehe course_category in
    *  orbit.ts) — optional, "" = noch nicht kategorisiert. */
   courseCategory: CourseCategory | "";
+  /**
+   * Strukturierte Voraussetzungen (Version 39, 22.09. — "es muss auch auf
+   * Vorraussetzungen bei den Kursen drauf eingegangen werden") — siehe
+   * ausführlichen Kommentar an denselben Feldern bei OrbitCourse in
+   * orbit.ts. Additiv zu targetGroup oben (bleibt der Freitext für alles,
+   * was sich nicht in diese drei Dimensionen pressen lässt). Alle drei
+   * optional, "" = keine Anforderung — checkPrerequisites() (courseMatcher.ts)
+   * prüft nur Dimensionen, die HIER tatsächlich gesetzt sind.
+   */
+  minQualificationLevel: QualificationLevel | "";
+  minExperienceYears: string;
+  requiredLanguageLevel: string;
 }
 /** Ein zusätzlicher Termin/Standort im Kursformular — siehe extraSessions an
  *  CourseFormState oben. Bewusst dieselben Feldnamen/Typen wie die
@@ -468,6 +481,29 @@ const COURSE_CATEGORY_OPTIONS: { key: CourseCategory; label: string }[] = [
   { key: "seminar", label: "Seminar" },
   { key: "sonstiges", label: "Sonstiges" },
 ];
+/** Mindest-Vorbildung (Version 39, 22.09. — siehe ausführlichen Kommentar an
+ *  QualificationLevel in orbit.ts). Keys 1:1 wie dort, damit kein separates
+ *  Mapping gepflegt werden muss — genutzt in checkPrerequisites()
+ *  (courseMatcher.ts) gegen die Selbstauskunft der Person aus dem Journey-
+ *  "Präferenzen"-Schritt. */
+const QUALIFICATION_LEVEL_OPTIONS: { key: QualificationLevel; label: string }[] = [
+  { key: "keine", label: "Keine formale Vorbildung nötig" },
+  { key: "berufsausbildung", label: "Abgeschlossene Berufsausbildung" },
+  { key: "studium", label: "Hochschulabschluss" },
+];
+/** CEFR-Sprachniveaus als Auswahlliste fürs Kursformular (Version 39,
+ *  22.09.) — siehe required_language_level in orbit.ts und CEFR_RANK in
+ *  courseMatcher.ts. Bewusst die reinen CEFR-Stufen (kein zusätzliches
+ *  Label-Mapping wie bei LANGUAGE_LEVEL_OPTIONS in JourneyPage.tsx), da hier
+ *  der Bildungsträger direkt die im Kurs geforderte Stufe einträgt. */
+const LANGUAGE_LEVEL_SELECT_OPTIONS: { key: string; label: string }[] = [
+  { key: "A1", label: "A1" },
+  { key: "A2", label: "A2" },
+  { key: "B1", label: "B1" },
+  { key: "B2", label: "B2" },
+  { key: "C1", label: "C1" },
+  { key: "C2", label: "C2" },
+];
 /** Vorschläge für den freien Banner-Text im Quick-Picker auf der Kurskachel
  *  (siehe "Dein Kurskatalog") — reiner Textbaustein, kein zusätzlicher
  *  Anspruch wie bei starts_at/seats_remaining, deshalb hier unkritisch. */
@@ -539,6 +575,9 @@ const DEFAULT_COURSE_FORM: CourseFormState = {
   bookingUrl: "",
   noBookingUrl: false,
   courseCategory: "",
+  minQualificationLevel: "",
+  minExperienceYears: "",
+  requiredLanguageLevel: "",
 };
 /** Mindestlänge, ab der eine Kursbeschreibung überhaupt an die automatische
  *  Skill-Erkennung geschickt wird — bei ein paar Wörtern liefert das
@@ -582,6 +621,9 @@ const EXAMPLE_COURSE_FORM: CourseFormState = {
   bookingUrl: "https://muster-akademie.de/anmeldung/excel-grundlagen",
   noBookingUrl: false,
   courseCategory: "weiterbildung",
+  minQualificationLevel: "",
+  minExperienceYears: "",
+  requiredLanguageLevel: "",
 };
 /** Beispiel-CSV-Inhalt für den "Kurse per CSV importieren"-Schritt des
  *  Rundgangs — dieselbe Struktur wie downloadImportTemplate() oben, aber mit
@@ -667,6 +709,11 @@ interface ImportMapping {
   teachingUnits: number;
   fundingMeasureNumber: number;
   targetGroup: number;
+  /** Mindest-Berufserfahrung in Jahren (Version 39, 22.09.) — reiner
+   *  Zahlenwert wie priceEur/teachingUnits oben, deshalb (anders als
+   *  min_qualification_level/required_language_level, siehe Kommentar oben)
+   *  unproblematisch per CSV-Spalte importierbar. */
+  minExperienceYears: number;
 }
 const DEFAULT_IMPORT_MAPPING: ImportMapping = {
   courseId: -1,
@@ -678,6 +725,7 @@ const DEFAULT_IMPORT_MAPPING: ImportMapping = {
   teachingUnits: -1,
   fundingMeasureNumber: -1,
   targetGroup: -1,
+  minExperienceYears: -1,
 };
 interface ImportRowResult {
   index: number;
@@ -690,6 +738,7 @@ interface ImportRowResult {
   teachingUnits: number | null;
   fundingMeasureNumber: string;
   targetGroup: string;
+  minExperienceYears: number | null;
   valid: boolean;
   reason?: string;
   willUpdate: boolean;
@@ -781,6 +830,7 @@ const IMPORT_HEADER_GUESSES: Record<keyof ImportMapping, string[]> = {
   teachingUnits: ["ue", "unterrichtseinheiten", "unterrichtsstunden", "stunden"],
   fundingMeasureNumber: ["maßnahmenummer", "massnahmennummer", "maßnahmen-nr", "azav-nummer"],
   targetGroup: ["zielgruppe", "voraussetzungen", "target_group"],
+  minExperienceYears: ["mindesterfahrung", "berufserfahrung", "erfahrung", "min_experience_years"],
 };
 function guessImportMapping(headers: string[]): ImportMapping {
   const lower = headers.map((h) => h.trim().toLowerCase());
@@ -800,6 +850,7 @@ function guessImportMapping(headers: string[]): ImportMapping {
     teachingUnits: find(IMPORT_HEADER_GUESSES.teachingUnits),
     fundingMeasureNumber: find(IMPORT_HEADER_GUESSES.fundingMeasureNumber),
     targetGroup: find(IMPORT_HEADER_GUESSES.targetGroup),
+    minExperienceYears: find(IMPORT_HEADER_GUESSES.minExperienceYears),
   };
 }
 function downloadImportTemplate() {
@@ -2113,6 +2164,13 @@ export function DashboardPage({
         qualification_type: courseForm.qualificationType || null,
         dqr_level: courseForm.dqrLevel.trim() === "" ? null : Math.max(1, Math.min(8, Math.round(Number(courseForm.dqrLevel)))),
         target_group: courseForm.targetGroup.trim() || null,
+        // Strukturierte Voraussetzungen (Version 39, 22.09. — siehe
+        // ausführlichen Kommentar an denselben Feldern bei OrbitCourse in
+        // orbit.ts) — additiv zu target_group oben, leer = keine Anforderung.
+        min_qualification_level: courseForm.minQualificationLevel || null,
+        min_experience_years:
+          courseForm.minExperienceYears.trim() === "" ? null : Math.max(0, Math.round(Number(courseForm.minExperienceYears))),
+        required_language_level: courseForm.requiredLanguageLevel || null,
         // Direktbuchungslink — Pflichtfeld für neue Kurse (siehe Validierung
         // oben), siehe ausführlichen Kommentar an booking_url/OrbitCourse in
         // orbit.ts. null statt "", wenn bewusst "Kein Buchungslink vorhanden"
@@ -3208,6 +3266,13 @@ export function DashboardPage({
       const fundingMeasureNumber =
         importMapping.fundingMeasureNumber >= 0 ? (cols[importMapping.fundingMeasureNumber] ?? "").trim() : "";
       const targetGroup = importMapping.targetGroup >= 0 ? (cols[importMapping.targetGroup] ?? "").trim() : "";
+      // Mindest-Berufserfahrung (Version 39, 22.09.) — gleiche Zahlen-
+      // Erkennung wie teachingUnits oben, optional (nicht erkannt = null,
+      // kein Import-Fehler).
+      const rawMinExperience =
+        importMapping.minExperienceYears >= 0 ? (cols[importMapping.minExperienceYears] ?? "").trim() : "";
+      const minExperienceMatch = rawMinExperience.replace(",", ".").match(/[\d.]+/);
+      const minExperienceYears = minExperienceMatch ? Math.max(0, Math.round(parseFloat(minExperienceMatch[0]))) : null;
       let reason: string | undefined;
       if (!rawName) reason = "Kein Kursname";
       else if (!courseId) reason = "Keine Kurs-ID ableitbar";
@@ -3223,6 +3288,7 @@ export function DashboardPage({
         teachingUnits,
         fundingMeasureNumber,
         targetGroup,
+        minExperienceYears,
         valid: !reason,
         reason,
         willUpdate: courses.some((c) => c.course_id === courseId),
@@ -3369,6 +3435,17 @@ export function DashboardPage({
           funding_types: existingByCourseId.get(row.courseId)?.funding_types ?? null,
           qualification_type: existingByCourseId.get(row.courseId)?.qualification_type ?? null,
           dqr_level: existingByCourseId.get(row.courseId)?.dqr_level ?? null,
+          // Strukturierte Voraussetzungen (Version 39, 22.09.) — gleiches
+          // Prinzip wie qualification_type/dqr_level direkt darueber:
+          // min_qualification_level/required_language_level sind wie
+          // qualification_type feste Auswahllisten (keine eigene CSV-Spalte,
+          // siehe ImportMapping-Kommentar oben — zu viel Rateraum bei freiem
+          // Text), bleiben bei einem Reimport also am bisherigen Wert.
+          // min_experience_years IST per Spalte importierbar (reine Zahl,
+          // siehe minExperienceYears oben) — CSV-Wert vor bisherigem Wert.
+          min_qualification_level: existingByCourseId.get(row.courseId)?.min_qualification_level ?? null,
+          min_experience_years: row.minExperienceYears ?? existingByCourseId.get(row.courseId)?.min_experience_years ?? null,
+          required_language_level: existingByCourseId.get(row.courseId)?.required_language_level ?? null,
           // Bug-Fix 15.09.: bereich_key(s) fehlten hier komplett — da
           // upsertCourse den Kurs komplett ersetzt, hat jeder CSV-(Re-)Import
           // einen zuvor im Formular gesetzten Bereich stillschweigend
@@ -3549,6 +3626,9 @@ export function DashboardPage({
       bookingUrl: course.booking_url ?? "",
       noBookingUrl: false,
       courseCategory: course.course_category ?? "",
+      minQualificationLevel: course.min_qualification_level ?? "",
+      minExperienceYears: course.min_experience_years != null ? String(course.min_experience_years) : "",
+      requiredLanguageLevel: course.required_language_level ?? "",
     });
     setCourseSkillUris(new Set(course.covered_skill_uris));
     // Erfahrungslevel aus covered_skills übernehmen, falls das Backend sie
@@ -5191,6 +5271,69 @@ export function DashboardPage({
                         value={courseForm.targetGroup}
                         onChange={(e) => setCourseForm((f) => ({ ...f, targetGroup: e.target.value }))}
                       />
+                      <div className="hint">
+                        Freitext für alles, was sich nicht in eine der drei strukturierten Voraussetzungen unten
+                        pressen lässt (z.B. "eigener Laptop erforderlich"). Erscheint in der Journey als
+                        Zusatzinfo, fließt aber NICHT automatisch in den Voraussetzungs-Abgleich mit ein.
+                      </div>
+                    </div>
+                    {/* Strukturierte Voraussetzungen (Version 39, 22.09. —
+                        "es muss auch auf Vorraussetzungen bei den Kursen drauf
+                        eingegangen werden") — additiv zur Zielgruppe/
+                        Voraussetzungen-Freitextbox oben. Grundlage für
+                        checkPrerequisites() (courseMatcher.ts), das diese drei
+                        Felder gegen die Selbstauskunft der Person im Journey-
+                        "Präferenzen"-Schritt abgleicht. Alle drei optional —
+                        leer = keine Anforderung, der Kurs wird dann für jede
+                        Person als "erfüllt" gewertet. */}
+                    <div className="lf-field">
+                      <label>Voraussetzungen für den Matching-Abgleich (optional)</label>
+                      <div className="hint" style={{ marginBottom: 8 }}>
+                        Wird gegen die Angaben der Person im "Präferenzen"-Schritt der Journey abgeglichen — nie
+                        als Ausschluss (der Kurs bleibt immer sichtbar), nur als Hinweis auf der Kurskarte.
+                      </div>
+                      <div className="row3">
+                        <div className="lf-field">
+                          <label>Mindest-Vorbildung</label>
+                          <select
+                            value={courseForm.minQualificationLevel}
+                            onChange={(e) =>
+                              setCourseForm((f) => ({ ...f, minQualificationLevel: e.target.value as QualificationLevel | "" }))
+                            }
+                          >
+                            <option value="">— keine Anforderung —</option>
+                            {QUALIFICATION_LEVEL_OPTIONS.map((o) => (
+                              <option key={o.key} value={o.key}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="lf-field">
+                          <label>Mindest-Berufserfahrung (Jahre)</label>
+                          <input
+                            type="number"
+                            min={0}
+                            placeholder="z.B. 2"
+                            value={courseForm.minExperienceYears}
+                            onChange={(e) => setCourseForm((f) => ({ ...f, minExperienceYears: e.target.value }))}
+                          />
+                        </div>
+                        <div className="lf-field">
+                          <label>Erforderliches Deutsch-Niveau</label>
+                          <select
+                            value={courseForm.requiredLanguageLevel}
+                            onChange={(e) => setCourseForm((f) => ({ ...f, requiredLanguageLevel: e.target.value }))}
+                          >
+                            <option value="">— keine Anforderung —</option>
+                            {LANGUAGE_LEVEL_SELECT_OPTIONS.map((o) => (
+                              <option key={o.key} value={o.key}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
                     </div>
                     </div>
                     <div className="lf-field">
@@ -6027,11 +6170,34 @@ export function DashboardPage({
                           </select>
                         </div>
                       </div>
+                      {/* Version 39, 22.09. — Mindest-Berufserfahrung ist wie
+                         Preis/UE eine reine Zahlenspalte, deshalb hier per CSV
+                         zuordenbar (siehe ImportMapping-Kommentar oben).
+                         Mindest-Vorbildung/Sprachniveau bleiben wie
+                         Abschlussart bewusst NUR im manuellen Formular. */}
+                      <div className="row2">
+                        <div className="lf-field">
+                          <label>Spalte für Mindest-Berufserfahrung in Jahren (optional)</label>
+                          <select
+                            value={importMapping.minExperienceYears}
+                            onChange={(e) =>
+                              setImportMapping((m) => ({ ...m, minExperienceYears: Number(e.target.value) }))
+                            }
+                          >
+                            <option value={-1}>— keine —</option>
+                            {importHeaders.map((h, i) => (
+                              <option key={i} value={i}>
+                                {h}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
                       <div className="hint">
-                        Förderart (Bildungsgutschein/Aufstiegs-BAföG/…), Abschlussart, DQR-Niveau, Prüfungsgebühr und
-                        USt.-Hinweis lassen sich aktuell nur im manuellen Formular („✎ Bearbeiten" nach dem Import)
-                        pflegen — dafür zu unterschiedlich, um sie zuverlässig aus einer einzelnen freien CSV-Spalte
-                        zu lesen.
+                        Förderart (Bildungsgutschein/Aufstiegs-BAföG/…), Abschlussart, DQR-Niveau, Prüfungsgebühr,
+                        USt.-Hinweis sowie Mindest-Vorbildung und erforderliches Sprachniveau lassen sich aktuell nur
+                        im manuellen Formular („✎ Bearbeiten" nach dem Import) pflegen — dafür zu unterschiedlich, um
+                        sie zuverlässig aus einer einzelnen freien CSV-Spalte zu lesen.
                       </div>
                       {importSkillDetectError && <div className="hint warn">{importSkillDetectError}</div>}
                       {importMapping.courseName === -1 || importMapping.durationWeeks === -1 ? (
@@ -6060,6 +6226,7 @@ export function DashboardPage({
                                       <th>Dauer (Wochen)</th>
                                       {importMapping.priceEur >= 0 && <th>Preis</th>}
                                       {importMapping.teachingUnits >= 0 && <th>UE</th>}
+                                      {importMapping.minExperienceYears >= 0 && <th>Mind.-Erfahrung</th>}
                                       <th>Status</th>
                                       {importMapping.description >= 0 && <th>Skills (automatisch)</th>}
                                     </tr>
@@ -6075,6 +6242,9 @@ export function DashboardPage({
                                           <td>{r.priceEur != null ? `${r.priceEur.toFixed(2)} €` : "—"}</td>
                                         )}
                                         {importMapping.teachingUnits >= 0 && <td>{r.teachingUnits ?? "—"}</td>}
+                                        {importMapping.minExperienceYears >= 0 && (
+                                          <td>{r.minExperienceYears != null ? `${r.minExperienceYears} Jahre` : "—"}</td>
+                                        )}
                                         <td>{r.valid ? (r.willUpdate ? "Aktualisierung" : "Neu") : `⚠ ${r.reason}`}</td>
                                         {importMapping.description >= 0 && (
                                           <td>{(importApprovedSkillUris[r.index] ?? []).length || "—"}</td>

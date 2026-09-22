@@ -2548,6 +2548,30 @@ async function runDemoAnalysis() {
 
       let matchedCourses: CourseRecommendation[] = [];
 
+      // Der Zielbereich ist im Kursmatching eine harte fachliche Grenze.
+      // Ein generischer Skill darf niemals dazu führen, dass z.B. ein
+      // Entwicklerkurs bei einer Gesundheitsrolle als Empfehlung erscheint.
+      const targetCourseBereichKeys = (() => {
+        const role = effectiveRoles.find((r) => r.role_id === targetRoleId);
+        if (!role) return [] as string[];
+        if (role.role_id.startsWith("bereich:")) {
+          return role.role_id
+            .slice("bereich:".length)
+            .split(":")[0]
+            .split(",")
+            .filter(Boolean);
+        }
+        return role.bereich_key ? [role.bereich_key] : [];
+      })();
+      const courseIsInTargetBereich = (course: OrbitCourse): boolean => {
+        if (targetCourseBereichKeys.length === 0) return true;
+        const keys = new Set<string>([
+          ...(course.bereich_key ? [course.bereich_key] : []),
+          ...(course.bereich_keys ?? []),
+        ]);
+        return targetCourseBereichKeys.some((key) => keys.has(key));
+      };
+
       const localRoleKnown =
         analyzeGap(sourceText, targetRoleId, {
           roles: effectiveRoles,
@@ -2621,7 +2645,21 @@ async function runDemoAnalysis() {
         }
       }
 
-      // C. Final safety net: real tenant courses only.
+      // Auch Backend-Ergebnisse werden gegen den echten Zielbereich geprüft.
+      // So kann ein veralteter/anders konfigurierter Backend-Matcher keinen
+      // fachfremden Kurs in die Journey durchreichen.
+      if (res.recommended_courses?.length && targetCourseBereichKeys.length > 0) {
+        const catalogById = new Map(courseCatalog.map((course) => [course.course_id, course]));
+        res = {
+          ...res,
+          recommended_courses: res.recommended_courses.filter((recommendation) => {
+            const course = catalogById.get(recommendation.course_id);
+            return Boolean(course && courseIsInTargetBereich(course));
+          }),
+        };
+      }
+
+      // C. Final safety net: echte Kurse NUR aus dem Zielbereich.
       // Never fabricate a course. If the catalog contains courses, the UX
       // must not end on an empty result merely because the matcher missed.
       if (
@@ -2630,7 +2668,7 @@ async function runDemoAnalysis() {
         courseCatalog.length > 0
       ) {
         const fallbackCourses: CourseRecommendation[] = allCourses
-          .filter((course) => Boolean(course.course_id && course.course_name))
+          .filter((course) => Boolean(course.course_id && course.course_name) && courseIsInTargetBereich(course))
           .slice()
           .sort((a, b) => {
             const featuredDelta =
@@ -5104,7 +5142,12 @@ function buildGapCourseView(
       const relevance = matchedGapSkills.length * 100 + (areaMatch ? 25 : 0) + (currentRoleMatch ? 10 : 0);
       return { course, matchedGapSkills, areaMatch, relevance };
     })
-    .filter((item) => item.matchedGapSkills.length > 0 || item.areaMatch)
+    // Der Bereich ist ein HARTE fachliche Grenze: Ein Kurs aus einem anderen
+    // Bereich wird hier nie als Empfehlung gezeigt, selbst wenn ein generischer
+    // Skill zufällig identisch ist. Bereichstreue geht vor Skill-Anzahl.
+    .filter((item) => targetBereichKey
+      ? item.areaMatch
+      : item.matchedGapSkills.length > 0)
     .sort((a, b) => b.relevance - a.relevance || a.course.course_name.localeCompare(b.course.course_name, "de"));
 }
 

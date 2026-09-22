@@ -4586,3 +4586,284 @@ input.big-input:focus {
     padding: 12px 18px;
   }
 }
+
+/* ================================================================
+   Fragebogen-Skill-Check, Teil 2 (22.09.2026): 3×3-Tiefe-Matrix statt
+   Ja/Nein-Karte, live mitwachsender Match-Ring, "done"-Zwischenstand mit
+   optionalem Zusatz-Skill-Link. Siehe FragebogenMethod/SkillDepth-Kommentare
+   in JourneyPage.tsx. Reuse bestehender Tokens/Keyframes (fadeInUp, popIn
+   aus theme.css; dydIconPop aus diesem File) statt neuer Optik — derselbe
+   Grundsatz wie beim Motivations-Schritt oben.
+   ================================================================ */
+.quiz-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.quiz-live-ring {
+  flex-shrink: 0;
+}
+.quiz-live-ring .ring-value {
+  font-size: 13px;
+}
+.quiz-progress-text {
+  flex: 1;
+  min-width: 0;
+}
+.quiz-progress-count {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.quiz-depth-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 20px;
+  padding: 24px 20px;
+  background: var(--surface, #fff);
+  box-shadow: var(--shadow-md);
+  text-align: center;
+  animation: fadeInUp 0.35s ease both;
+}
+.quiz-depth-card-kicker {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.58;
+  margin-bottom: 10px;
+  letter-spacing: 0.02em;
+}
+.quiz-depth-card-title {
+  font-family: "Baloo 2", "Inter", sans-serif;
+  font-size: clamp(20px, 4vw, 28px);
+  font-weight: 800;
+  line-height: 1.15;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+.quiz-depth-card-hint {
+  max-width: 460px;
+  margin: 0 auto 18px;
+}
+.quiz-depth-grid {
+  display: grid;
+  grid-template-columns: minmax(84px, auto) repeat(3, minmax(64px, 1fr));
+  gap: 6px;
+  max-width: 520px;
+  margin: 0 auto;
+  align-items: stretch;
+}
+.quiz-depth-col-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  text-align: center;
+  padding-bottom: 4px;
+  line-height: 1.2;
+}
+.quiz-depth-row-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: right;
+  padding-right: 6px;
+}
+.quiz-depth-cell {
+  border: 1.5px solid var(--border-soft);
+  border-radius: 10px;
+  background: rgba(127, 127, 127, 0.035);
+  min-height: 44px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--dyd-blue-dark);
+  transition: all 0.15s ease;
+}
+.quiz-depth-cell:hover {
+  border-color: var(--dyd-mint-2);
+  background: rgba(95, 220, 153, 0.08);
+}
+.quiz-depth-cell.selected {
+  border-color: var(--dyd-mint-2);
+  background: linear-gradient(135deg, rgba(143, 236, 180, 0.28), rgba(47, 143, 214, 0.14));
+  color: var(--dyd-blue-dark);
+  animation: dydIconPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  box-shadow: var(--shadow-sm);
+}
+.quiz-depth-selected-label {
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  animation: fadeInUp 0.25s ease both;
+}
+.quiz-depth-selected-label strong {
+  color: var(--text-primary);
+}
+.quiz-not-yet-btn {
+  margin: 18px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1.5px dashed var(--border);
+  border-radius: 12px;
+  padding: 10px 16px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  max-width: 320px;
+  width: 100%;
+  transition: all 0.15s ease;
+}
+.quiz-not-yet-btn:hover {
+  border-color: var(--dyd-blue);
+  color: var(--dyd-blue-dark);
+}
+.quiz-not-yet-btn.selected {
+  border-style: solid;
+  border-color: var(--dyd-blue);
+  color: var(--dyd-blue-dark);
+  background: rgba(47, 143, 214, 0.07);
+}
+.quiz-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 18px 12px 6px;
+  animation: fadeInUp 0.4s ease both;
+}
+.quiz-done-ring {
+  animation: popIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.quiz-done-headline {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-top: 16px;
+}
+.quiz-done-sub {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  margin-top: 8px;
+  max-width: 420px;
+}
+.quiz-edit-answers {
+  margin-top: 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--dyd-blue-dark);
+  text-decoration: underline;
+}
+.quiz-extra-section {
+  margin-top: 20px;
+  width: 100%;
+  max-width: 480px;
+}
+.quiz-extra-toggle {
+  border: 1.5px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 10px 16px;
+  background: rgba(127, 127, 127, 0.035);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--dyd-blue-dark);
+  cursor: pointer;
+  width: 100%;
+}
+.quiz-extra-toggle:hover {
+  border-color: var(--dyd-mint-2);
+}
+.quiz-extra-list {
+  text-align: left;
+  animation: fadeInUp 0.3s ease both;
+}
+.quiz-extra-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+.quiz-extra-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.quiz-extra-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1.5px solid var(--border-soft);
+  border-radius: 999px;
+  padding: 7px 13px 7px 10px;
+  background: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.quiz-extra-chip-check {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff;
+  flex-shrink: 0;
+}
+.quiz-extra-chip.checked {
+  border-color: var(--dyd-mint-2);
+  background: rgba(95, 220, 153, 0.09);
+}
+.quiz-extra-chip.checked .quiz-extra-chip-check {
+  background: var(--dyd-mint-2);
+  border-color: var(--dyd-mint-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .quiz-depth-card,
+  .quiz-depth-cell.selected,
+  .quiz-depth-selected-label,
+  .quiz-done,
+  .quiz-done-ring,
+  .quiz-extra-list {
+    animation: none;
+  }
+}
+@media (max-width: 480px) {
+  .quiz-depth-grid {
+    grid-template-columns: minmax(58px, auto) repeat(3, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .quiz-depth-col-label {
+    font-size: 9px;
+  }
+  .quiz-depth-row-label {
+    font-size: 10.5px;
+    padding-right: 3px;
+  }
+  .quiz-depth-cell {
+    min-height: 38px;
+    font-size: 14px;
+  }
+  .quiz-depth-card {
+    padding: 18px 12px;
+  }
+}

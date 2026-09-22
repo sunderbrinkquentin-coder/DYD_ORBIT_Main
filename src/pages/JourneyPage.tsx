@@ -44,6 +44,7 @@ import {
   matchCoursesToGap,
   describePreferenceMismatches,
   rankCoursesForGap,
+  QUALIFICATION_LABELS,
 } from "../data/courseMatcher";
 import { BereichBadges, CourseBadgeRow, daysUntilCourseStart } from "../data/courseBadges";
 import { AnimatedNumber } from "../components/AnimatedNumber";
@@ -734,6 +735,51 @@ const DURATION_OPTIONS: { key: string; label: string }[] = [
   { key: "mittel", label: "Mittel (bis ca. 6 Monate)" },
   { key: "lang", label: "Lang (auch länger)" },
 ];
+/** Voraussetzungs-Auskunft der Person (Version 34, 22.09., "es muss auch auf
+ *  Vorraussetzungen bei den Kursen drauf eingegangen werden") — drei neue,
+ *  ebenfalls optionale Fragen im "Präferenzen"-Schritt, deren Antworten
+ *  gegen die strukturierten Kurs-Voraussetzungen (min_qualification_level/
+ *  min_experience_years/required_language_level an OrbitCourse, siehe
+ *  orbit.ts) abgeglichen werden (checkPrerequisites() in courseMatcher.ts).
+ *  Anders als bei EMPLOYMENT_OPTIONS/LOCATION_OPTIONS oben absichtlich KEINE
+ *  extra "Egal"-Option: einfach nichts anklicken und weiterklicken ist hier
+ *  bereits die "keine Angabe"-Antwort (bei QUALIFICATION_OPTIONS ist "keine
+ *  formale Vorbildung" schon selbst eine echte, unterscheidbare Angabe —
+ *  eine zusätzliche "Egal" wäre nur verwirrend).
+ *
+ *  QualificationLevel-Keys 1:1 wie in orbit.ts/courseMatcher.ts
+ *  (QUALIFICATION_RANK) — kein separates Mapping. */
+const QUALIFICATION_OPTIONS: { key: string; label: string }[] = [
+  { key: "keine", label: "Keine formale Vorbildung" },
+  { key: "berufsausbildung", label: "Abgeschlossene Berufsausbildung" },
+  { key: "studium", label: "Hochschulabschluss" },
+];
+/** Grobe Berufserfahrungs-Buckets statt Jahreszahl-Eingabe (gleiches Prinzip
+ *  wie START_OPTIONS/DURATION_OPTIONS oben). `years` ist bewusst die
+ *  UNTERGRENZE des jeweiligen Buckets, nie die Obergrenze oder ein
+ *  Mittelwert — checkPrerequisites() vergleicht damit direkt gegen
+ *  min_experience_years, und im Zweifel wird der Person NIE mehr Erfahrung
+ *  unterstellt, als sie sicher hat (keine erfundenen Fakten: "3–5 Jahre"
+ *  zählt für einen Kurs, der 5 Jahre verlangt, ehrlich als "unklar", nicht
+ *  faelschlich als "erfüllt"). */
+const EXPERIENCE_OPTIONS: { key: string; label: string; years: number }[] = [
+  { key: "keine", label: "Keine / unter 1 Jahr", years: 0 },
+  { key: "1-3", label: "1–3 Jahre", years: 1 },
+  { key: "3-5", label: "3–5 Jahre", years: 3 },
+  { key: "5-plus", label: "Mehr als 5 Jahre", years: 5 },
+];
+/** Deutschkenntnisse in alltagssprachlichen Stufen statt direkter CEFR-Abfrage
+ *  (die wenigsten kennen ihr eigenes CEFR-Niveau) — `level` ist die CEFR-
+ *  UNTERGRENZE der jeweiligen Stufe (gleiches "keine erfundenen Fakten"-
+ *  Prinzip wie bei EXPERIENCE_OPTIONS oben: "Gute Kenntnisse" deckt
+ *  ehrlicherweise B1–B2 ab, gespeichert wird die Untergrenze B1). Siehe
+ *  CEFR_RANK in courseMatcher.ts. */
+const LANGUAGE_LEVEL_OPTIONS: { key: string; label: string; level: string }[] = [
+  { key: "gering", label: "Grundkenntnisse", level: "A1" },
+  { key: "gut", label: "Gute Kenntnisse", level: "B1" },
+  { key: "fliessend", label: "Fließend", level: "C1" },
+  { key: "muttersprache", label: "Muttersprachlich / verhandlungssicher", level: "C2" },
+];
 /** Labels für die KURS-eigenen location_mode/employment_mode-Werte (orbit.ts:
  * LocationMode/EmploymentMode) — bewusst eigene Maps statt
  * START_OPTIONS/EMPLOYMENT_OPTIONS/LOCATION_OPTIONS oben: unterschiedlicher
@@ -1399,6 +1445,17 @@ async function runDemoAnalysis() {
   // "keine Präferenz"-Antwort (siehe CATEGORY_OPTIONS/DURATION_OPTIONS).
   const [categoryPreference, setCategoryPreference] = useState<string | null>(null);
   const [desiredDuration, setDesiredDuration] = useState<string | null>(null);
+  // Voraussetzungs-Auskunft (Version 34, 22.09., "es muss auch auf
+  // Vorraussetzungen bei den Kursen drauf eingegangen werden"), ebenfalls im
+  // "Präferenzen"-Schritt abgefragt, gleiches Muster wie oben: null =
+  // übersprungen (siehe QUALIFICATION_OPTIONS/EXPERIENCE_OPTIONS/
+  // LANGUAGE_LEVEL_OPTIONS — bewusst keine "egal"-Option, siehe Kommentar
+  // dort). qualificationLevel/germanLevel speichern den gewählten Key
+  // (orbit.ts-QualificationLevel bzw. CEFR-Untergrenze), experienceYears die
+  // Untergrenze des gewählten Buckets in Jahren.
+  const [qualificationLevel, setQualificationLevel] = useState<string | null>(null);
+  const [experienceYears, setExperienceYears] = useState<number | null>(null);
+  const [germanLevel, setGermanLevel] = useState<string | null>(null);
   // Test-Tracking (Version 14): merkt sich die id des zuletzt geloggten
   // Skill-Checks, damit wir ihr im Kurs-Schritt die Empfehlung nachtragen
   // können. Rein statistisch fürs Bildungsträger-Dashboard — schlägt das
@@ -2146,6 +2203,9 @@ async function runDemoAnalysis() {
             fundingPreference,
             categoryPreference,
             desiredDuration,
+            qualificationLevel,
+            experienceYears,
+            germanLevel,
             roles: effectiveRoles,
           }
         );
@@ -2499,6 +2559,14 @@ async function runDemoAnalysis() {
         // 14.09.), ebenfalls optional (null, wenn übersprungen) — damit der
         // Bildungsträger beim Nachfassen weiß, ob Förderung ein Thema ist.
         funding_preference: fundingPreference,
+        // Voraussetzungs-Auskunft aus dem "Präferenzen"-Schritt (Version 34,
+        // 22.09.), ebenfalls optional (null, wenn übersprungen) — der
+        // Bildungsträger sieht damit beim Nachfassen direkt, welche
+        // Vorbildung/Erfahrung/Sprachkenntnisse die Person selbst angibt,
+        // ohne im Skill-Profil danach suchen zu müssen.
+        qualification_level: qualificationLevel,
+        experience_years: experienceYears,
+        german_level: germanLevel,
         // Beratungswunsch (Version 20, seit Version 27 ueber den gewaehlten
         // CTA-Button mitgegeben statt ueber eine Checkbox, siehe Kommentar
         // an der Funktionssignatur oben).
@@ -2589,6 +2657,9 @@ async function runDemoAnalysis() {
         employment_type: employmentType,
         work_location: workLocation,
         funding_preference: fundingPreference,
+        qualification_level: qualificationLevel,
+        experience_years: experienceYears,
+        german_level: germanLevel,
         // Siehe gleichnamige Felder in submitLead() oben — derselbe DSGVO-
         // Nachweis gilt auch für die vorzeitige Sicherung per E-Mail.
         consent_given: true,
@@ -2759,6 +2830,12 @@ async function runDemoAnalysis() {
                     categoryOptions={categoryOptionsInPortfolio}
                     desiredDuration={desiredDuration}
                     onSelectDuration={setDesiredDuration}
+                    qualificationLevel={qualificationLevel}
+                    onSelectQualification={setQualificationLevel}
+                    experienceYears={experienceYears}
+                    onSelectExperience={setExperienceYears}
+                    germanLevel={germanLevel}
+                    onSelectGermanLevel={setGermanLevel}
                     onForward={continuePreferences}
                     onBack={() => setCurrent(stepIndex("ziel"))}
                   />
@@ -2874,6 +2951,9 @@ async function runDemoAnalysis() {
                     fundingPreference={fundingPreference}
                     categoryPreference={categoryPreference}
                     desiredDuration={desiredDuration}
+                    qualificationLevel={qualificationLevel}
+                    experienceYears={experienceYears}
+                    germanLevel={germanLevel}
                     goalLabel={GOAL_OPTIONS.find((g) => g.key === careerGoal)?.label}
                     leadName={leadName}
                     setLeadName={setLeadName}
@@ -4599,6 +4679,12 @@ function PraeferenzenStep({
   categoryOptions,
   desiredDuration,
   onSelectDuration,
+  qualificationLevel,
+  onSelectQualification,
+  experienceYears,
+  onSelectExperience,
+  germanLevel,
+  onSelectGermanLevel,
   onForward,
   onBack,
 }: {
@@ -4618,6 +4704,15 @@ function PraeferenzenStep({
   categoryOptions: { key: string; label: string }[];
   desiredDuration: string | null;
   onSelectDuration: (key: string | null) => void;
+  /** Voraussetzungs-Auskunft (Version 34, 22.09.) — siehe
+   *  QUALIFICATION_OPTIONS/EXPERIENCE_OPTIONS/LANGUAGE_LEVEL_OPTIONS oben
+   *  und checkPrerequisites() in courseMatcher.ts. */
+  qualificationLevel: string | null;
+  onSelectQualification: (key: string | null) => void;
+  experienceYears: number | null;
+  onSelectExperience: (years: number | null) => void;
+  germanLevel: string | null;
+  onSelectGermanLevel: (level: string | null) => void;
   onForward: () => void;
   onBack: () => void;
 }) {
@@ -4679,6 +4774,36 @@ function PraeferenzenStep({
         selected={desiredDuration}
         onSelect={onSelectDuration}
       />
+      {/* Voraussetzungs-Auskunft (Version 34, 22.09., "es muss auch auf
+          Vorraussetzungen bei den Kursen drauf eingegangen werden") — drei
+          weitere, ebenfalls optionale Karten. Fließen NIE als Ausschluss ein
+          (siehe checkPrerequisites() in courseMatcher.ts), nur als
+          zusätzlicher Hinweis, welcher Kurs am besten zur eigenen Vorbildung
+          passt. */}
+      <OptionCard
+        icon="🎓"
+        title="Welche Vorbildung bringst du mit?"
+        sub="Optional — manche Kurse setzen eine Ausbildung oder ein Studium voraus. So zeigen wir dir bevorzugt Kurse, die du auch wirklich starten kannst."
+        options={QUALIFICATION_OPTIONS}
+        selected={qualificationLevel}
+        onSelect={onSelectQualification}
+      />
+      <OptionCard
+        icon="💡"
+        title="Wie viel Berufserfahrung hast du?"
+        sub="Optional — manche Kurse setzen einschlägige Berufserfahrung voraus."
+        options={EXPERIENCE_OPTIONS}
+        selected={EXPERIENCE_OPTIONS.find((o) => o.years === experienceYears)?.key ?? null}
+        onSelect={(key) => onSelectExperience(key ? EXPERIENCE_OPTIONS.find((o) => o.key === key)?.years ?? null : null)}
+      />
+      <OptionCard
+        icon="🗣️"
+        title="Wie gut sind deine Deutschkenntnisse?"
+        sub="Optional — manche Kurse setzen ein bestimmtes Sprachniveau voraus."
+        options={LANGUAGE_LEVEL_OPTIONS}
+        selected={LANGUAGE_LEVEL_OPTIONS.find((o) => o.level === germanLevel)?.key ?? null}
+        onSelect={(key) => onSelectGermanLevel(key ? LANGUAGE_LEVEL_OPTIONS.find((o) => o.key === key)?.level ?? null : null)}
+      />
       <ActionsRow onBack={onBack} forwardLabel="Weiter →" onForward={onForward} />
     </div>
   );
@@ -4720,6 +4845,9 @@ function KursStep({
   fundingPreference,
   categoryPreference,
   desiredDuration,
+  qualificationLevel,
+  experienceYears,
+  germanLevel,
   goalLabel,
   leadName,
   setLeadName,
@@ -4800,6 +4928,16 @@ function KursStep({
    *  PraeferenzenStep) — gleiches Muster wie die vier Felder oben. */
   categoryPreference: string | null;
   desiredDuration: string | null;
+  /** Voraussetzungs-Auskunft aus dem "Präferenzen"-Schritt (Version 34,
+   *  22.09., siehe QUALIFICATION_OPTIONS/EXPERIENCE_OPTIONS/
+   *  LANGUAGE_LEVEL_OPTIONS/PraeferenzenStep) — nur für die Präferenzen-
+   *  Zusammenfassung hier; der eigentliche Voraussetzungs-Abgleich pro
+   *  Kurskarte kommt bereits fertig berechnet über prerequisite_status/
+   *  prerequisite_unmet an jedem CourseRecommendation aus courseResult
+   *  (siehe checkPrerequisites() in courseMatcher.ts). */
+  qualificationLevel: string | null;
+  experienceYears: number | null;
+  germanLevel: string | null;
   /** Label des im Ziel-Schritt gewählten Beweggrunds (siehe GOAL_OPTIONS),
    * fließt in den personalisierten Pitch ein — undefined, wenn übersprungen. */
   goalLabel?: string;
@@ -4931,6 +5069,9 @@ function KursStep({
     fundingPreference && FUNDING_OPTIONS.find((o) => o.key === fundingPreference)?.label,
     categoryPreference && CATEGORY_OPTIONS.find((o) => o.key === categoryPreference)?.label,
     desiredDuration && DURATION_OPTIONS.find((o) => o.key === desiredDuration)?.label,
+    qualificationLevel && QUALIFICATION_OPTIONS.find((o) => o.key === qualificationLevel)?.label,
+    experienceYears != null && EXPERIENCE_OPTIONS.find((o) => o.years === experienceYears)?.label,
+    germanLevel && LANGUAGE_LEVEL_OPTIONS.find((o) => o.level === germanLevel)?.label,
   ].filter((part): part is string => Boolean(part));
   // Eine Karte, wiederverwendet für beide "weitere Kurse"-Gruppen unten
   // (soonStartingCourses/bannerCourses) — exakt dieselbe Darstellung wie
@@ -5364,6 +5505,35 @@ function KursStep({
                           deiner Angabe
                         </span>
                       </>
+                    )}
+                  </div>
+                )}
+                {/* Voraussetzungs-Abgleich (Version 34, 22.09.) — siehe
+                    checkPrerequisites() in courseMatcher.ts/prerequisite_status
+                    an CourseRecommendation in orbit.ts. Nur gesetzt, wenn der
+                    Kurs mindestens eine strukturierte Voraussetzung traegt UND
+                    die Person im "Präferenzen"-Schritt mindestens eine der
+                    drei Fragen beantwortet hat — sonst bewusst gar keine Zeile
+                    (kein erfundenes "unklar" ohne jede Angabe). Beeinflusst
+                    NIE, ob der Kurs angezeigt wird, nur diese Zusatzinfo (die
+                    Sortierung passiert bereits in rankCoursesForGap). */}
+                {course.prerequisite_status && (
+                  <div className={`course-hero-meta course-prereq course-prereq--${course.prerequisite_status.replace(/_/g, "-")}`}>
+                    {course.prerequisite_status === "nicht_erfuellt" && (
+                      <span className="hint hint-warn">
+                        ⚠️ {(course.prerequisite_unmet ?? []).join("/") || "Voraussetzungen"}{" "}
+                        {(course.prerequisite_unmet ?? []).length === 1 ? "passt" : "passen"} laut deiner Angabe evtl.
+                        nicht — sprich das am besten direkt mit {course.provider} ab.
+                      </span>
+                    )}
+                    {course.prerequisite_status === "unklar" && (
+                      <span className="hint">
+                        ℹ️ Dieser Kurs setzt bestimmte Voraussetzungen voraus (z.B. Vorbildung, Erfahrung oder
+                        Sprachniveau) — check kurz, ob du sie erfüllst.
+                      </span>
+                    )}
+                    {course.prerequisite_status === "erfuellt" && (
+                      <span className="hint hint-ok">✓ Deine Angaben erfüllen die Voraussetzungen dieses Kurses.</span>
                     )}
                   </div>
                 )}

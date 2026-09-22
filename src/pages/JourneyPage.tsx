@@ -4450,6 +4450,7 @@ function FragebogenMethod({
   showAvatar,
   avatarName,
   avatarAccentColor,
+  learningGoalSkillIds,
 }: SkillsMethodStepProps) {
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, SkillDepth | "no">>({});
@@ -4461,7 +4462,7 @@ function FragebogenMethod({
   // Interaktion neu/ungewohnt ist. Erscheint nur bei der ersten Frage, nicht
   // bei jeder — sonst würde sie schnell nerven statt zu helfen.
   const [tipDismissed, setTipDismissed] = useState(false);
-  const learningGoalSkillIds = props.learningGoalSkillIds ?? new Set<string>();
+  const learningGoalSkillIdsSafe = learningGoalSkillIds ?? new Set<string>();
 
   useEffect(() => {
     setIndex(0);
@@ -4616,7 +4617,7 @@ function FragebogenMethod({
                 const recencyLabel = answer && answer !== "no"
                   ? answer.recency === "aktuell" ? "aktuell" : "vor einiger Zeit"
                   : "";
-                const isGoal = learningGoalSkillIds.has(s.skill_id);
+                const isGoal = learningGoalSkillIdsSafe.has(s.skill_id);
                 return (
                   <div key={s.esco_uri} style={{ padding: "12px 13px", borderRadius: "14px", border: "1px solid var(--border-soft)", background: "var(--surface, #fff)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>

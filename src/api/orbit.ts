@@ -56,6 +56,26 @@ export interface CourseRecommendation {
    * nie ob ein Kurs überhaupt auftaucht.
    */
   preference_match?: number;
+  /**
+   * Voraussetzungs-Check (siehe checkPrerequisites()/QualificationProfile in
+   * courseMatcher.ts, 22.09. — Rückmeldung "es muss auch auf Voraussetzungen
+   * bei den Kursen drauf eingegangen werden"): ob die im "Präferenzen"-
+   * Schritt erfasste Ausgangslage (Bildungsstand/Berufserfahrung/
+   * Sprachniveau) zu den Mindestanforderungen des Kurses passt.
+   * "erfuellt" = keine Mindestanforderung gesetzt ODER alle erfüllt,
+   * "unklar" = kein Profil angegeben ODER Kurs hat eine Anforderung, zu der
+   * die Person nichts angegeben hat (wird NIE als "nicht erfüllt" gewertet —
+   * fehlende Angabe ist kein Widerspruch, siehe "keine erfundenen Fakten"),
+   * "nicht_erfuellt" = mindestens eine konkrete Anforderung wird nachweislich
+   * nicht erfüllt (siehe prerequisite_unmet für welche). Beeinflusst nur die
+   * Reihenfolge (ein Tiebreak wie preference_match), NIE ob ein Kurs
+   * überhaupt angezeigt wird — die Person entscheidet informiert selbst.
+   * Nur gesetzt, wenn der Kurs überhaupt eine Mindestanforderung hat UND der
+   * Aufruf mit einem Profil erfolgte.
+   */
+  prerequisite_status?: "erfuellt" | "unklar" | "nicht_erfuellt";
+  /** Konkrete, für die Person lesbare Gründe, siehe prerequisite_status. */
+  prerequisite_unmet?: string[];
 }
 
 export interface CourseMatchResponse {
@@ -144,6 +164,25 @@ export interface LeadCreateRequest {
    * nicht kennt, ignoriert es einfach.
    */
   funding_preference?: string | null;
+  /**
+   * Ausgangslage der Person (Version 41, 22.09. — Rückmeldung "es muss auch
+   * auf Voraussetzungen bei den Kursen drauf eingegangen werden"), ebenfalls
+   * im "Präferenzen"-Schritt abgefragt (siehe QUALIFICATION_OPTIONS/
+   * EXPERIENCE_OPTIONS/GERMAN_LEVEL_OPTIONS in JourneyPage.tsx), optional
+   * (null, wenn übersprungen) — genau wie employment_type/work_location
+   * oben dient das zwei Zwecken: (1) Grundlage für den Voraussetzungs-Check
+   * gegen die Mindestanforderungen des gewählten Kurses (siehe
+   * checkPrerequisites() in courseMatcher.ts), (2) Zusatzinformation für den
+   * Bildungsträger im Dashboard, auch wenn kein Kurs eine Anforderung dazu
+   * hat. qualification_level: "keine" | "berufsausbildung" | "studium".
+   * experience_years: grober, ehrlicher Richtwert (Untergrenze des gewählten
+   * Buckets, siehe EXPERIENCE_OPTIONS) — NIE eine erfundene Genauzahl.
+   * german_level: CEFR-Code ("A2"/"B2"/"C2", ebenfalls Bucket-Untergrenze).
+   * Optional/additiv wie funding_preference oben.
+   */
+  qualification_level?: string | null;
+  experience_years?: number | null;
+  german_level?: string | null;
   /**
    * DSGVO-Nachweis der Einwilligung zur Speicherung der Kontakt-/Bewerberdaten
    * (Version 28). Art. 7 Abs. 1 DSGVO verlangt, dass der Verantwortliche eine
@@ -243,6 +282,14 @@ export interface LeadResponse {
    *  Übersicht, ob der Person eine Förderung wichtig war. Optional/additiv
    *  wie desired_start/employment_type/work_location. */
   funding_preference?: string | null;
+  /** Siehe qualification_level/experience_years/german_level in
+   *  LeadCreateRequest oben — Ausgangslage der Person für die Dashboard-
+   *  Übersicht UND Grundlage des Voraussetzungs-Checks (siehe
+   *  recommended_course.prerequisite_status/-unmet). Optional/additiv wie
+   *  funding_preference. */
+  qualification_level?: string | null;
+  experience_years?: number | null;
+  german_level?: string | null;
   /** Manuell im Dashboard gesetzt (Version 21, siehe setLeadConsultationCompleted
    *  unten), sobald das angefragte Beratungsgespräch tatsächlich stattgefunden
    *  hat — genau dasselbe Muster wie booked/booked_at oben, nur fürs
@@ -508,6 +555,23 @@ export interface OrbitCourse {
    * Kurs verhält sich dann wie bisher (ein einzelner Termin aus starts_at).
    */
   sessions?: CourseSession[] | null;
+  /**
+   * Strukturierte Kurs-Voraussetzungen (additiv zu target_group, das als
+   * Freitext-Beschreibung bestehen bleibt) — Grundlage für den
+   * Voraussetzungs-Abgleich in checkPrerequisites() (courseMatcher.ts).
+   * Jedes Feld ist einzeln optional und wird nur geprüft, wenn sowohl der
+   * Kurs ALS AUCH die Person dazu eine Angabe gemacht haben; fehlt eine der
+   * beiden Seiten, ist der Status "unklar", NIEMALS "nicht erfüllt"
+   * (keine erfundenen Fakten). min_qualification_level: siehe
+   * QualificationLevel oben. min_experience_years: Mindestjahre einschlägiger
+   * Berufserfahrung, die der Kurs voraussetzt. required_language_level:
+   * CEFR-Stufe (z.B. "B2") als geforderte Deutschkenntnis — Freitext statt
+   * enum, weil auch andere Sprachen/Kombinationen vorkommen können, aber in
+   * der Praxis meist "A1".."C2".
+   */
+  min_qualification_level?: QualificationLevel | null;
+  min_experience_years?: number | null;
+  required_language_level?: string | null;
 }
 
 /**
@@ -616,6 +680,17 @@ export type FundingType = "bildungsgutschein" | "aufstiegs_bafoeg" | "laenderfoe
 export type QualificationType = "seminarzertifikat" | "lehrgangszertifikat" | "ihk_pruefung" | "sonstiger_abschluss";
 /** Siehe ausführlichen Kommentar an course_category/OrbitCourse oben. */
 export type CourseCategory = "zertifikat" | "weiterbildung" | "studium" | "seminar" | "sonstiges";
+/**
+ * Mindest-Vorbildung, die ein Kurs voraussetzt — bewusst nur drei grobe,
+ * ehrliche Stufen statt eines Freitextfelds, damit sie tatsächlich mit der
+ * Selbstauskunft der Person (siehe qualification_level an
+ * LeadCreateRequest/LeadResponse) verglichen werden können. "keine" = keine
+ * formale Vorbildung nötig, "berufsausbildung" = abgeschlossene
+ * Berufsausbildung/vergleichbar vorausgesetzt, "studium" = (Fach-)Hochschulabschluss
+ * vorausgesetzt. Fehlt das Feld an einem Kurs, wird NICHTS unterstellt (siehe
+ * checkPrerequisites() in courseMatcher.ts) — kein erfundenes "keine Voraussetzung".
+ */
+export type QualificationLevel = "keine" | "berufsausbildung" | "studium";
 
 export interface CourseListResponse {
   tenant_id: string;
@@ -669,6 +744,10 @@ export interface CourseUpsertRequest {
   course_category?: CourseCategory | null;
   /** Siehe sessions/CourseSession in OrbitCourse oben. */
   sessions?: CourseSession[] | null;
+  /** Siehe min_qualification_level/min_experience_years/required_language_level in OrbitCourse oben. */
+  min_qualification_level?: QualificationLevel | null;
+  min_experience_years?: number | null;
+  required_language_level?: string | null;
 }
 
 // ---------- Test-Tracking (POST /api/v1/orbit/tests, .../recommendation) ----------
@@ -826,6 +905,101 @@ export function fetchDepthAnalysis(
   return requestJson<DepthAnalysisResponse>(depthApiBase, apiKey, "", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+// ---------- Adaptives KI-Kompetenz-Interview (mode: "interview_turn" auf
+// derselben "cv-depth-analysis"-Function, siehe depthAnalysisBaseUrl oben -
+// KEIN separates Deployment) ----------
+//
+// Ergaenzt (22.09.2026) die reine Lebenslauf-Tiefenanalyse oben um einen
+// echten, mehrstufigen KI-Dialog: statt eines starren Fragenkatalogs stellt
+// ein KI-Agent pro Runde GENAU EINE Frage zu GENAU EINEM offenen Ziel-Skill,
+// wertet die vorherige Antwort aus (woertliches Zitat-Firewall wie bei der
+// CV-Analyse, nur gegen die eigene Antwort statt gegen den Lebenslauf
+// geprueft) und waehlt die naechste Frage abhaengig vom bisherigen Verlauf.
+// Additiv zur bestehenden Tiefenanalyse - "analyze" (ohne mode) bleibt exakt
+// wie zuvor, "interview_turn" ist ein komplett separater, neuer Zweig auf
+// Backend-Seite (siehe INTERVIEW MODE Kommentarblock in
+// cv-depth-analysis/index.ts).
+
+/** Eine bereits abgeschlossene Frage-Antwort-Runde des Interviews. */
+export interface InterviewTurnRecord {
+  /** ESCO-URI des Skills, zu dem `question` gestellt wurde. `null` nur bei
+   * einer noch nicht zugeordneten Runde (sollte im Normalfall nicht
+   * vorkommen). */
+  esco_uri: string | null;
+  question: string;
+  /** Freitext-Antwort der Person auf `question`. */
+  answer: string;
+}
+
+export interface InterviewTurnRequest {
+  target_role_id: string;
+  target_role_name?: string;
+  /** Wie bei DepthAnalysisRequest: nur für den synthetischen bereich:*-Pfad
+   * nötig. */
+  skill_uris?: string[];
+  skill_weights?: Record<string, number>;
+  /** Optionale Teilmenge der Rollen-Skills, auf die sich das Interview
+   * beschraenkt (z.B. nur die Skills mit bisher unklarem CV-Nachweis).
+   * Fehlt dieses Feld, interviewt das Backend ueber alle geladenen
+   * Rollen-Skills. */
+  candidate_esco_uris?: string[];
+  /** Alle bisherigen Runden inkl. der zuletzt gegebenen Antwort, aelteste
+   * zuerst. Beim allerersten Aufruf (nur die Eroeffnungsfrage anfordern):
+   * leeres Array. */
+  conversation: InterviewTurnRecord[];
+}
+
+/** Ergebnis fuer GENAU EINEN Skill aus EINER Interview-Antwort - dieselbe
+ * Kernform wie DepthSkillAssessment (deterministisch identisches
+ * Scoring-Modell auf Backend-Seite), plus `source` zur Unterscheidung in der
+ * UI, falls CV- und Interview-Ergebnisse gemeinsam angezeigt werden. */
+export interface InterviewSkillAssessment extends DepthSkillAssessment {
+  source: "interview";
+}
+
+export interface InterviewTurnResponse {
+  tenant_id: string;
+  target_role_id: string;
+  target_role_name: string;
+  model: string;
+  analysis_version: string;
+  mode: "interview_turn";
+  /** 1-basierter Index der gerade beantworteten bzw. als naechstes zu
+   * stellenden Frage. */
+  turn_index: number;
+  /** Bewertung der zuletzt gegebenen Antwort (letztes Element in
+   * `conversation` des Requests) - `null` beim allerersten Aufruf, da noch
+   * keine Antwort vorliegt, oder wenn die Bewertung fehlgeschlagen ist
+   * (Interview laeuft dann trotzdem weiter, siehe Backend-Kommentar). */
+  assessed_skill: InterviewSkillAssessment | null;
+  /** Naechste zu stellende Frage - `null`, wenn `interview_complete` true
+   * ist. */
+  next_question: { esco_uri: string; question: string } | null;
+  /** true, wenn keine weiteren Fragen mehr folgen (alle Ziel-Skills
+   * abgedeckt, KI-Einschaetzung "genug Substanz" oder `max_turns`
+   * erreicht). */
+  interview_complete: boolean;
+  max_turns: number;
+  quality: {
+    request_id: string;
+    duration_ms: number;
+  };
+}
+
+/** Ruft die "cv-depth-analysis"-Function im Interview-Modus auf - gleicher
+ * Endpunkt wie fetchDepthAnalysis, nur mit `mode: "interview_turn"` im
+ * Payload statt `text`. */
+export function fetchInterviewTurn(
+  depthApiBase: string,
+  apiKey: string,
+  payload: InterviewTurnRequest
+): Promise<InterviewTurnResponse> {
+  return requestJson<InterviewTurnResponse>(depthApiBase, apiKey, "", {
+    method: "POST",
+    body: JSON.stringify({ ...payload, mode: "interview_turn" }),
   });
 }
 

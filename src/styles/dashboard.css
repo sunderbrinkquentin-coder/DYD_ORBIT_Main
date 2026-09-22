@@ -774,6 +774,14 @@
   grid-template-columns: 1fr 1fr;
   gap: 14px;
 }
+/* Wie .row2 oben, aber für drei Felder nebeneinander (Version 39, 22.09. —
+   die drei strukturierten Voraussetzungs-Felder im Kursformular:
+   Mindest-Vorbildung/Berufserfahrung/Sprachniveau). */
+.row3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
+}
 /* Checkbox-Zeile im Lead-Formular (Version 22), z.B. "Beratungsgespräch
    gewünscht" — eigener, kompakter Stil statt der vollen .lf-field-Breite,
    passend zu den anderen Formularfeldern darüber. */
@@ -2221,7 +2229,8 @@
   .tile-row {
     grid-template-columns: 1fr;
   }
-  .row2 {
+  .row2,
+  .row3 {
     grid-template-columns: 1fr;
   }
   .main-inner {

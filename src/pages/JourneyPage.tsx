@@ -62,6 +62,31 @@ import "../styles/journey.css";
 
 type StepKey = "ziel" | "praeferenzen" | "bereich" | "zielrolle" | "skills" | "motivation" | "gap" | "kurs";
 
+interface StepConfig {
+  key: StepKey;
+  label: string;
+  subtitle: string;
+}
+
+interface SkillItem {
+  id: string;
+  label: string;
+  matched: boolean;
+  weight: number;
+  matchedScore: number | null;
+  source: "gap" | "manual" | "questionnaire";
+}
+
+interface CourseItem {
+  id: string;
+  name: string;
+  provider?: string | null;
+  durationWeeks: number;
+  gapPercentage: number;
+  gapCount: number;
+  richnessScore: number;
+}
+
 /** Nur fuer den gefuehrten Rundgang (JourneyTour, siehe runDemoAnalysis
  * unten): Rolle + Beispielprofil, damit die Schritte "Skill-Gap" und
  * "Kurs" im Rundgang auch OHNE vorherigen echten Durchlauf etwas zu zeigen
@@ -151,9 +176,9 @@ function pickShowcaseCourses(allCourses: OrbitCourse[], limit: number): CourseRe
 
 /** Der Teil der Journey, der in beiden Pfaden identisch ist, sobald die
  * Zielrolle feststeht. */
-const CORE_STEPS: { key: StepKey; label: string }[] = [
-  { key: "zielrolle", label: "Zielrolle" },
-  { key: "skills", label: "Profil" },
+const CORE_STEPS: StepConfig[] = [
+  { key: "zielrolle", label: "Zielrolle", subtitle: "Definiere, wohin du möchtest." },
+  { key: "skills", label: "Profil", subtitle: "Zeig uns, was du bereits kannst." },
   // Kurze Motivations-Zwischenseite (22.09.2026, ähnlich Taxfix & Co.)
   // zwischen Profil-Eingabe und der (dichten) Match-Auswertung — bewusst ein
   // ECHTER, gezählter Schritt im Stepper statt eines flüchtigen Overlays:
@@ -161,9 +186,9 @@ const CORE_STEPS: { key: StepKey; label: string }[] = [
   // 17.09.": zu schnelles Auto-Weiterspringen lässt einen Schritt nur kurz
   // aufblitzen statt sichtbar zu sein). Der Übergang wartet deshalb auf
   // einen aktiven Klick (siehe MotivationStep), kein Auto-Advance.
-  { key: "motivation", label: "Geschafft" },
-  { key: "gap", label: "Match" },
-  { key: "kurs", label: "Weiterbildung" },
+  { key: "motivation", label: "Geschafft", subtitle: "Dein Profil ist bereit." },
+  { key: "gap", label: "Match", subtitle: "Sieh, wo du schon stark bist." },
+  { key: "kurs", label: "Weiterbildung", subtitle: "Finde den nächsten passenden Schritt." },
 ];
 
 /** Die urspruengliche Journey (Nutzer kennt seine Zielrolle bereits), jetzt
@@ -172,9 +197,9 @@ const CORE_STEPS: { key: StepKey; label: string }[] = [
  * Schritt (Version 24: Beschäftigungsart/Arbeitsort/Startzeitpunkt, siehe
  * PraeferenzenStep). Wird 1:1 weiterverwendet, wenn im Einstiegsschritt "Ja"
  * gewaehlt wird. */
-const BASE_STEPS: { key: StepKey; label: string }[] = [
-  { key: "ziel", label: "Zielbild" },
-  { key: "praeferenzen", label: "Alltag" },
+const BASE_STEPS: StepConfig[] = [
+  { key: "ziel", label: "Zielbild", subtitle: "Was möchtest du als Nächstes erreichen?" },
+  { key: "praeferenzen", label: "Alltag", subtitle: "Was soll zu deinem Alltag passen?" },
   ...CORE_STEPS,
 ];
 
@@ -182,10 +207,10 @@ const BASE_STEPS: { key: StepKey; label: string }[] = [
  * kennen: nach "Ziel" und "Präferenzen" zusaetzlich ein "Bereich"-Schritt vor
  * der (dann vorgefilterten) Zielrollen-Auswahl. Danach ist der Ablauf
  * identisch zu BASE_STEPS. */
-const WITH_BEREICH_STEPS: { key: StepKey; label: string }[] = [
-  { key: "ziel", label: "Zielbild" },
-  { key: "praeferenzen", label: "Alltag" },
-  { key: "bereich", label: "Entdeckung" },
+const WITH_BEREICH_STEPS: StepConfig[] = [
+  { key: "ziel", label: "Zielbild", subtitle: "Was möchtest du als Nächstes erreichen?" },
+  { key: "praeferenzen", label: "Alltag", subtitle: "Was soll zu deinem Alltag passen?" },
+  { key: "bereich", label: "Entdeckung", subtitle: "Welcher Bereich passt zu dir?" },
   ...CORE_STEPS,
 ];
 
@@ -276,41 +301,38 @@ const GAP_SKILL_PREVIEW_LIMIT = 6;
 
 function personalizeCourseOrder(
   courses: CourseRecommendation[],
-  goal: string | null,
+  targetGoal: string | null,
+  allCourses: OrbitCourse[] = [],
 ): CourseRecommendation[] {
-  if (!goal || courses.length < 2) return courses;
-  // Kurse sind vom Backend bereits nach covers_gap_percentage absteigend
-  // sortiert — Gleichstand-Gruppen entstehen deshalb immer aus direkt
-  // aufeinanderfolgenden Eintraegen.
-  const groups: CourseRecommendation[][] = [];
-  for (const c of courses) {
-    const lastGroup = groups[groups.length - 1];
-    const groupHead = lastGroup?.[0];
-    if (groupHead && Math.abs(groupHead.covers_gap_percentage - c.covers_gap_percentage) < GOAL_TIE_EPSILON) {
-      lastGroup.push(c);
-    } else {
-      groups.push([c]);
-    }
-  }
-  const secondaryScore = (c: CourseRecommendation): number => {
-    switch (goal) {
+  if (courses.length < 2) return courses;
+
+  const richness = (course: CourseRecommendation): number => {
+    const fullCourse = allCourses.find((item) => item.course_id === course.course_id);
+    return fullCourse ? courseRichnessScore(fullCourse) : 0;
+  };
+
+  const goalScore = (course: CourseRecommendation): number => {
+    switch (targetGoal) {
       case "knowhow":
-        return c.duration_weeks; // mehr Wochen = mehr Tiefe
+        return course.duration_weeks;
       case "weiterkommen":
-        return -c.duration_weeks; // bei gleichem Skill-Match: schneller weiterkommen
+        return -course.duration_weeks;
       case "neuorientierung":
-        return c.covers_gap_count; // breitere Skill-Grundlage
+        return course.covers_gap_count;
       default:
-        // "sicherheit" braucht location_mode, "fuehrung" braucht einen
-        // Textabgleich auf Kursname/-beschreibung — beide siehe
-        // goalFitReason, hier bewusst keine Umsortierung anhand erfundener
-        // Kriterien. Die eigentliche Ziel-Gewichtung fuer "fuehrung"
-        // passiert bereits vorgelagert in buildBereichRole() (gapAnalysis.ts)
-        // ueber das echte Rollen-Level, nicht erst hier beim Tie-Break.
         return 0;
     }
   };
-  return groups.flatMap((group) => (group.length > 1 ? [...group].sort((a, b) => secondaryScore(b) - secondaryScore(a)) : group));
+
+  return [...courses].sort((a, b) => {
+    const richnessDifference = richness(b) - richness(a);
+    if (richnessDifference !== 0) return richnessDifference;
+
+    const goalDifference = goalScore(b) - goalScore(a);
+    if (goalDifference !== 0) return goalDifference;
+
+    return b.covers_gap_percentage - a.covers_gap_percentage;
+  });
 }
 
 /** Liefert einen kurzen, wahren Erklaerungssatz, warum GENAU dieser Kurs zum
@@ -547,7 +569,7 @@ function refineGapWithDepthAnalysis(
  * Einordnungswegen oben. Bewusst ohne Wirkung, wenn der Skill schon den
  * Ziel-Status hat (z.B. Doppelklick) - liefert dann einfach dasselbe Objekt
  * zurück, keine unnötige Neuberechnung/kein unnötiges Re-Render. */
-function moveSkillManually(gapResult: GapAnalysisResponse, escoUri: string, toCovered: boolean): GapAnalysisResponse {
+function applyManualSkillMove(gapResult: GapAnalysisResponse, escoUri: string, toCovered: boolean): GapAnalysisResponse {
   const allSkills = [...gapResult.covered_skills, ...gapResult.gap_skills];
   const target = allSkills.find((s) => s.esco_uri === escoUri);
   if (!target || target.covered === toCovered) return gapResult;
@@ -1289,7 +1311,9 @@ export function JourneyPage({
   const demoRunIdRef = useRef(0);
   // Einstieg: weiss die Person schon, was ihre Traumposition ist? null = noch
   // nicht beantwortet (zeigt IntroStep statt Stepper/Panel-Schritten).
-  const [knowsRole, setKnowsRole] = useState<boolean | null>(null);
+  const [knownRole, setKnownRole] = useState<boolean | null>(null);
+  const knowsRole = knownRole;
+  const setKnowsRole = setKnownRole;
   // Im RoleSuggestStep angeklickte Skills (nur relevant, wenn
   // knowsRole === false) — bewusst nicht auf den Schritt selbst beschraenkt
   // (JourneyPage-State statt lokalem Step-State), damit die Auswahl beim
@@ -1306,9 +1330,13 @@ export function JourneyPage({
   }
   // Motivationale Qualifizierung (Version 16, siehe GOAL_OPTIONS) — direkt
   // nach der Einstiegsfrage abgefragt, gilt fuer die ganze restliche Journey.
-  const [careerGoal, setCareerGoal] = useState<string | null>(null);
+  const [selectedGoal, setSelectedGoal] = useState<string | null>(null);
+  const careerGoal = selectedGoal;
+  const setCareerGoal = setSelectedGoal;
   // Fortschritt. -1 = Einstiegsfrage (Intro), noch kein Schritt aktiv.
-  const [current, setCurrent] = useState(-1);
+  const [currentStepIndex, setCurrentStepIndex] = useState<number>(-1);
+  const current = currentStepIndex;
+  const setCurrent = setCurrentStepIndex;
   const [done, setDone] = useState(false);
   const widgetBodyRef = useRef<HTMLDivElement>(null);
   // Welche Schritt-Sequenz gerade gilt, haengt davon ab, ob die Zielrolle
@@ -1561,6 +1589,7 @@ async function runDemoAnalysis() {
   const [gapResult, setGapResult] = useState<GapAnalysisResponse | null>(null);
   const [gapBusy, setGapBusy] = useState(false);
   const [gapError, setGapError] = useState<string | null>(null);
+  const [skills, setSkills] = useState<SkillItem[]>([]);
   // KI-Tiefenanalyse (Version 19): reine Anreicherung der schnellen
   // Fuzzy-Gap-Analyse oben um woertliche Belege pro Skill - nach esco_uri
   // nachschlagbar. Laeuft NACH dem schnellen Gap-Ergebnis, bewusst
@@ -1593,6 +1622,7 @@ async function runDemoAnalysis() {
   const [manualSkillUris, setManualSkillUris] = useState<Set<string>>(new Set());
   const manualSkillUrisRef = useRef<Set<string>>(new Set());
   const [courseResult, setCourseResult] = useState<CourseMatchResponse | null>(null);
+  const [courses, setCourses] = useState<CourseItem[]>([]);
   // Aktive Kursauswahl im Kurs-Schritt (Version 15): standardmäßig die beste
   // Empfehlung, die Person kann aber bewusst einen der Alternativ-Kurse
   // wählen. Macht die spätere Anfrage konkreter als "irgendeine Empfehlung"
@@ -2185,7 +2215,19 @@ async function runDemoAnalysis() {
       manualSkillUrisRef.current = next;
       return next;
     });
-    setGapResult((current) => (current ? moveSkillManually(current, escoUri, toCovered) : current));
+    setGapResult((current) => (current ? applyManualSkillMove(current, escoUri, toCovered) : current));
+  }
+
+  /**
+   * Schaltet einen Skill mit genau einem Klick zwischen "Vorhanden" und
+   * "Skill-Lücke" um. Die Funktion arbeitet bewusst nur mit der Skill-ID;
+   * der Zielstatus wird aus dem aktuell gespeicherten Zustand abgeleitet.
+   */
+  function moveSkillManually(id: string): void {
+    const currentSkill = skills.find((skill) => skill.id === id);
+    if (!currentSkill) return;
+    const nextMatched = !currentSkill.matched;
+    handleMoveSkill(id, nextMatched);
   }
   /** Version 26 — zweistufig (lokal, dann Backend-Fallback), siehe
    *  ausfuehrlichen Kommentar an loadRoleSkills oben: derselbe Grund
@@ -2920,6 +2962,58 @@ async function runDemoAnalysis() {
       setEarlyCaptureBusy(false);
     }
   }
+  useEffect(() => {
+    const nextSkills: SkillItem[] = gapResult
+      ? [...gapResult.covered_skills, ...gapResult.gap_skills].map((skill) => ({
+          id: skill.esco_uri,
+          label: skill.preferred_label,
+          matched: skill.covered,
+          weight: skill.weight,
+          matchedScore: skill.matched_score,
+          source: manualSkillUris.has(skill.esco_uri) ? "manual" : "gap",
+        }))
+      : [];
+    setSkills(nextSkills);
+  }, [gapResult, manualSkillUris]);
+
+  useEffect(() => {
+    if (!courseResult?.recommended_courses?.length) {
+      setCourses([]);
+      return;
+    }
+
+    const ordered = personalizeCourseOrder(
+      courseResult.recommended_courses,
+      selectedGoal,
+      allCourses,
+    );
+
+    const nextCourses: CourseItem[] = ordered.map((course) => {
+      const fullCourse = allCourses.find((item) => item.course_id === course.course_id);
+      return {
+        id: course.course_id,
+        name: course.course_name,
+        provider: course.provider ?? fullCourse?.provider ?? null,
+        durationWeeks: course.duration_weeks,
+        gapPercentage: course.covers_gap_percentage,
+        gapCount: course.covers_gap_count,
+        richnessScore: fullCourse ? courseRichnessScore(fullCourse) : 0,
+      };
+    });
+
+    setCourses(nextCourses);
+
+    const currentIds = courseResult.recommended_courses.map((course) => course.course_id).join("|");
+    const nextIds = ordered.map((course) => course.course_id).join("|");
+    if (currentIds !== nextIds) {
+      setCourseResult((currentResult) =>
+        currentResult
+          ? { ...currentResult, recommended_courses: ordered }
+          : currentResult,
+      );
+    }
+  }, [courseResult, selectedGoal, allCourses]);
+
   const topCourse: CourseRecommendation | undefined = courseResult?.recommended_courses?.[0];
   // Die Person kann im Kurs-Schritt bewusst einen Alternativ-Kurs statt der
   // Top-Empfehlung wählen (siehe selectedCourseId) — ab hier zählt für Pitch,

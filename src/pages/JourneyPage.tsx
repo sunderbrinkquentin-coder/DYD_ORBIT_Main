@@ -56,6 +56,7 @@ import {
   QUALIFICATION_LABELS,
 } from "../data/courseMatcher";
 import { BereichBadges, CourseBadgeRow, daysUntilCourseStart } from "../data/courseBadges";
+import { ACTIVITY_FIELDS, deriveSkillsFromActivities, getActivity, suggestedProficiency } from "../data/activitiesCatalog";
 import { AnimatedNumber } from "../components/AnimatedNumber";
 import { JourneyTour, type JourneyStepKey } from "../components/JourneyTour";
 import "../styles/journey.css";
@@ -883,6 +884,14 @@ interface SkillDepth {
   proficiency: ProficiencyBucket;
   recency: RecencyBucket;
 }
+/** Taetigkeits-Ebene (24.09.2026): ein aus angeklickten Taetigkeiten
+ *  abgeleiteter VORSCHLAG fuer eine Fragebogen-Frage. Wird nur als Hinweis
+ *  angezeigt, nie automatisch als Antwort gesetzt — die Person bestaetigt
+ *  selbst (Projekt-Prinzip "keine erfundenen Fakten"). */
+interface ActivitySuggestion {
+  proficiency: "fortgeschritten" | "grundkenntnisse";
+  sourceLabels: string[];
+}
 
 /**
  * Scoring für die Tiefenabfrage im Fragebogen.
@@ -1599,6 +1608,8 @@ async function runDemoAnalysis() {
     setRoleSkills([]);
     setCheckedSkills(new Set());
     setSkillDepthByUri(new Map());
+    setActivityIds([]);
+    setActivityPickerOpen(false);
     setGapResult(null);
     setDepthByUri(new Map());
     setDepthOverallAssessment(null);
@@ -1662,6 +1673,27 @@ async function runDemoAnalysis() {
   // answerQuizSkill() unten verändert, damit beide States nie auseinander-
   // laufen können.
   const [skillDepthByUri, setSkillDepthByUri] = useState<Map<string, SkillDepth>>(new Map());
+  // Taetigkeits-Ebene (24.09.2026, siehe data/activitiesCatalog.ts):
+  // angeklickte Taetigkeiten gehoeren zur PERSON, nicht zur Zielrolle — sie
+  // bleiben daher bei einem Rollenwechsel bewusst erhalten (anders als
+  // checkedSkills); die Vorschlaege rechnen sich pro Rolle automatisch neu.
+  // activityPickerOpen steuert nur, ob im Fragebogen-Pfad zuerst die
+  // Taetigkeits-Auswahl erscheint (Method bleibt "fragebogen", damit
+  // loadRoleSkills()/submitQuizMethod() unveraendert greifen).
+  const [activityIds, setActivityIds] = useState<string[]>([]);
+  const [activityPickerOpen, setActivityPickerOpen] = useState(false);
+  const activitySuggestionByUri = useMemo(() => {
+    const roleUris = new Set<string>(roleSkills.map((s) => s.esco_uri));
+    const derived = deriveSkillsFromActivities(activityIds, roleUris);
+    const byUri = new Map<string, ActivitySuggestion>();
+    for (const [uri, d] of derived) {
+      byUri.set(uri, {
+        proficiency: suggestedProficiency(d.strength),
+        sourceLabels: d.source_activity_ids.map((id) => getActivity(id)?.label).filter((l): l is string => !!l),
+      });
+    }
+    return byUri;
+  }, [activityIds, roleSkills]);
   const [skillsBusy, setSkillsBusy] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   // Gap / Kurs
@@ -2108,6 +2140,13 @@ async function runDemoAnalysis() {
       loadRoleSkills();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [method]);
+  // Taetigkeits-Ebene: verlaesst man den Fragebogen-Pfad auf irgendeinem Weg
+  // (Rollenwechsel setzt method=null, CV-Pfad, Demo-Reset), darf die
+  // Taetigkeits-Auswahl beim naechsten Betreten nicht unerwartet wieder
+  // aufgehen — nur die Karte "Taetigkeiten anklicken" oeffnet sie.
+  useEffect(() => {
+    if (method !== "fragebogen") setActivityPickerOpen(false);
   }, [method]);
   function toggleSkill(uri: string) {
     setCheckedSkills((prev) => {
@@ -3350,6 +3389,11 @@ async function runDemoAnalysis() {
                     showAvatar={showAvatar}
                     avatarName={avatarName}
                     avatarAccentColor={avatarAccentColor}
+                    activityIds={activityIds}
+                    setActivityIds={setActivityIds}
+                    activityPickerOpen={activityPickerOpen}
+                    setActivityPickerOpen={setActivityPickerOpen}
+                    activitySuggestionByUri={activitySuggestionByUri}
                   />
                 )}
                 {stepKey === "motivation" && gapResult && (
@@ -4187,6 +4231,13 @@ interface SkillsMethodStepProps {
   showAvatar: boolean;
   avatarName: string;
   avatarAccentColor: string | undefined;
+  /** Taetigkeits-Ebene (24.09.2026) — Zustand liegt in JourneyPage, siehe
+   *  Kommentar bei activityIds dort. */
+  activityIds: string[];
+  setActivityIds: (ids: string[]) => void;
+  activityPickerOpen: boolean;
+  setActivityPickerOpen: (open: boolean) => void;
+  activitySuggestionByUri: Map<string, ActivitySuggestion>;
 }
 function SkillsMethodStep(props: SkillsMethodStepProps) {
   const { method, setMethod, onBack, targetRoleName, showAvatar, avatarName, avatarAccentColor } = props;
@@ -4199,6 +4250,15 @@ function SkillsMethodStep(props: SkillsMethodStepProps) {
   // zwischen CvMethod/FragebogenMethod erhalten, weil SkillsMethodStep dabei
   // nicht neu gemountet wird (nur method wechselt).
   const [avatarDismissed, setAvatarDismissed] = useState(false);
+  const { activityPickerOpen, setActivityPickerOpen } = props;
+  function openQuiz() {
+    setActivityPickerOpen(false);
+    setMethod("fragebogen");
+  }
+  function openActivities() {
+    setActivityPickerOpen(true);
+    setMethod("fragebogen");
+  }
   if (!method) {
     return (
       <div>
@@ -4233,10 +4293,10 @@ function SkillsMethodStep(props: SkillsMethodStepProps) {
           </div>
           <div
             className="method-card"
-            onClick={() => setMethod("fragebogen")}
+            onClick={openQuiz}
             role="button"
             tabIndex={0}
-            onKeyDown={(e) => handleCardKeyDown(e, () => setMethod("fragebogen"))}
+            onKeyDown={(e) => handleCardKeyDown(e, openQuiz)}
           >
             <div className="method-icon" aria-hidden="true">☑️</div>
             <div className="method-title">Fragebogen</div>
@@ -4245,9 +4305,43 @@ function SkillsMethodStep(props: SkillsMethodStepProps) {
               kannst.
             </div>
           </div>
+          {/* Taetigkeits-Ebene (24.09.2026): volle Breite, damit die dritte
+              Karte im 2-Spalten-Raster nicht allein und halb breit steht. */}
+          <div
+            className="method-card"
+            onClick={openActivities}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => handleCardKeyDown(e, openActivities)}
+            style={{ gridColumn: "1 / -1" }}
+          >
+            <div className="method-icon" aria-hidden="true">👆</div>
+            <div className="method-title">Kein Lebenslauf zur Hand? Tätigkeiten anklicken</div>
+            <div className="method-sub">
+              Tipp an, was du in bisherigen Jobs gemacht hast — ganz ohne Schreiben. Wir leiten daraus Vorschläge für
+              deinen Skill-Check ab.
+            </div>
+          </div>
         </div>
         <ActionsRow onBack={onBack} hideForward />
       </div>
+    );
+  }
+  if (method === "fragebogen" && activityPickerOpen) {
+    return (
+      <ActivityPicker
+        targetRoleName={targetRoleName}
+        activityIds={props.activityIds}
+        setActivityIds={props.setActivityIds}
+        suggestionCount={props.questionSkills.filter((s) => props.activitySuggestionByUri.has(s.esco_uri)).length}
+        questionCount={props.questionSkills.length}
+        loadingRoleSkills={props.loadingRoleSkills}
+        onBack={() => {
+          setActivityPickerOpen(false);
+          setMethod(null);
+        }}
+        onForward={() => setActivityPickerOpen(false)}
+      />
     );
   }
   if (method === "fragebogen") {
@@ -4454,6 +4548,158 @@ function CvMethod({
   );
 }
 /**
+ * Taetigkeits-Ebene, Schritt 2 (24.09.2026): Vorschaltseite des
+ * Fragebogen-Pfads fuer Menschen ohne (aktuellen) Lebenslauf. Zweistufig auf
+ * EINEM Bildschirm: erst Herkunftsfelder antippen ("Wo hast du gearbeitet?"),
+ * dann darunter die Taetigkeiten der geoeffneten Felder. Das Querschnitts-
+ * Feld "verantwortung" erscheint automatisch, sobald ein Feld offen ist —
+ * Fuehrungserfahrung gibt es in jedem Beruf und soll nicht vergessen werden.
+ *
+ * Die Seite setzt KEINE Skills. Sie speichert nur activityIds; daraus werden
+ * in JourneyPage (activitySuggestionByUri) Vorschlaege, die FragebogenMethod
+ * als Hinweis an der passenden Antwort anzeigt. Die Live-Zeile zaehlt ehrlich,
+ * fuer wie viele der tatsaechlich gestellten Kernfragen es einen Vorschlag
+ * gibt — auch wenn das 0 ist (Branchenwechsel), statt etwas zu beschoenigen.
+ */
+function ActivityPicker({
+  targetRoleName,
+  activityIds,
+  setActivityIds,
+  suggestionCount,
+  questionCount,
+  loadingRoleSkills,
+  onBack,
+  onForward,
+}: {
+  targetRoleName: string | null;
+  activityIds: string[];
+  setActivityIds: (ids: string[]) => void;
+  suggestionCount: number;
+  questionCount: number;
+  loadingRoleSkills: boolean;
+  onBack: () => void;
+  onForward: () => void;
+}) {
+  const role = targetRoleName || "deine Zielrolle";
+  const originFields = ACTIVITY_FIELDS.filter((f) => f.field_key !== "verantwortung");
+  const crossField = ACTIVITY_FIELDS.find((f) => f.field_key === "verantwortung");
+  // Beim erneuten Betreten (z. B. nach Rollenwechsel) die Felder wieder
+  // oeffnen, in denen schon Taetigkeiten gewaehlt sind.
+  const [openFields, setOpenFields] = useState<Set<string>>(
+    () =>
+      new Set(
+        originFields.filter((f) => f.activities.some((a) => activityIds.includes(a.activity_id))).map((f) => f.field_key)
+      )
+  );
+  const selected = new Set(activityIds);
+
+  function toggleField(key: string) {
+    setOpenFields((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+  function toggleActivity(id: string) {
+    setActivityIds(selected.has(id) ? activityIds.filter((a) => a !== id) : [...activityIds, id]);
+  }
+
+  const visibleFields = [
+    ...originFields.filter((f) => openFields.has(f.field_key)),
+    ...(openFields.size > 0 && crossField ? [crossField] : []),
+  ];
+
+  let summary: string;
+  if (activityIds.length === 0) {
+    summary = "Noch nichts ausgewählt — du kannst auch ohne Auswahl direkt zum Skill-Check.";
+  } else if (loadingRoleSkills) {
+    summary = `${activityIds.length} Tätigkeiten ausgewählt — wir gleichen sie gerade mit ${role} ab …`;
+  } else if (suggestionCount > 0) {
+    summary = `${activityIds.length} Tätigkeiten ausgewählt ✓ Daraus haben wir Vorschläge für ${suggestionCount} von ${questionCount} Fragen zu ${role}. Du bestätigst jeden Vorschlag selbst.`;
+  } else {
+    summary = `${activityIds.length} Tätigkeiten ausgewählt. Sie passen noch zu keiner der Kernfragen für ${role} — bei einem Wechsel in einen neuen Bereich ist das ganz normal. Im Skill-Check fragen wir dann alles direkt ab.`;
+  }
+
+  return (
+    <div>
+      <button type="button" className="method-switch" onClick={onBack} style={{ marginBottom: "10px" }}>
+        ← Andere Methode wählen
+      </button>
+      <JourneyStepHeading
+        step="06"
+        kicker="DEIN PROFIL"
+        title="Was hast du schon gemacht?"
+        description="Auch Aushilfsjobs, Praktika und Ehrenamt zählen. Wähle zuerst, wo du gearbeitet hast — dann tippst du an, was du dort gemacht hast."
+      />
+
+      <div className="field-label" style={{ marginBottom: "8px" }}>1. Wo hast du schon gearbeitet?</div>
+      <div className="quiz-extra-chips" role="group" aria-label="Arbeitsfelder">
+        {originFields.map((f) => {
+          const isOpen = openFields.has(f.field_key);
+          return (
+            <button
+              key={f.field_key}
+              type="button"
+              className={`quiz-extra-chip ${isOpen ? "checked" : ""}`}
+              onClick={() => toggleField(f.field_key)}
+              aria-pressed={isOpen}
+            >
+              <span aria-hidden="true">{f.icon}</span>
+              {f.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {visibleFields.length > 0 && (
+        <div style={{ marginTop: "18px" }}>
+          <div className="field-label" style={{ marginBottom: "8px" }}>2. Was hast du dort gemacht?</div>
+          {visibleFields.map((f) => (
+            <div key={f.field_key} style={{ marginBottom: "14px" }}>
+              <div style={{ fontSize: "13px", fontWeight: 800, marginBottom: "6px" }}>
+                <span aria-hidden="true">{f.icon}</span> {f.label}
+              </div>
+              <div className="quiz-list" style={{ maxHeight: "none", overflow: "visible" }}>
+                {f.activities.map((a) => {
+                  const isChecked = selected.has(a.activity_id);
+                  return (
+                    <div
+                      key={a.activity_id}
+                      className={`quiz-item ${isChecked ? "checked" : ""}`}
+                      onClick={() => toggleActivity(a.activity_id)}
+                      role="checkbox"
+                      aria-checked={isChecked}
+                      tabIndex={0}
+                      onKeyDown={(e) => handleCardKeyDown(e, () => toggleActivity(a.activity_id))}
+                    >
+                      <span className="check-box" aria-hidden="true">✓</span>
+                      <span className="quiz-item-label">{a.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div
+        aria-live="polite"
+        style={{ marginTop: "14px", padding: "11px 13px", borderRadius: "12px", background: "rgba(127,127,127,.045)", fontSize: "13px", lineHeight: 1.5 }}
+      >
+        {summary}
+      </div>
+
+      <ActionsRow
+        onBack={onBack}
+        forwardLabel={activityIds.length > 0 ? "Weiter zum Skill-Check →" : "Ohne Auswahl weiter →"}
+        onForward={onForward}
+      />
+    </div>
+  );
+}
+/**
  * Teil 2 (22.09.2026) — vollständig neu gegenüber der Ja/Nein-Karte:
  *
  * - Statt zwei Buttons eine 3×3-Matrix (Grad × Aktualität, siehe
@@ -4489,6 +4735,7 @@ function FragebogenMethod({
   avatarName,
   avatarAccentColor,
   learningGoalSkillIds,
+  activitySuggestionByUri,
 }: SkillsMethodStepProps) {
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, SkillDepth | "no">>({});
@@ -4698,6 +4945,10 @@ function FragebogenMethod({
                             {isChecked ? "✓" : ""}
                           </span>
                           {s.preferred_label}
+                          {/* Taetigkeits-Vorschlag: nur Markierung, kein Vorab-Haken. */}
+                          {!isChecked && activitySuggestionByUri.has(s.esco_uri) && (
+                            <span title="Passt zu deinen angeklickten Tätigkeiten" aria-label="Vorschlag aus deinen Tätigkeiten">💡</span>
+                          )}
                         </button>
                       );
                     })}
@@ -4761,6 +5012,11 @@ function FragebogenMethod({
 
       {(() => {
         const context = skillQuestionContext(skill, targetRoleName);
+        // Taetigkeits-Vorschlag (24.09.2026): nur Hinweis + Markierung, nie
+        // vorausgewaehlt. "direkt" -> "solid", "teilweise" -> "basic"; bewusst
+        // nie "strong" (Expertise laesst sich aus einer Taetigkeit nicht ableiten).
+        const suggestion = activitySuggestionByUri.get(skill.esco_uri);
+        const suggestedOptionKey = suggestion ? (suggestion.proficiency === "fortgeschritten" ? "solid" : "basic") : null;
         return (
           <div key={skill.esco_uri} className="quiz-depth-card" style={{ padding: "24px", borderRadius: "24px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "flex-start", marginBottom: "18px" }}>
@@ -4777,6 +5033,16 @@ function FragebogenMethod({
             <div className="hint" style={{ fontSize: "14px", lineHeight: 1.55, marginBottom: "6px" }}>{context.body}</div>
             <div style={{ fontSize: "12px", opacity: .62, marginBottom: "20px" }}>{context.signal}</div>
 
+            {suggestion && (
+              <div
+                style={{ marginBottom: "12px", padding: "10px 12px", borderRadius: "12px", background: "rgba(47,143,214,.07)", fontSize: "13px", lineHeight: 1.5 }}
+              >
+                💡 Du hast angegeben: „{suggestion.sourceLabels.join("“, „")}“. Deshalb schlagen wir{" "}
+                <b>{suggestedOptionKey === "solid" ? "„Ich habe damit gearbeitet“" : "„Ich kenne die Grundlagen“"}</b> vor —
+                tipp zum Bestätigen oder wähle, was besser passt.
+              </div>
+            )}
+
             <div style={{ display: "grid", gap: "10px" }}>
               {[
                 { key: "strong", title: "Ich kann das selbstständig", body: "Ich setze es aktuell praktisch ein.", depth: { proficiency: "experte" as ProficiencyBucket, recency: "aktuell" as RecencyBucket } },
@@ -4787,6 +5053,7 @@ function FragebogenMethod({
                 const selected = option.key === "gap"
                   ? answered === "no"
                   : !!answered && answered !== "no" && answered.proficiency === option.depth?.proficiency && answered.recency === option.depth?.recency;
+                const isSuggested = !answered && option.key === suggestedOptionKey;
                 return (
                   <button
                     key={option.key}
@@ -4798,7 +5065,11 @@ function FragebogenMethod({
                       textAlign: "left",
                       padding: "16px 17px",
                       borderRadius: "16px",
-                      border: selected ? "2px solid var(--accent, #2f8fd6)" : "1px solid var(--border-soft)",
+                      border: selected
+                        ? "2px solid var(--accent, #2f8fd6)"
+                        : isSuggested
+                          ? "2px dashed var(--accent, #2f8fd6)"
+                          : "1px solid var(--border-soft)",
                       background: selected ? "rgba(47,143,214,.07)" : "var(--surface, #fff)",
                       cursor: "pointer",
                       transition: "transform .16s ease, border-color .16s ease, background .16s ease",
@@ -4807,7 +5078,14 @@ function FragebogenMethod({
                     <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                       <span style={{ width: "28px", height: "28px", borderRadius: "50%", display: "grid", placeItems: "center", flex: "0 0 auto", border: selected ? "0" : "1px solid var(--border-soft)", background: selected ? "var(--accent, #2f8fd6)" : "transparent", color: selected ? "#fff" : "inherit", fontWeight: 850 }}>{selected ? "✓" : ""}</span>
                       <span style={{ flex: 1 }}>
-                        <span style={{ display: "block", fontWeight: 800, fontSize: "15px" }}>{option.title}</span>
+                        <span style={{ display: "block", fontWeight: 800, fontSize: "15px" }}>
+                          {option.title}
+                          {isSuggested && (
+                            <span style={{ marginLeft: "8px", fontSize: "10px", fontWeight: 800, padding: "3px 7px", borderRadius: "999px", background: "rgba(47,143,214,.12)", verticalAlign: "middle" }}>
+                              VORSCHLAG
+                            </span>
+                          )}
+                        </span>
                         <span style={{ display: "block", marginTop: "3px", fontSize: "12px", opacity: .68, lineHeight: 1.45 }}>{option.body}</span>
                       </span>
                       <span aria-hidden="true" style={{ opacity: .42, fontSize: "18px" }}>→</span>

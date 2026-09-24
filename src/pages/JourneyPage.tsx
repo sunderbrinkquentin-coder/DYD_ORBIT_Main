@@ -58,11 +58,30 @@ import {
 } from "../data/courseMatcher";
 import { BereichBadges, CourseBadgeRow, daysUntilCourseStart } from "../data/courseBadges";
 import { ACTIVITY_FIELDS, deriveSkillsFromActivities, getActivity, suggestedProficiency } from "../data/activitiesCatalog";
+import {
+  buildDirectionRole,
+  narrowDirection,
+  rolesForCourse,
+  type DirectionCandidate,
+  type QualificationLevel as V2QualificationLevel,
+} from "../data/journeyFlow";
 import { AnimatedNumber } from "../components/AnimatedNumber";
 import { JourneyTour, type JourneyStepKey } from "../components/JourneyTour";
 import "../styles/journey.css";
 
-type StepKey = "ziel" | "praeferenzen" | "bereich" | "zielrolle" | "skills" | "motivation" | "gap" | "kurs";
+type StepKey =
+  | "ziel"
+  | "praeferenzen"
+  | "bereich"
+  | "zielrolle"
+  | "skills"
+  | "motivation"
+  | "gap"
+  | "kurs"
+  // Journey v2 "Der kurze Weg" (24.09.2026, siehe V2_STEPS_* unten).
+  | "v2ziel"
+  | "v2herkunft"
+  | "v2richtung";
 
 interface StepConfig {
   key: StepKey;
@@ -214,6 +233,41 @@ const WITH_BEREICH_STEPS: StepConfig[] = [
   { key: "praeferenzen", label: "Alltag", subtitle: "Was soll zu deinem Alltag passen?" },
   { key: "bereich", label: "Entdeckung", subtitle: "Welcher Bereich passt zu dir?" },
   ...CORE_STEPS,
+];
+
+/**
+ * Journey v2 "Der kurze Weg" (24.09.2026, Konzept: Projekt-Doc
+ * journey-v2-konzept-2026-09-24.md). Umbau in drei Teilen, damit die Journey
+ * nach jedem Teil lauffaehig bleibt:
+ *  - Teil 1 (dieser Stand): Bildschirme 1–3 (Ziel, Herkunft, Richtung) sind
+ *    neu; danach laeuft uebergangsweise der bisherige Skills-/Match-/Kurs-
+ *    Ablauf weiter (Fragebogen mit Taetigkeits-Vorschlaegen).
+ *  - Teil 2: Kurz-Check + Rahmen ersetzen skills/motivation/gap.
+ *  - Teil 3: Ergebnis mit Karriereleiter + Pitch (coursePitch.ts) ersetzt kurs.
+ * Aktiv nur mit journeyVersion="v2" (Prop) oder ?journey=v2 in der URL —
+ * bis Teil 3 fertig ist, bleibt v1 der Standard.
+ */
+const V2_STEPS_UNSURE: StepConfig[] = [
+  { key: "v2ziel", label: "Ziel", subtitle: "Was möchtest du erreichen?" },
+  { key: "v2herkunft", label: "Erfahrung", subtitle: "Was hast du bisher gemacht?" },
+  { key: "v2richtung", label: "Richtung", subtitle: "Wohin soll es gehen?" },
+  ...CORE_STEPS.filter((s) => s.key !== "zielrolle"),
+];
+/** Abkuerzung "Ich weiß schon, was ich werden will": Berufssuche statt Richtung. */
+const V2_STEPS_KNOWN: StepConfig[] = [
+  { key: "v2ziel", label: "Ziel", subtitle: "Was möchtest du erreichen?" },
+  { key: "zielrolle", label: "Beruf", subtitle: "Welcher Beruf ist dein Ziel?" },
+  { key: "v2herkunft", label: "Erfahrung", subtitle: "Was hast du bisher gemacht?" },
+  ...CORE_STEPS.filter((s) => s.key !== "zielrolle"),
+];
+
+/** "Dein höchster Abschluss" (Bildschirm 2) — steuert, welches Niveau als
+ *  naechster Schritt realistisch ist (estimateOrigin in journeyFlow.ts). */
+const V2_QUALIFICATION_OPTIONS: { key: V2QualificationLevel; label: string }[] = [
+  { key: "keine", label: "Noch keinen Berufsabschluss" },
+  { key: "berufsausbildung", label: "Berufsausbildung" },
+  { key: "aufstieg", label: "Meister, Fachwirt oder Techniker" },
+  { key: "studium", label: "Studium" },
 ];
 
 /** EHEMALS: grobe Berufsfelder fuer den "Ich weiss noch nicht"-Pfad
@@ -1383,6 +1437,12 @@ interface JourneyPageProps {
    * z.B. Hex/RGB der Tenant-Marke). Leer/undefined = Standard-DYD-
    * Farbverlauf (Mint → Blau, dieselbe Familie wie MatchRing). */
   avatarAccentColor?: string;
+  /**
+   * Journey v2 "Der kurze Weg" (24.09.2026) einschalten. Default "v1", bis
+   * alle drei Umbau-Teile fertig sind. Zum Testen ohne Code-Aenderung:
+   * ?journey=v2 an die URL haengen.
+   */
+  journeyVersion?: "v1" | "v2";
 }
 /**
  * Interface B: der Endnutzer-/Lead-Assistent (React-Fassung von
@@ -1403,7 +1463,20 @@ export function JourneyPage({
   showAvatar = true,
   avatarName = "Mia",
   avatarAccentColor,
+  journeyVersion = "v1",
 }: JourneyPageProps = {}) {
+  // Journey v2 (siehe V2_STEPS_*): Prop oder ?journey=v2. Einmal beim Mount
+  // bestimmt — ein Wechsel mitten im Durchlauf waere fuer Nutzer verwirrend.
+  const [isV2] = useState<boolean>(() => {
+    try {
+      const fromUrl = new URLSearchParams(window.location.search).get("journey");
+      if (fromUrl === "v2") return true;
+      if (fromUrl === "v1") return false;
+    } catch {
+      // kein window (SSR/Tests) — Prop entscheidet
+    }
+    return journeyVersion === "v2";
+  });
   // Demo-Verbindungseinstellungen (unten rechts im Zahnrad-Menü, nur im
   // Dev-Modus sichtbar) — Version 26: Startwert kommt zuerst aus
   // localStorage (siehe readStoredJourneyConnection oben), erst wenn dort
@@ -1440,7 +1513,8 @@ export function JourneyPage({
   const demoRunIdRef = useRef(0);
   // Einstieg: weiss die Person schon, was ihre Traumposition ist? null = noch
   // nicht beantwortet (zeigt IntroStep statt Stepper/Panel-Schritten).
-  const [knownRole, setKnownRole] = useState<boolean | null>(null);
+  // v2 hat keine Einstiegsfrage mehr: direkt Bildschirm 1 (Ziel).
+  const [knownRole, setKnownRole] = useState<boolean | null>(isV2 ? false : null);
   const knowsRole = knownRole;
   const setKnowsRole = setKnownRole;
   // Im RoleSuggestStep angeklickte Skills (nur relevant, wenn
@@ -1463,7 +1537,10 @@ export function JourneyPage({
   const careerGoal = selectedGoal;
   const setCareerGoal = setSelectedGoal;
   // Fortschritt. -1 = Einstiegsfrage (Intro), noch kein Schritt aktiv.
-  const [currentStepIndex, setCurrentStepIndex] = useState<number>(-1);
+  const [currentStepIndex, setCurrentStepIndex] = useState<number>(isV2 ? 0 : -1);
+  // v2: true, sobald jemand ueber "Ich weiß schon, was ich werden will" geht
+  // (V2_STEPS_KNOWN statt V2_STEPS_UNSURE).
+  const [v2KnowsTarget, setV2KnowsTarget] = useState(false);
   const current = currentStepIndex;
   const setCurrent = setCurrentStepIndex;
   const [done, setDone] = useState(false);
@@ -1472,7 +1549,13 @@ export function JourneyPage({
   // schon bekannt ist (6 Schritte, inkl. Motivations-Zwischenseite) oder
   // erst per Bereich gefunden werden muss (7 Schritte, mit vorgeschaltetem
   // "Bereich"-Schritt).
-  const steps = knowsRole === false ? WITH_BEREICH_STEPS : BASE_STEPS;
+  const steps = isV2
+    ? v2KnowsTarget
+      ? V2_STEPS_KNOWN
+      : V2_STEPS_UNSURE
+    : knowsRole === false
+      ? WITH_BEREICH_STEPS
+      : BASE_STEPS;
   const stepKey: StepKey | undefined = current >= 0 ? steps[current]?.key : undefined;
   /** Liefert den Index eines Schritts in der AKTUELL gueltigen Schritt-Folge
    * (`steps`) — so bleiben alle setCurrent(...)-Aufrufe korrekt, egal ob der
@@ -1851,6 +1934,20 @@ async function runDemoAnalysis() {
     [coveredBereiche]
   );
   const bereicheInPortfolio: BereichOption[] = useMemo(() => listBereiche(rolesInPortfolio), [rolesInPortfolio]);
+  // Journey v2: Berufe, zu denen Kurse dieses Traegers fuehren — Angebots-
+  // Bonus in narrowDirection() (keine Richtung ohne passendes Angebot).
+  const offeredRoleIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const c of allCourses) for (const l of rolesForCourse(c, rolesInPortfolio, { max: 2 })) ids.add(l.role.role_id);
+    return ids;
+  }, [allCourses, rolesInPortfolio]);
+  // Journey v2: hoechster Abschluss (Bildschirm 2) und eingegrenzte
+  // Richtung (Bildschirm 3) — die Richtung wird in Teil 3 fuer
+  // Karriereleiter und Pitch (coursePitch.ts) gebraucht.
+  const [v2Qualification, setV2Qualification] = useState<V2QualificationLevel | null>(null);
+  const [v2Direction, setV2Direction] = useState<DirectionCandidate[]>([]);
+  // Wird erst in Teil 3 (Ergebnis: Karriereleiter + Pitch) gelesen.
+  void v2Direction;
   // Einkategorisierung-Optionen, gefiltert auf das, was im Kurskatalog des
   // Tenants tatsächlich vorkommt (17.09., "Bei der Auswahl soll ... nur das
   // zur Auswahl stehen, was auch im Kurskatalog so angelegt wurde, wenn es
@@ -2025,6 +2122,81 @@ async function runDemoAnalysis() {
     setCareerGoal(goalKey);
     setCurrent(stepIndex("praeferenzen"));
   }
+  // ---------------- Journey v2 – Handler (Teil 1) ----------------
+  /** Bildschirm 1: Ziel gewaehlt (oder uebersprungen). */
+  function v2SelectGoal(goalKey: string | null) {
+    demoDataActiveRef.current = false;
+    setCareerGoal(goalKey);
+    setCurrent(stepIndex(v2KnowsTarget ? "zielrolle" : "v2herkunft"));
+  }
+  /** Bildschirm 1, Link "Ich weiß schon, was ich werden will". Der
+   *  Schrittwechsel passiert per Index in V2_STEPS_KNOWN (dort ist die
+   *  Berufssuche Schritt 2) — stepIndex() rechnet noch mit der alten Folge,
+   *  weil setV2KnowsTarget erst beim naechsten Render wirkt. */
+  function v2ChooseKnownTarget() {
+    demoDataActiveRef.current = false;
+    setV2KnowsTarget(true);
+    setCurrent(V2_STEPS_KNOWN.findIndex((st) => st.key === "zielrolle"));
+  }
+  /** Bildschirm 2: Abschluss gewaehlt — zusaetzlich auf das bestehende
+   *  Voraussetzungs-Feld abbilden (checkPrerequisites kennt keine/
+   *  berufsausbildung/studium; Meister/Fachwirt zaehlt dort als Ausbildung). */
+  function v2SelectQualification(q: V2QualificationLevel | null) {
+    setV2Qualification(q);
+    setQualificationLevel(q === null ? null : q === "aufstieg" ? "berufsausbildung" : q);
+  }
+  /** Bildschirm 2 -> weiter. cv=true: Person will lieber den Lebenslauf
+   *  hochladen (Abkuerzung) — dann startet der Profil-Schritt direkt im
+   *  CV-Pfad. */
+  function v2ContinueFromHerkunft(cv: boolean) {
+    demoDataActiveRef.current = false;
+    if (cv) setMethod("cv");
+    if (v2KnowsTarget) {
+      if (!cv) {
+        setActivityPickerOpen(false);
+        setMethod("fragebogen");
+      }
+      setCurrent(stepIndex("skills"));
+    } else {
+      setCurrent(stepIndex("v2richtung"));
+    }
+  }
+  /** Bildschirm 3: Richtung festgelegt. Grenzt auf 1–3 realistische Berufe
+   *  ein (narrowDirection) und rechnet ab hier mit der daraus gebauten
+   *  Richtungs-Rolle — genau wie selectBereich() mit der Bereichs-Rolle,
+   *  nur konkret statt ueber den ganzen Bereich gemittelt. */
+  function v2ApplyDirection(bereichKeys: string[]) {
+    demoDataActiveRef.current = false;
+    const narrowed = narrowDirection({
+      bereichKeys,
+      activityIds,
+      goal: careerGoal,
+      roles: rolesInPortfolio,
+      qualification: v2Qualification,
+      offeredRoleIds,
+    });
+    setV2Direction(narrowed);
+    const role = buildDirectionRole(bereichKeys, narrowed, careerGoal);
+    setBereichRole(role);
+    const keepCv = method === "cv";
+    if (role.role_id !== targetRoleId) {
+      setTargetRoleId(role.role_id);
+      setTargetRoleName(role.role_name);
+      setRoleSkills([]);
+      setCheckedSkills(new Set());
+      setSkillDepthByUri(new Map());
+      setGapResult(null);
+      setCourseResult(null);
+      setSelectedCourseId(null);
+      setAdditionalCourseIds(new Set());
+      setTestId(null);
+    }
+    // Uebergang Teil 1: direkt in den Fragebogen (mit Taetigkeits-
+    // Vorschlaegen), ohne erneute Methoden-Auswahl — ausser beim CV-Pfad.
+    setActivityPickerOpen(false);
+    setMethod(keepCv ? "cv" : "fragebogen");
+    setCurrent(stepIndex("skills"));
+  }
   /** Präferenzen-Schritt (Version 24): Beschäftigungsart/Arbeitsort/
    * Startzeitpunkt sind reine State-Updates (siehe PraeferenzenStep-Props),
    * dieser Callback übernimmt nur die Weiterleitung zum ursprünglichen Ziel
@@ -2180,8 +2352,13 @@ async function runDemoAnalysis() {
     if (method === "fragebogen" && roleSkills.length === 0 && !loadingRoleSkills && !roleSkillsError) {
       loadRoleSkills();
     }
+    // targetRoleId zusaetzlich (Journey v2, 24.09.2026): v2ApplyDirection()
+    // wechselt die Rolle, waehrend method schon "fragebogen" ist — ohne
+    // diese Abhaengigkeit wuerden die Fragen der neuen Rolle nie geladen.
+    // In v1 setzt jeder Rollenwechsel method auf null, dort aendert sich
+    // dadurch nichts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [method]);
+  }, [method, targetRoleId]);
   // Taetigkeits-Ebene: verlaesst man den Fragebogen-Pfad auf irgendeinem Weg
   // (Rollenwechsel setzt method=null, CV-Pfad, Demo-Reset), darf die
   // Taetigkeits-Auswahl beim naechsten Betreten nicht unerwartet wieder
@@ -3340,6 +3517,35 @@ async function runDemoAnalysis() {
               </div>
             ) : (
               <div className="panel-step" data-tour="tour-panel">
+                {stepKey === "v2ziel" && (
+                  <V2GoalStep
+                    selected={careerGoal}
+                    onSelect={v2SelectGoal}
+                    onSkip={() => v2SelectGoal(null)}
+                    onKnowTarget={v2ChooseKnownTarget}
+                  />
+                )}
+                {stepKey === "v2herkunft" && (
+                  <V2HerkunftStep
+                    activityIds={activityIds}
+                    setActivityIds={setActivityIds}
+                    qualification={v2Qualification}
+                    onSelectQualification={v2SelectQualification}
+                    onForward={() => v2ContinueFromHerkunft(false)}
+                    onUseCv={() => v2ContinueFromHerkunft(true)}
+                    onBack={() => setCurrent(stepIndex(v2KnowsTarget ? "zielrolle" : "v2ziel"))}
+                  />
+                )}
+                {stepKey === "v2richtung" && (
+                  <V2RichtungStep
+                    goal={careerGoal}
+                    activityIds={activityIds}
+                    bereicheOptions={bereicheInPortfolio}
+                    rolesInPortfolio={rolesInPortfolio}
+                    onConfirm={v2ApplyDirection}
+                    onBack={() => setCurrent(stepIndex("v2herkunft"))}
+                  />
+                )}
                 {stepKey === "ziel" && (
                   <GoalStep
                     selected={careerGoal}
@@ -3399,8 +3605,8 @@ async function runDemoAnalysis() {
                     onRetry={loadRoles}
                     selectedRoleId={targetRoleId}
                     onSelect={selectRole}
-                    onForward={() => setCurrent(stepIndex("skills"))}
-                    onBack={() => setCurrent(stepIndex(knowsRole === false ? "bereich" : "praeferenzen"))}
+                    onForward={() => setCurrent(stepIndex(isV2 ? "v2herkunft" : "skills"))}
+                    onBack={() => setCurrent(stepIndex(isV2 ? "v2ziel" : knowsRole === false ? "bereich" : "praeferenzen"))}
                   />
                 )}
                 {stepKey === "skills" && (
@@ -3427,7 +3633,7 @@ async function runDemoAnalysis() {
                     onSubmitQuiz={submitQuizMethod}
                     skillsBusy={skillsBusy}
                     skillsError={skillsError}
-                    onBack={() => setCurrent(stepIndex("zielrolle"))}
+                    onBack={() => setCurrent(stepIndex(isV2 ? (v2KnowsTarget ? "v2herkunft" : "v2richtung") : "zielrolle"))}
                     onCvConsentGiven={() => setCvProcessingConsentAt(new Date().toISOString())}
                     privacyPolicyUrl={privacyPolicyUrl}
                     showAvatar={showAvatar}
@@ -3548,18 +3754,18 @@ async function runDemoAnalysis() {
           </div>
         </div>
       </div>
-      {showTour && (
+      {showTour && !isV2 && (
         <button className="tour-trigger-btn" onClick={() => setTourOpen(true)} type="button">
           <span aria-hidden="true">🧭</span>
           <span className="tour-trigger-label">Rundgang starten</span>
         </button>
       )}
-      {showTour && (
+      {showTour && !isV2 && (
         <JourneyTour
           open={tourOpen}
           onClose={tourClose}
           currentKey={knowsRole === null ? "intro" : (stepKey as JourneyStepKey) ?? "intro"}
-          availableKeys={steps.map((s) => s.key) as JourneyStepKey[]}
+          availableKeys={steps.map((s) => s.key).filter((k) => !k.startsWith("v2")) as JourneyStepKey[]}
           hasGapResult={Boolean(gapResult)}
           hasCourseResult={Boolean(courseResult)}
           onNavigate={(key) => tourNavigate(key as StepKey)}
@@ -3786,6 +3992,224 @@ function GoalStep({ selected, onSelect, onSkip, onBack }: { selected: string | n
         Überspringen
       </div>
       <ActionsRow onBack={onBack} hideForward />
+    </div>
+  );
+}
+// ===================== Journey v2 – Bildschirme 1–3 (Teil 1) =====================
+/** Bildschirm 1 "Dein Ziel": ein Tipp, Auto-Weiter. Darunter bewusst
+ *  unauffaellig die Abkuerzung fuer alle, die ihren Zielberuf schon kennen. */
+function V2GoalStep({
+  selected,
+  onSelect,
+  onSkip,
+  onKnowTarget,
+}: {
+  selected: string | null;
+  onSelect: (goalKey: string) => void;
+  onSkip: () => void;
+  onKnowTarget: () => void;
+}) {
+  return (
+    <div>
+      <JourneyStepHeading
+        step="01"
+        kicker="DEIN ZIEL"
+        title="Was soll sich für dich beruflich verändern?"
+        description="Ein Tipp genügt. In wenigen Minuten bekommst du deine persönliche Weiterbildungs-Empfehlung – kostenlos und unverbindlich."
+      />
+      <div className="role-grid">
+        {GOAL_OPTIONS.map((g) => (
+          <div
+            key={g.key}
+            className={`role-card ${selected === g.key ? "selected" : ""}`}
+            onClick={() => onSelect(g.key)}
+            role="button"
+            tabIndex={0}
+            aria-pressed={selected === g.key}
+            onKeyDown={(e) => handleCardKeyDown(e, () => onSelect(g.key))}
+          >
+            <div className="role-card-icon" aria-hidden="true">{g.icon}</div>
+            <div className="role-card-name">{g.label}</div>
+          </div>
+        ))}
+      </div>
+      <div
+        className="method-switch"
+        onClick={onKnowTarget}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => handleCardKeyDown(e, onKnowTarget)}
+        style={{ marginTop: "14px", display: "block", textAlign: "center" }}
+      >
+        🎯 Ich weiß schon, welchen Beruf ich anstrebe
+      </div>
+      <div className="method-switch" onClick={onSkip} role="button" tabIndex={0} onKeyDown={(e) => handleCardKeyDown(e, onSkip)} style={{ marginTop: "6px", display: "block", textAlign: "center" }}>
+        Überspringen
+      </div>
+    </div>
+  );
+}
+
+/** Bildschirm 2 "Woher du kommst": Taetigkeiten (einzige Kann-Erhebung
+ *  neben dem Kurz-Check) + hoechster Abschluss. Live-Rueckmeldung, wie viel
+ *  dadurch schon belegt ist — ehrlich gezaehlt (nur "direkt"-Verbindungen,
+ *  genau die, die spaeter nicht mehr abgefragt werden). */
+function V2HerkunftStep({
+  activityIds,
+  setActivityIds,
+  qualification,
+  onSelectQualification,
+  onForward,
+  onUseCv,
+  onBack,
+}: {
+  activityIds: string[];
+  setActivityIds: (ids: string[]) => void;
+  qualification: V2QualificationLevel | null;
+  onSelectQualification: (q: V2QualificationLevel | null) => void;
+  onForward: () => void;
+  onUseCv: () => void;
+  onBack: () => void;
+}) {
+  const strengths = useMemo(
+    () => [...deriveSkillsFromActivities(activityIds).values()].filter((d) => d.strength === "direkt").length,
+    [activityIds],
+  );
+  const hasInput = activityIds.length > 0 || qualification !== null;
+  return (
+    <div>
+      <JourneyStepHeading
+        step="02"
+        kicker="DEINE ERFAHRUNG"
+        title="Was hast du bisher gemacht?"
+        description="Tipp einfach an – auch Aushilfsjobs, Praktika und Ehrenamt zählen. Du musst nichts schreiben."
+      />
+      {/* Abschluss zuerst: ein Tipp, leichter Einstieg in den Bildschirm. */}
+      <div style={{ marginBottom: "18px", padding: "13px 14px", borderRadius: "14px", border: "1px solid var(--border-soft)" }}>
+        <div className="field-label" style={{ marginBottom: "4px" }}>Dein höchster Abschluss</div>
+        <div className="hint" style={{ marginBottom: "8px" }}>
+          Damit zeigen wir dir realistische nächste Schritte – und die Förderungen, die für dich passen.
+        </div>
+        <div className="quiz-extra-chips" role="group" aria-label="Höchster Abschluss">
+          {V2_QUALIFICATION_OPTIONS.map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              className={`quiz-extra-chip ${qualification === o.key ? "checked" : ""}`}
+              onClick={() => onSelectQualification(qualification === o.key ? null : o.key)}
+              aria-pressed={qualification === o.key}
+            >
+              <span className="quiz-extra-chip-check" aria-hidden="true">{qualification === o.key ? "✓" : ""}</span>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <ActivityChecklist activityIds={activityIds} setActivityIds={setActivityIds} />
+      {strengths > 0 && (
+        <div
+          aria-live="polite"
+          style={{ marginTop: "12px", padding: "11px 13px", borderRadius: "12px", background: "rgba(95,220,153,.10)", fontSize: "13px", fontWeight: 700 }}
+        >
+          ✓ Stark! Daraus erkennen wir schon {strengths} Stärke{strengths === 1 ? "" : "n"} – die fragen wir gleich nicht mehr ab.
+        </div>
+      )}
+
+      <div
+        className="method-switch"
+        onClick={onUseCv}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => handleCardKeyDown(e, onUseCv)}
+        style={{ marginTop: "16px", display: "block", textAlign: "center" }}
+      >
+        📄 Lieber Lebenslauf hochladen statt klicken
+      </div>
+      <ActionsRow onBack={onBack} forwardLabel={hasInput ? "Weiter →" : "Überspringen →"} onForward={onForward} />
+    </div>
+  );
+}
+
+/** Bildschirm 3 "Wohin es gehen soll": 1–2 Bereiche. Bereiche, fuer die die
+ *  Taetigkeiten schon Erfahrung belegen, stehen oben mit Begruendung in den
+ *  Worten der Person. Keine Rollentitel, keine Skill-Chips (die Eingrenzung
+ *  auf konkrete Berufe passiert unsichtbar in v2ApplyDirection). */
+function V2RichtungStep({
+  goal,
+  activityIds,
+  bereicheOptions,
+  rolesInPortfolio,
+  onConfirm,
+  onBack,
+}: {
+  goal: string | null;
+  activityIds: string[];
+  bereicheOptions: BereichOption[];
+  rolesInPortfolio: CatalogRole[];
+  onConfirm: (bereichKeys: string[]) => void;
+  onBack: () => void;
+}) {
+  const [selected, setSelected] = useState<string[]>([]);
+  const fit = useMemo(() => bereicheFromActivities(activityIds, rolesInPortfolio), [activityIds, rolesInPortfolio]);
+  const withExperience = bereicheOptions
+    .filter((b) => fit.has(b.key))
+    .sort((a, b) => (fit.get(b.key)?.bestMatchPct ?? 0) - (fit.get(a.key)?.bestMatchPct ?? 0));
+  const others = bereicheOptions.filter((b) => !fit.has(b.key));
+  function toggle(key: string) {
+    setSelected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : prev.length < 2 ? [...prev, key] : [prev[1], key]));
+  }
+  const title = goal === "neuorientierung" ? "In welchen Bereich möchtest du wechseln?" : "In welchem Bereich willst du weiterkommen?";
+  function card(b: BereichOption) {
+    const f = fit.get(b.key);
+    const isSel = selected.includes(b.key);
+    return (
+      <button
+        key={b.key}
+        type="button"
+        className={`role-card ${isSel ? "selected" : ""}`}
+        onClick={() => toggle(b.key)}
+        aria-pressed={isSel}
+        style={{ textAlign: "left", cursor: "pointer" }}
+      >
+        {isSel && <span className="role-card-check" aria-hidden="true">✓</span>}
+        <div className="role-card-icon" aria-hidden="true">{BEREICH_ICONS[b.key] ?? "🧭"}</div>
+        <div className="role-card-name">{b.label}</div>
+        {f && (
+          <div className="hint" style={{ fontSize: "11.5px", marginTop: "5px", lineHeight: 1.4 }}>
+            <span style={{ fontWeight: 800 }}>✓ Erfahrung vorhanden</span>
+            {f.activityLabels[0] ? ` · weil du: ${f.activityLabels[0]}` : ""}
+          </div>
+        )}
+      </button>
+    );
+  }
+  return (
+    <div>
+      <JourneyStepHeading
+        step="03"
+        kicker="DEINE RICHTUNG"
+        title={title}
+        description="Wähle einen oder zwei Bereiche. Wo du schon Erfahrung mitbringst, siehst du am Häkchen."
+      />
+      {withExperience.length > 0 && (
+        <>
+          <div className="field-label" style={{ marginBottom: "8px" }}>Passt zu deiner Erfahrung</div>
+          <div className="role-grid" style={{ marginBottom: "16px" }}>{withExperience.map(card)}</div>
+        </>
+      )}
+      {others.length > 0 && (
+        <>
+          {withExperience.length > 0 && <div className="field-label" style={{ marginBottom: "8px" }}>Weitere Bereiche</div>}
+          <div className="role-grid">{others.map(card)}</div>
+        </>
+      )}
+      <ActionsRow
+        onBack={onBack}
+        forwardLabel={selected.length > 0 ? "Passt – weiter →" : "Bereich wählen"}
+        forwardDisabled={selected.length === 0}
+        onForward={() => onConfirm(selected)}
+      />
     </div>
   );
 }
@@ -4885,6 +5309,13 @@ function ActivityChecklist({
       )
   );
   const selected = new Set(activityIds);
+  // Journey v2 (Smoke-Test 24.09.): die 8 "Verantwortung"-Taetigkeiten
+  // standen immer ausgeklappt unter jedem Feld und machten den Bildschirm
+  // sehr lang. Jetzt als optionale, eingeklappte Frage — offen, sobald dort
+  // schon etwas gewaehlt ist.
+  const [crossOpen, setCrossOpen] = useState<boolean>(
+    () => !!crossField && crossField.activities.some((a) => activityIds.includes(a.activity_id)),
+  );
 
   function toggleField(key: string) {
     setOpenFields((prev) => {
@@ -4900,8 +5331,9 @@ function ActivityChecklist({
 
   const visibleFields = [
     ...originFields.filter((f) => openFields.has(f.field_key)),
-    ...(openFields.size > 0 && crossField ? [crossField] : []),
+    ...(openFields.size > 0 && crossField && crossOpen ? [crossField] : []),
   ];
+  const crossCount = crossField ? crossField.activities.filter((a) => selected.has(a.activity_id)).length : 0;
 
   return (
     <div>
@@ -4953,6 +5385,30 @@ function ActivityChecklist({
               </div>
             </div>
           ))}
+          {crossField && !crossOpen && (
+            <button
+              type="button"
+              onClick={() => setCrossOpen(true)}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                marginTop: "2px",
+                padding: "11px 13px",
+                borderRadius: "11px",
+                border: "1.5px dashed var(--border)",
+                background: "transparent",
+                font: "inherit",
+                fontSize: "13px",
+                fontWeight: 700,
+                color: "inherit",
+                cursor: "pointer",
+              }}
+            >
+              <span aria-hidden="true">{crossField.icon}</span> Hattest du auch Verantwortung, z. B. ein Team geleitet? (optional)
+              {crossCount > 0 ? ` · ${crossCount} gewählt` : ""}
+            </button>
+          )}
         </div>
       )}
     </div>

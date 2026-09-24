@@ -388,13 +388,23 @@ export function buildBereichRole(
 ): CatalogRole {
   const sortedKeys = [...bereichKeys].sort();
   const allRolesInBereich = roles.filter((r) => sortedKeys.includes(r.bereich_key));
+  // Rollen-Erweiterung 24.09.2026: Helferberufe (anforderungsniveau 1, z. B.
+  // Lagerhelfer/in, Küchenhilfe) sind typische AUSGANGS-, nicht Ziel-Rollen
+  // einer Weiterbildung. Im Bereichs-Durchschnitt wuerden ihre einfachen
+  // Skills (Kommissionierung, Regalpflege …) die Fragen und Kursempfehlungen
+  // wieder "zu allgemein" machen — genau der Effekt, der am 22.09. gemeldet
+  // wurde. Deshalb zaehlen sie hier nicht mit. Ehrlicher Fallback: besteht
+  // ein Bereich (theoretisch) nur aus Helferrollen, zaehlen sie doch.
+  // Rollen ohne anforderungsniveau (Alt-/Tenant-Rollen) zaehlen immer.
+  const nonHelperRoles = allRolesInBereich.filter((r) => r.anforderungsniveau !== 1);
+  const baseRoles = nonHelperRoles.length > 0 ? nonHelperRoles : allRolesInBereich;
   const goalLevel = goal ? BEREICH_ROLE_GOAL_LEVEL[goal] : undefined;
-  const goalLevelRoles = goalLevel ? allRolesInBereich.filter((r) => r.level === goalLevel) : [];
+  const goalLevelRoles = goalLevel ? baseRoles.filter((r) => r.level === goalLevel) : [];
   // Ehrlicher Fallback: nur filtern, wenn es im Bereich tatsaechlich
   // mindestens eine Rolle auf dem zum Ziel passenden Level gibt — sonst
   // liefe die Kombination sonst ins Leere (z.B. ein Bereich ganz ohne
   // Fuehrungsrolle im Katalog).
-  const matchingRoles = goalLevelRoles.length > 0 ? goalLevelRoles : allRolesInBereich;
+  const matchingRoles = goalLevelRoles.length > 0 ? goalLevelRoles : baseRoles;
   const isGoalFiltered = goalLevelRoles.length > 0;
   const bySkill = new Map<string, { name: string; totalWeight: number; count: number }>();
   for (const role of matchingRoles) {

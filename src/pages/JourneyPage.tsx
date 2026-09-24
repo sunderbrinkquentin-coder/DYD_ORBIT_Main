@@ -1,7 +1,3 @@
-import { emit, type AnalyticsAdapter } from "../journey/telemetry";
-import { recommend, profileSummary } from "../journey/engine";
-import { newProfile, safeUrl, PHASES, CONTEXT, type TenantKind, type Profile } from "../journey/model";
-import { activityExample } from "../journey/questions";
 import {
   useEffect,
   useMemo,
@@ -33,6 +29,7 @@ import {
   isCourseActive,
   isSessionUpcoming,
   nextUpcomingSession,
+  setLeadLinkedCourses,
   type CourseMatchResponse,
   type CourseRecommendation,
   type CourseSession,
@@ -47,13 +44,19 @@ import {
   toTargetRoleSummary,
   topSkillsForRoles,
   type BereichOption,
+  type GapAnalysisResult,
+  type GapRoleSkillStatus,
 } from "../data/gapAnalysis";
 import { ROLES_CATALOG, SKILLS_CATALOG, type CatalogRole } from "../data/rolesCatalog";
 import {
   getCoveredBereiche,
+  matchCoursesToGap,
   describePreferenceMismatches,
+  rankCoursesForGap,
+  QUALIFICATION_LABELS,
 } from "../data/courseMatcher";
 import { BereichBadges, CourseBadgeRow, daysUntilCourseStart } from "../data/courseBadges";
+import { AnimatedNumber } from "../components/AnimatedNumber";
 import { JourneyTour, type JourneyStepKey } from "../components/JourneyTour";
 import "../styles/journey.css";
 
@@ -183,7 +186,7 @@ const CORE_STEPS: StepConfig[] = [
   // 17.09.": zu schnelles Auto-Weiterspringen lässt einen Schritt nur kurz
   // aufblitzen statt sichtbar zu sein). Der Übergang wartet deshalb auf
   // einen aktiven Klick (siehe MotivationStep), kein Auto-Advance.
-  { key: "motivation", label: "Zusammenfassung", subtitle: "Dein Profil ist bereit." },
+  { key: "motivation", label: "Geschafft", subtitle: "Dein Profil ist bereit." },
   { key: "gap", label: "Match", subtitle: "Sieh, wo du schon stark bist." },
   { key: "kurs", label: "Weiterbildung", subtitle: "Finde den nächsten passenden Schritt." },
 ];
@@ -222,6 +225,7 @@ const WITH_BEREICH_STEPS: StepConfig[] = [
  * gapAnalysis.ts) + eine optionale, nach careerGoal sortierte Zielrollen-
  * Auswahl + optionale Skill-Checkboxen (topSkillsForRoles()). */
 /** Anzahl der Skill-Checkboxen, die RoleSuggestStep auf einmal anzeigt. */
+const ROLE_SUGGEST_SKILL_CHIP_LIMIT = 8;
 /** Rein dekorativ (siehe bereicheInPortfolio in JourneyPage, aus den echten
  *  bereich_key-Werten der Rollen) — Fallback-Icon fuer den unwahrscheinlichen
  *  Fall, dass der Katalog kuenftig einen neuen, hier noch unbekannten
@@ -346,6 +350,7 @@ const GOAL_OPTIONS: { key: string; label: string; icon: string }[] = [
 
 /** Zwei Kursempfehlungen gelten als "gleich gut" (Tie), wenn ihre
  *  covers_gap_percentage um weniger als diesen Wert auseinanderliegt. */
+const GOAL_TIE_EPSILON = 1;
 
 /** Schwelle für die "Startet bald"-Gruppe unten in KursStep (15.09., "startet
  *  innerhalb 1 Monats") — bewusst eigenständig von STARTS_SOON_DAYS
@@ -370,10 +375,35 @@ function personalizeCourseOrder(
   targetGoal: string | null,
   allCourses: OrbitCourse[] = [],
 ): CourseRecommendation[] {
-  // Fachliche Reihenfolge kommt ausschließlich aus dem Matcher.
-  void targetGoal;
-  void allCourses;
-  return courses.slice();
+  if (courses.length < 2) return courses;
+
+  const richness = (course: CourseRecommendation): number => {
+    const fullCourse = allCourses.find((item) => item.course_id === course.course_id);
+    return fullCourse ? courseRichnessScore(fullCourse) : 0;
+  };
+
+  const goalScore = (course: CourseRecommendation): number => {
+    switch (targetGoal) {
+      case "knowhow":
+        return course.duration_weeks;
+      case "weiterkommen":
+        return -course.duration_weeks;
+      case "neuorientierung":
+        return course.covers_gap_count;
+      default:
+        return 0;
+    }
+  };
+
+  return [...courses].sort((a, b) => {
+    const richnessDifference = richness(b) - richness(a);
+    if (richnessDifference !== 0) return richnessDifference;
+
+    const goalDifference = goalScore(b) - goalScore(a);
+    if (goalDifference !== 0) return goalDifference;
+
+    return b.covers_gap_percentage - a.covers_gap_percentage;
+  });
 }
 
 /** Liefert einen kurzen, wahren Erklaerungssatz, warum GENAU dieser Kurs zum
@@ -575,7 +605,7 @@ function refineGapWithDepthAnalysis(
     // Fuzzy-Score — fester, an die Konfidenz angelehnter Platzhalter auf
     // derselben 0-100-Skala wie matched_score aus skillMatcher.ts, damit der
     // gewichtete Match-Prozentsatz unten konsistent bleibt.
-    const matchedScore = isConfident ? null : skill.matched_score;
+    const matchedScore = isConfident ? (covered ? (depth!.confidence === "hoch" ? 95 : 75) : null) : skill.matched_score;
 
     const next: RoleSkillStatus = { ...skill, covered, matched_score: matchedScore };
     if (covered) {
@@ -758,7 +788,7 @@ function quizSkillScore(depth: SkillDepth | undefined | null): number {
  *  es sich um optionale Zusatzangaben handelt und die Vorgabe "nicht zu viele
  *  Schritte" für echte Zusatzinteraktionen erst recht gilt. "Fortgeschritten,
  *  aktuell" ist eine ehrliche Mitte, keine Bestnote. */
-const DEFAULT_EXTRA_SKILL_DEPTH: SkillDepth = { proficiency: "grundkenntnisse", recency: "aktuell" };
+const DEFAULT_EXTRA_SKILL_DEPTH: SkillDepth = { proficiency: "fortgeschritten", recency: "aktuell" };
 
 /** Passt eine GapAnalysisResponse (API-Form, siehe core.ts) auf die von
  * rankCoursesForGap() (courseMatcher.ts) erwartete GapAnalysisResult-Form an
@@ -772,6 +802,17 @@ const DEFAULT_EXTRA_SKILL_DEPTH: SkillDepth = { proficiency: "grundkenntnisse", 
  * warum weder die Tiefenanalyse-Verfeinerung noch (im Fragebogen-Pfad) die
  * expliziten Checkbox-Angaben der Person zuverlässig in der Kursempfehlung
  * ankamen. */
+function toGapAnalysisResultForRanking(g: GapAnalysisResponse): GapAnalysisResult {
+  const withPriority = (s: RoleSkillStatus): GapRoleSkillStatus => ({ ...s, priority: "ergaenzend" });
+  return {
+    target_role_id: g.target_role_id,
+    target_role_name: g.target_role_name,
+    match_percentage: g.match_percentage,
+    covered_skills: g.covered_skills.map(withPriority),
+    gap_skills: g.gap_skills.map(withPriority),
+    summary: "",
+  };
+}
 
 /** Klassische Levenshtein-Distanz (Anzahl Einfuege-/Loesch-/Ersetz-
  * Operationen, um a in b zu ueberfuehren). Basis fuer die Tippfehler-
@@ -867,8 +908,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * bleibt im Nachhinein nachvollziehbar, welcher genauen Formulierung ein
  * konkreter Lead damals zugestimmt hat.
  */
-const CONSENT_TEXT_VERSION = "lead-consent-v2-2026-09-24";
-const LEAD_CONSENT_TEXT = "Ich stimme zu, dass der Bildungsträger meine Angaben speichert und mich zu meinem Weiterbildungsanliegen kontaktiert. Diese Einwilligung kann ich jederzeit gegenüber dem Bildungsträger widerrufen.";
+const CONSENT_TEXT_VERSION = "lead-consent-v1-2026-09";
 /** Grobe Startzeitpunkt-Optionen, seit Version 24 im eigenen "Präferenzen"-
  * Schritt (siehe PraeferenzenStep) statt im Kurs-Schritt abgefragt. Bewusst
  * als kurze Auswahl statt freiem Datumsfeld — macht den Lead qualifizierter
@@ -1097,7 +1137,7 @@ function courseCostText(course: {
  * sessions) verhält sich unverändert.
  */
 function courseLocationText(course: {
-  location_mode?: OrbitCourse["location_mode"];
+  location_mode?: string | null;
   sessions?: CourseSession[] | null;
   starts_at?: string | null;
   location?: string | null;
@@ -1105,7 +1145,7 @@ function courseLocationText(course: {
   seats_remaining?: number | null;
 }): string {
   const upcoming = getCourseSessions(course).filter((s) => isSessionUpcoming(s));
-  const distinctModes = new Set(upcoming.map((s) => s.location_mode).filter((m): m is NonNullable<OrbitCourse["location_mode"]> => Boolean(m)));
+  const distinctModes = new Set(upcoming.map((s) => s.location_mode).filter((m): m is string => Boolean(m)));
   if (upcoming.length > 1 && distinctModes.size > 1) {
     return "Mehrere Standorte";
   }
@@ -1135,7 +1175,7 @@ function courseStartText(course: {
   starts_at?: string | null;
   sessions?: CourseSession[] | null;
   location?: string | null;
-  location_mode?: OrbitCourse["location_mode"];
+  location_mode?: string | null;
   is_remote?: boolean | null;
   seats_remaining?: number | null;
 }): string {
@@ -1238,11 +1278,6 @@ function writeStoredJourneyConnection(baseUrl: string, apiKey: string) {
   }
 }
 interface JourneyPageProps {
-  tenantKind?: TenantKind;
-  tenantName?: string;
-  initialCourseId?: string;
-  analytics?: AnalyticsAdapter;
-  analyticsEnabled?: boolean;
   /** Server-Adresse, mit der beim Laden automatisch verbunden wird. */
   defaultBaseUrl?: string;
   /** Öffentlicher API-Key (Rolle "public") des Bildungsträger-Tenants. */
@@ -1310,7 +1345,6 @@ interface JourneyPageProps {
  * Bildungsträgers aussehen könnte.
  */
 export function JourneyPage({
-  tenantKind = "general", tenantName = "dieses Bildungsträgers", initialCourseId, analytics, analyticsEnabled = false,
   defaultBaseUrl = DEFAULT_API_BASE,
   defaultApiKey = PUBLIC_API_KEY,
   showConnectionPanel = Boolean(import.meta.env?.DEV ?? true) || !defaultApiKey,
@@ -1332,8 +1366,6 @@ export function JourneyPage({
   useEffect(() => {
     writeStoredJourneyConnection(baseUrl, apiKey);
   }, [baseUrl, apiKey]);
-  const [entryPath, setEntryPath] = useState<"learn" | "change" | "discover" | null>(null);
-  const [contextCourseId, setContextCourseId] = useState<string | null>(initialCourseId ?? null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Gefuehrter Rundgang (JourneyTour, siehe dort) - Version 26: eigenes
   // showTour-Flag (Default an), NICHT mehr an showConnectionPanel gekoppelt
@@ -1458,7 +1490,7 @@ async function runDemoAnalysis() {
                 weight: 20,
                 covered: true,
                 matched_score: 95,
-
+                description: "Fundiertes Verständnis durch Vorerfahrung vorhanden."
               }
             ],
             gap_skills: [
@@ -1468,7 +1500,7 @@ async function runDemoAnalysis() {
                 weight: 45,
                 covered: false,
                 matched_score: null,
-
+                description: "Zentrale Anforderung für moderne Frontend-Architekturen."
               },
               {
                 esco_uri: "http://data.europa.eu/esco/skill/demo-gap-2",
@@ -1476,7 +1508,7 @@ async function runDemoAnalysis() {
                 weight: 35,
                 covered: false,
                 matched_score: null,
-
+                description: "Wichtig für typsichere und skalierbare Webanwendungen."
               }
             ]
           };
@@ -1554,7 +1586,7 @@ async function runDemoAnalysis() {
     if (!demoDataActiveRef.current) return;
     demoDataActiveRef.current = false;
     setKnowsRole(null);
-
+    setInterestArea(null);
     setCareerGoal(null);
     setEmploymentType(null);
     setWorkLocation(null);
@@ -1566,10 +1598,6 @@ async function runDemoAnalysis() {
     setText("");
     setRoleSkills([]);
     setCheckedSkills(new Set());
-    setQuizAnswers({});
-    setDepthBusy(false);
-    setManualSkillUris(new Set());
-    manualSkillUrisRef.current = new Set();
     setSkillDepthByUri(new Map());
     setGapResult(null);
     setDepthByUri(new Map());
@@ -1582,12 +1610,12 @@ async function runDemoAnalysis() {
     setAdditionalCourseIds(new Set());
     setDesiredStart(null);
     setTestId(null);
-
-
-
+    setConsultationBusy(false);
+    setConsultationError(null);
+    setConsultationSent(false);
   }
   // Zielrollen
-  const [, setRoles] = useState<TargetRole[]>([]);
+  const [roles, setRoles] = useState<TargetRole[]>([]);
   const [loadingRoles, setLoadingRoles] = useState(true);
   const [rolesError, setRolesError] = useState<string | null>(null);
   const [targetRoleId, setTargetRoleId] = useState<string | null>(null);
@@ -1616,7 +1644,6 @@ async function runDemoAnalysis() {
   // am 15.09. zusammen mit den Rollenkarten in RoleSuggestStep (siehe
   // Kommentar dort) - der Schritt bindet nicht mehr an eine einzelne Rolle,
   // suggestRolesForSkillIds() wird hier daher nicht mehr aufgerufen.
-  const analysisGeneration = useRef(0);
   const [roleSkills, setRoleSkills] = useState<RoleSkillStatus[]>([]);
   const [loadingRoleSkills, setLoadingRoleSkills] = useState(false);
   const [roleSkillsError, setRoleSkillsError] = useState<string | null>(null);
@@ -1625,7 +1652,7 @@ async function runDemoAnalysis() {
   // Fragebogen-Pfad gefragt werden — FragebogenMethod (Anzeige) UND
   // buildQuizGapResult() (Berechnung) nutzen beide genau diese Liste, damit
   // "gefragt" und "gewertet" nie wieder auseinanderlaufen.
-  const [quizAnswers, setQuizAnswers] = useState<Record<string, SkillDepth | "no" | "unknown">>({});
+  const questionSkills = useMemo(() => pickCoreQuestionSkills(roleSkills), [roleSkills]);
   const [checkedSkills, setCheckedSkills] = useState<Set<string>>(new Set());
   // Teil 2 (22.09.2026, siehe ausführlicher Kommentar an SkillDepth/
   // quizSkillScore oben): Grad + Aktualität je Skill, parallel zu
@@ -1641,7 +1668,7 @@ async function runDemoAnalysis() {
   const [gapResult, setGapResult] = useState<GapAnalysisResponse | null>(null);
   const [gapBusy, setGapBusy] = useState(false);
   const [gapError, setGapError] = useState<string | null>(null);
-  const [, setSkills] = useState<SkillItem[]>([]);
+  const [skills, setSkills] = useState<SkillItem[]>([]);
   // KI-Tiefenanalyse (Version 19): reine Anreicherung der schnellen
   // Fuzzy-Gap-Analyse oben um woertliche Belege pro Skill - nach esco_uri
   // nachschlagbar. Laeuft NACH dem schnellen Gap-Ergebnis, bewusst
@@ -1674,7 +1701,7 @@ async function runDemoAnalysis() {
   const [manualSkillUris, setManualSkillUris] = useState<Set<string>>(new Set());
   const manualSkillUrisRef = useRef<Set<string>>(new Set());
   const [courseResult, setCourseResult] = useState<CourseMatchResponse | null>(null);
-  const [, setCourses] = useState<CourseItem[]>([]);
+  const [courses, setCourses] = useState<CourseItem[]>([]);
   // Aktive Kursauswahl im Kurs-Schritt (Version 15): standardmäßig die beste
   // Empfehlung, die Person kann aber bewusst einen der Alternativ-Kurse
   // wählen. Macht die spätere Anfrage konkreter als "irgendeine Empfehlung"
@@ -1695,9 +1722,6 @@ async function runDemoAnalysis() {
   // Beschäftigungsart (Vollzeit/Teilzeit) und gewünschter Arbeitsort
   // (Remote/Vor Ort), Version 24: ebenfalls im "Präferenzen"-Schritt
   // abgefragt, beide optional wie desiredStart.
-  const [returnToReview, setReturnToReview] = useState(false);
-  const [hardFrame, setHardFrame] = useState(false);
-  const [budgetLimit, setBudgetLimit] = useState<number | null>(null);
   const [employmentType, setEmploymentType] = useState<string | null>(null);
   const [workLocation, setWorkLocation] = useState<string | null>(null);
   // Förderungs-Präferenz (Version 32, 14.09. — "ob es förderfähig ist ...
@@ -1741,23 +1765,13 @@ async function runDemoAnalysis() {
   const [allCourses, setAllCourses] = useState<OrbitCourse[]>([]);
   const [courseCatalogError, setCourseCatalogError] = useState<string | null>(null);
   const [courseCatalogLoading, setCourseCatalogLoading] = useState(false);
-  const [, setCourseCatalogLoadedAt] = useState<number | null>(null);
+  const [courseCatalogLoadedAt, setCourseCatalogLoadedAt] = useState<number | null>(null);
   // Portfolio-Filter, finale Fassung (15.09., Feedback "wir müssen am
   // Dashboard ansetzen und das als Fixpunkt hinterlegen"): Bereich ist im
   // Kursformular jetzt Pflichtfeld (siehe bereich_key in orbit.ts) — die
   // zuverlaessige Quelle dafuer, welche Bereiche/Rollen ein Bildungstraeger
   // ueberhaupt anbietet, statt wie zuvor aus optionalen Skill-/Zielrollen-
   // Zuordnungen zu raten.
-  const questionSkills = useMemo(() => {
-    const eligible = bereichRole ? roleSkills.filter(s => roleSuggestSkillIds.has(s.esco_uri)) : roleSkills;
-    const core = pickCoreQuestionSkills(eligible);
-    const discriminates = (skill: RoleSkillStatus) => {
-      const count = allCourses.filter(c => c.covered_skill_uris?.includes(skill.esco_uri)).length;
-      return count > 0 && count < allCourses.length;
-    };
-    const ordered = [...core].sort((a,b) => Number(discriminates(b)) - Number(discriminates(a)) || b.weight-a.weight);
-    return ordered.slice(0, ordered.some(discriminates) ? 7 : 5);
-  }, [roleSkills, bereichRole, roleSuggestSkillIds, allCourses]);
   const coveredBereiche = useMemo(() => getCoveredBereiche(allCourses), [allCourses]);
   const rolesInPortfolio: CatalogRole[] = useMemo(
     () => rolesWithBereichCoverage(coveredBereiche),
@@ -1798,15 +1812,7 @@ async function runDemoAnalysis() {
   );
   // Lead
   const [leadName, setLeadName] = useState("");
-  const [leadEmail, setLeadEmailState] = useState("");
-  const contactStarted = useRef(false);
-  function setLeadEmail(value: string) {
-    setLeadEmailState(value);
-    if (value && !contactStarted.current) {
-      contactStarted.current = true;
-      if (analyticsEnabled) emit(analytics,{name:"contact_start",step:"contact",entry:entryPath});
-    }
-  }
+  const [leadEmail, setLeadEmail] = useState("");
   // Telefonnummer (Version 27, siehe LeadStep) — optional wie leadName/
   // leadEmail selbst schon vorher, aus demselben Grund: ein zusätzliches
   // Pflichtfeld hier würde nur die Abbruchrate erhöhen.
@@ -1858,7 +1864,6 @@ async function runDemoAnalysis() {
   // lassen. Harmlos, falls das Widget gar nicht scrollt.
   useEffect(() => {
     widgetBodyRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-    widgetBodyRef.current?.focus({preventScroll: true});
   }, [current, done, knowsRole]);
   async function loadRoles() {
     if (!apiKey) {
@@ -1945,6 +1950,7 @@ async function runDemoAnalysis() {
   function selectGoal(goalKey: string | null) {
     demoDataActiveRef.current = false;
     setCareerGoal(goalKey);
+    setCurrent(stepIndex("praeferenzen"));
   }
   /** Präferenzen-Schritt (Version 24): Beschäftigungsart/Arbeitsort/
    * Startzeitpunkt sind reine State-Updates (siehe PraeferenzenStep-Props),
@@ -1953,7 +1959,6 @@ async function runDemoAnalysis() {
    * "zielrolle". Alle drei Felder sind optional, es gibt daher keinen
    * eigenen Skip-Link — "Weiter" funktioniert immer, auch ohne Auswahl. */
   function continuePreferences() {
-    if (returnToReview && gapResult) { setReturnToReview(false); setCurrent(stepIndex("motivation")); return; }
     demoDataActiveRef.current = false;
     setCurrent(stepIndex(knowsRole === false ? "bereich" : "zielrolle"));
   }
@@ -1965,7 +1970,6 @@ async function runDemoAnalysis() {
     setCurrent(stepIndex("zielrolle"));
   }
   function selectRole(role: TargetRole) {
-    analysisGeneration.current += 1;
     // Vor dem Guard: eine echte Auswahl "entwertet" gegebenenfalls noch
     // stehende Demo-Daten aus dem Rundgang, auch wenn der Guard unten (bei
     // ohnehin schon gleicher Rolle) sonst nichts weiter tut.
@@ -1988,10 +1992,6 @@ async function runDemoAnalysis() {
     // nicht bereits vorhandene Skills. Der anschließende Skill-Check startet
     // deshalb bewusst ohne Vorbelegung.
     setCheckedSkills(new Set());
-    setQuizAnswers({});
-    setDepthBusy(false);
-    setManualSkillUris(new Set());
-    manualSkillUrisRef.current = new Set();
     setSkillDepthByUri(new Map());
     setGapResult(null);
     setCourseResult(null);
@@ -2008,17 +2008,14 @@ async function runDemoAnalysis() {
    *  gewählten Bereiche vereinigt. Alle analyzeGap()/matchCoursesToGap()-
    *  Aufrufe unten nutzen effectiveRoles (oben), damit diese Pseudo-Rolle
    *  dort gefunden wird. */
-  function selectBereich(bereichKeys: string[], learningIds: ReadonlySet<string> = roleSuggestSkillIds) {
-    analysisGeneration.current += 1;
+  function selectBereich(bereichKeys: string[]) {
     demoDataActiveRef.current = false;
     // careerGoal (Ziel-Schritt, siehe GOAL_OPTIONS) fliesst seit 15.09. in
     // die Skill-Gewichtung der Bereichs-Rolle ein (siehe buildBereichRole()
     // in gapAnalysis.ts) — "es soll mehr nach dem allgemeinen Ziel gehen".
-    const catalogueArea = buildBereichRole(bereichKeys, rolesInPortfolio, careerGoal);
-    // Area is a navigation container, never the union of occupational requirements.
-    const role = {...catalogueArea, skills: catalogueArea.skills.filter(skill => learningIds.has(skill.skill_id))};
-    setRoleSuggestSkillIds(new Set(role.skills.map(skill => skill.skill_id)));
+    const role = buildBereichRole(bereichKeys, rolesInPortfolio, careerGoal);
     setBereichRole(role);
+    if (role.role_id === targetRoleId) return;
     setTargetRoleId(role.role_id);
     setTargetRoleName(role.role_name);
     setMethod(null);
@@ -2026,10 +2023,6 @@ async function runDemoAnalysis() {
     // Bereichs-Skills sind Lernziele. Der Skill-Check soll danach separat
     // ermitteln, welche dieser und weiteren Skills bereits vorhanden sind.
     setCheckedSkills(new Set());
-    setQuizAnswers({});
-    setDepthBusy(false);
-    setManualSkillUris(new Set());
-    manualSkillUrisRef.current = new Set();
     setSkillDepthByUri(new Map());
     setGapResult(null);
     setCourseResult(null);
@@ -2090,7 +2083,6 @@ async function runDemoAnalysis() {
    *  API-Call. */
   async function loadRoleSkills() {
     if (!targetRoleId) return;
-    const generation = analysisGeneration.current;
     setLoadingRoleSkills(true);
     setRoleSkillsError(null);
     try {
@@ -2103,7 +2095,6 @@ async function runDemoAnalysis() {
           target_role_id: targetRoleId,
           lang: ESCO_LANG,
         });
-        if (generation !== analysisGeneration.current) return;
         setRoleSkills([...res.gap_skills, ...res.covered_skills]);
       }
     } catch (err) {
@@ -2134,9 +2125,7 @@ async function runDemoAnalysis() {
    *  vorherige Tiefen-Angabe vollständig (kein Rest-Zustand). Ersetzt
    *  toggleSkill() für den Fragebogen-Pfad (toggleSkill bleibt unverändert
    *  für alles andere, das binäres Setzen ohne Tiefe braucht). */
-  function answerQuizSkill(uri: string, answer: SkillDepth | null | "unknown") {
-    setQuizAnswers(prev => ({ ...prev, [uri]: answer ?? "no" }));
-    const depth = answer === "unknown" ? null : answer;
+  function answerQuizSkill(uri: string, depth: SkillDepth | null) {
     setCheckedSkills((prev) => {
       const has = prev.has(uri);
       if (depth !== null ? has : !has) return prev;
@@ -2217,7 +2206,6 @@ async function runDemoAnalysis() {
     skillTargets: { esco_uri: string; weight: number }[] = []
   ): Promise<void> {
     const requestId = crypto.randomUUID();
-    const generation = analysisGeneration.current;
     const depthUrl = DEPTH_ANALYSIS_URL || depthAnalysisBaseUrl(baseUrl);
     const isBereichAnalysis = roleId.startsWith("bereich:");
     const uniqueTargets = Array.from(
@@ -2250,7 +2238,6 @@ async function runDemoAnalysis() {
           : undefined,
       });
 
-      if (generation !== analysisGeneration.current) return;
       const depthMap = new Map<string, DepthSkillAssessment>(
         (Array.isArray(res?.skills) ? res.skills : []).map((s) => [s.esco_uri, s])
       );
@@ -2258,6 +2245,8 @@ async function runDemoAnalysis() {
       console.info("[JourneyPage] depth_analysis_completed", {
         request_id: requestId,
         skills: depthMap.size,
+        quality: res?.quality ?? null,
+        overall_match_percentage: res?.overall_match_percentage ?? null,
       });
 
       setDepthByUri(depthMap);
@@ -2283,12 +2272,10 @@ async function runDemoAnalysis() {
         endpoint: depthUrl,
         error: err,
       });
-      if (generation === analysisGeneration.current) {
-        setDepthByUri(new Map<string, DepthSkillAssessment>());
-        setDepthOverallAssessment(null);
-      }
+      setDepthByUri(new Map<string, DepthSkillAssessment>());
+      setDepthOverallAssessment(null);
     } finally {
-      if (generation === analysisGeneration.current) setDepthBusy(false);
+      setDepthBusy(false);
     }
   }
   /** Von der Person im Gap-Schritt ausgelöst (siehe GapStep/onMoveSkill) —
@@ -2315,7 +2302,12 @@ async function runDemoAnalysis() {
    * "Skill-Lücke" um. Die Funktion arbeitet bewusst nur mit der Skill-ID;
    * der Zielstatus wird aus dem aktuell gespeicherten Zustand abgeleitet.
    */
-
+  function moveSkillManually(id: string): void {
+    const currentSkill = skills.find((skill) => skill.id === id);
+    if (!currentSkill) return;
+    const nextMatched = !currentSkill.matched;
+    handleMoveSkill(id, nextMatched);
+  }
   /** Version 26 — zweistufig (lokal, dann Backend-Fallback), siehe
    *  ausfuehrlichen Kommentar an loadRoleSkills oben: derselbe Grund
    *  (Zielrolle evtl. nicht im statischen 74-Rollen-Katalog, aber sehr wohl
@@ -2428,13 +2420,11 @@ async function runDemoAnalysis() {
     // strikt wie beim Kern-Fix: ein nie angezeigter/angetippter Zusatz-Skill
     // zählt weiterhin nicht als Lücke.
     const extraAnsweredSkills = roleSkills.filter(
-      (s) => quizAnswers[s.esco_uri] !== undefined && !questionSkills.some((q) => q.esco_uri === s.esco_uri)
+      (s) => checkedSkills.has(s.esco_uri) && !questionSkills.some((q) => q.esco_uri === s.esco_uri)
     );
     const quizUniverse = [...questionSkills, ...extraAnsweredSkills];
 
     for (const s of quizUniverse) {
-      const answer = quizAnswers[s.esco_uri];
-      if (answer === undefined || answer === "unknown") continue;
       totalWeight += s.weight;
       if (checkedSkills.has(s.esco_uri)) {
         // Teil 2: statt eines pauschalen Volltreffers (100) fließt jetzt der
@@ -2497,13 +2487,12 @@ async function runDemoAnalysis() {
     setGapResult(result);
     // Erst die Motivations-Zwischenseite (siehe CORE_STEPS-Kommentar), dann
     // erst der Gap-Schritt — Person klickt sich jeweils selbst weiter.
-    if (contextCourseId) { setReturnToReview(true); setCurrent(stepIndex("praeferenzen")); }
-    else setCurrent(stepIndex("motivation"));
+    setCurrent(stepIndex("motivation"));
     setTestId(null);
     // Nutzer landet jetzt wie im Lebenslauf-Pfad zuerst auf der
     // Motivations-Zwischenseite und danach auf dem Gap-Schritt, klickt sich
     // von dort jeweils selbst weiter zu "Kursempfehlung ansehen →" (siehe
-    // ActionsRow in GapStep, onForward={() => void goToKurs()}) — vorher sprang der
+    // ActionsRow in GapStep, onForward={goToKurs}) — vorher sprang der
     // Fragebogen-Pfad hier automatisch nach 240ms weiter, wodurch der
     // Gap-Schritt nur kurz aufblitzte, statt sichtbar/lesbar zu sein
     // (Rückmeldung 17.09.). Dieselbe Lektion gilt jetzt auch für die neue
@@ -2534,63 +2523,237 @@ async function runDemoAnalysis() {
         console.error("[JourneyPage] createTest:", err);
       });
   }
-  function consultationProfile(): Profile {
-    const p = newProfile();
-    p.entry = entryPath;
-    p.goal = careerGoal;
-    p.courseId = contextCourseId;
-    p.roleId = bereichRole ? null : targetRoleId;
-    p.areas = bereichRole ? targetRoleId?.slice(8).split(":")[0].split(",") ?? [] : [];
-    p.learningSkills = [...roleSuggestSkillIds];
-    for (const [id, a] of Object.entries(method === "fragebogen" ? quizAnswers : {})) {
-      p.evidence[id] = {source: "self_report", value: a === "unknown" ? "unknown" : a === "no" ? "none" : a.proficiency === "grundkenntnisse" ? "supported" : "independent"};
-    }
-    // CV suggestions are not confirmed skills. Manual corrections are explicit self-report.
-    for (const id of manualSkillUris) p.evidence[id] = {source: "self_report", value: gapResult?.covered_skills.some(s => s.esco_uri === id) ? "independent" : "none"};
-    p.mode = {value: employmentType === "vollzeit" || employmentType === "teilzeit" ? employmentType : null, required: hardFrame};
-    p.format = {value: workLocation === "remote" ? "remote" : workLocation === "vor-ort" ? "vor_ort" : null, required: hardFrame};
-    p.category.value = ["zertifikat", "weiterbildung", "seminar", "studium"].includes(categoryPreference ?? "") ? categoryPreference as Profile["category"]["value"] : null;
-    p.maxWeeks = {value: desiredDuration === "kurz" ? 8 : desiredDuration === "mittel" ? 26 : null, required: hardFrame};
-    p.budget = {value: budgetLimit, required: budgetLimit !== null};
-    if (desiredStart && ["asap", "4-wochen", "1-3-monate"].includes(desiredStart)) {
-      const date = new Date(); date.setDate(date.getDate() + (desiredStart === "1-3-monate" ? 90 : 28));
-      p.startBy = {value: `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`, required: false};
-    }
-    p.funding = fundingPreference === "gefoerdert" ? "clarify" : null;
-    p.qualification = qualificationLevel as Profile["qualification"];
-    p.experienceYears = experienceYears;
-    p.language = germanLevel;
-    p.concern = leadMessage.trim() || null;
-    return p;
-  }
-  async function goToKurs(gapOverride?: GapAnalysisResponse, _textOverride?: string) {
+  async function goToKurs(
+    gapOverride?: GapAnalysisResponse,
+    textOverride?: string
+  ) {
     if (!targetRoleId) return;
+
     demoDataActiveRef.current = false;
     setGapBusy(true);
     setGapError(null);
+
     try {
-      if (courseCatalogLoading) return;
-      const g = gapOverride ?? gapResult;
-      const recommendations = recommend(consultationProfile(), allCourses.filter(c => isCourseActive(c)));
-      const mapped: CourseRecommendation[] = recommendations.map(r => ({
-        course_id: r.course.course_id, course_name: r.course.course_name,
-        provider: r.course.provider, duration_weeks: r.course.duration_weeks,
-        covers_gap_count: g?.gap_skills.filter(s => r.course.covered_skill_uris?.includes(s.esco_uri)).length ?? 0, covers_gap_percentage: 0,
-        is_role_fallback: r.status === "explore", covers_role_count: 0,
-        consultation_status: r.status, consultation_reasons: r.reasons,
-        consultation_open: r.open, consultation_conflicts: r.conflicts,
-        prerequisite_status: r.status === "blocked" ? "nicht_erfuellt" : "unklar",
-        prerequisite_unmet: r.conflicts,
-      }));
-      if (analyticsEnabled) emit(analytics, {name: mapped.length ? "recommendations" : "no_match", step: "results", entry: entryPath, count: mapped.length});
-      setCourseResult({tenant_id: "", target_role_id: targetRoleId, target_role_name: targetRoleName ?? "Deine Richtung", match_percentage: g?.match_percentage ?? 0, gap_skill_count: g?.gap_skills.length ?? 0, recommended_courses: mapped});
-      setSelectedCourseId(mapped.find(c => c.consultation_status !== "blocked")?.course_id ?? null);
-      setAdditionalCourseIds(new Set());
+      const sourceText = textOverride ?? text;
+      const effectiveGapResult = gapOverride ?? gapResult;
+
+      // Harte Runtime-Absicherung: ein alter/teilweise gemergter Journey-Stand
+      // darf den Kursfluss niemals mit "undefined.length" crashen.
+      const courseCatalog: OrbitCourse[] = Array.isArray(allCourses) ? allCourses : [];
+      if (!Array.isArray(allCourses)) {
+        console.warn("[JourneyPage] course_catalog_state_invalid", {
+          received_type: typeof courseCatalog,
+        });
+      }
+
+      let matchedCourses: CourseRecommendation[] = [];
+
+      // Der Zielbereich ist im Kursmatching eine harte fachliche Grenze.
+      // Ein generischer Skill darf niemals dazu führen, dass z.B. ein
+      // Entwicklerkurs bei einer Gesundheitsrolle als Empfehlung erscheint.
+      const targetCourseBereichKeys = (() => {
+        const role = effectiveRoles.find((r) => r.role_id === targetRoleId);
+        if (!role) return [] as string[];
+        if (role.role_id.startsWith("bereich:")) {
+          return role.role_id
+            .slice("bereich:".length)
+            .split(":")[0]
+            .split(",")
+            .filter(Boolean);
+        }
+        return role.bereich_key ? [role.bereich_key] : [];
+      })();
+      const courseIsInTargetBereich = (course: OrbitCourse): boolean => {
+        if (targetCourseBereichKeys.length === 0) return true;
+        const keys = new Set<string>([
+          ...(course.bereich_key ? [course.bereich_key] : []),
+          ...(course.bereich_keys ?? []),
+        ]);
+        return targetCourseBereichKeys.some((key) => keys.has(key));
+      };
+
+      const localRoleKnown =
+        analyzeGap(sourceText, targetRoleId, {
+          roles: effectiveRoles,
+        }) !== null;
+
+      // A. Existing local ranking path.
+      if (
+        localRoleKnown &&
+        effectiveGapResult &&
+        effectiveGapResult.target_role_id === targetRoleId
+      ) {
+        matchedCourses = rankCoursesForGap(
+          toGapAnalysisResultForRanking(effectiveGapResult),
+          courseCatalog,
+          {
+            employmentType,
+            workLocation,
+            desiredStart,
+            fundingPreference,
+            categoryPreference,
+            desiredDuration,
+            qualificationLevel,
+            experienceYears,
+            germanLevel,
+            roles: effectiveRoles,
+          }
+        );
+      }
+
+      let res: CourseMatchResponse = {
+        tenant_id: "",
+        target_role_id: targetRoleId,
+        target_role_name:
+          effectiveGapResult?.target_role_name ??
+          targetRoleName ??
+          targetRoleId,
+        match_percentage: effectiveGapResult?.match_percentage ?? 0,
+        // Fix (17.09.): fehlendes zweites "?." — effectiveGapResult war hier
+        // zwar bereits optional verkettet, .gap_skills selbst aber nicht,
+        // wodurch genau die Art von Crash passierte, vor der der Kommentar
+        // "Harte Runtime-Absicherung" oben eigentlich schützen sollte
+        // ("Cannot read properties of undefined (reading 'length')",
+        // ausgelöst über den Kursempfehlung-Button im Gap-Schritt).
+        gap_skill_count: effectiveGapResult?.gap_skills?.length ?? 0,
+        recommended_courses: matchedCourses,
+      };
+
+      // B. Existing backend matcher if local ranking produced no course.
+      if (matchedCourses.length === 0) {
+        console.info("[JourneyPage] course_match_backend_started", {
+          target_role_id: targetRoleId,
+          local_role_known: localRoleKnown,
+          catalog_count: courseCatalog.length,
+        });
+
+        try {
+          res = await fetchCourseMatch(baseUrl, apiKey, {
+            text: sourceText,
+            target_role_id: targetRoleId,
+          });
+
+          console.info("[JourneyPage] course_match_backend_completed", {
+            target_role_id: targetRoleId,
+            recommended_count: res.recommended_courses?.length ?? 0,
+          });
+        } catch (backendError) {
+          console.error(
+            "[JourneyPage] course_match_backend_failed:",
+            backendError
+          );
+        }
+      }
+
+      // Auch Backend-Ergebnisse werden gegen den echten Zielbereich geprüft.
+      // So kann ein veralteter/anders konfigurierter Backend-Matcher keinen
+      // fachfremden Kurs in die Journey durchreichen.
+      if (res.recommended_courses?.length && targetCourseBereichKeys.length > 0) {
+        const catalogById = new Map(courseCatalog.map((course) => [course.course_id, course]));
+        res = {
+          ...res,
+          recommended_courses: res.recommended_courses.filter((recommendation) => {
+            const course = catalogById.get(recommendation.course_id);
+            return Boolean(course && courseIsInTargetBereich(course));
+          }),
+        };
+      }
+
+      // C. Final safety net: echte Kurse NUR aus dem Zielbereich.
+      // Never fabricate a course. If the catalog contains courses, the UX
+      // must not end on an empty result merely because the matcher missed.
+      if (
+        (!res.recommended_courses ||
+          res.recommended_courses.length === 0) &&
+        courseCatalog.length > 0
+      ) {
+        const fallbackCourses: CourseRecommendation[] = allCourses
+          .filter((course) => Boolean(course.course_id && course.course_name) && courseIsInTargetBereich(course))
+          .slice()
+          .sort((a, b) => {
+            const featuredDelta =
+              Number(Boolean(b.is_featured)) -
+              Number(Boolean(a.is_featured));
+
+            if (featuredDelta !== 0) return featuredDelta;
+
+            const aStart = a.starts_at
+              ? new Date(a.starts_at).getTime()
+              : Number.MAX_SAFE_INTEGER;
+            const bStart = b.starts_at
+              ? new Date(b.starts_at).getTime()
+              : Number.MAX_SAFE_INTEGER;
+
+            return aStart - bStart;
+          })
+          .slice(0, 6)
+          .map((course) => ({
+            course_id: course.course_id,
+            course_name: course.course_name,
+            provider: course.provider,
+            match_score: 0,
+            covers_gap_percentage: 0,
+            covers_gap_count: 0,
+            duration_weeks: course.duration_weeks,
+            matched_skills: [],
+            missing_skills: [],
+            is_role_fallback: true,
+            covers_role_count: 0,
+          }));
+
+        res = {
+          ...res,
+          recommended_courses: fallbackCourses,
+        };
+
+        console.info("[JourneyPage] course_catalog_fallback_used", {
+          catalog_count: courseCatalog.length,
+          fallback_count: fallbackCourses.length,
+        });
+      }
+
+      const personalizedCourses = personalizeCourseOrder(
+        res.recommended_courses ?? [],
+        careerGoal
+      );
+
+      console.info("[JourneyPage] course_result_ready", {
+        target_role_id: targetRoleId,
+        matched_count: personalizedCourses.length,
+        catalog_count: courseCatalog.length,
+        catalog_error: courseCatalogError,
+      });
+
+      setCourseResult({
+        ...res,
+        recommended_courses: personalizedCourses,
+      });
+
       setCurrent(stepIndex("kurs"));
-      const best = mapped.find(c => c.consultation_status !== "blocked");
-      if (testId !== null && best) attachTestRecommendation(baseUrl, apiKey, testId, best.course_id, best.course_name).catch(() => {});
-    } catch (err) { setGapError(reportError("goToKurs", err)); }
-    finally { setGapBusy(false); }
+      setSelectedCourseId(personalizedCourses[0]?.course_id ?? null);
+      setAdditionalCourseIds(new Set());
+
+      const bestCourse = personalizedCourses[0];
+      if (testId !== null && bestCourse) {
+        attachTestRecommendation(
+          baseUrl,
+          apiKey,
+          testId,
+          bestCourse.course_id,
+          bestCourse.course_name
+        ).catch((err) => {
+          console.error(
+            "[JourneyPage] attachTestRecommendation:",
+            err
+          );
+        });
+      }
+    } catch (err) {
+      console.error("[JourneyPage] goToKurs:", err);
+      setGapError(reportError("goToKurs", err));
+    } finally {
+      setGapBusy(false);
+    }
   }
   /** Version 27: nimmt consultationRequested jetzt als expliziten PARAMETER
    *  statt ihn aus dem wantsConsultation-State zu lesen — LeadStep hat keine
@@ -2648,65 +2811,274 @@ async function runDemoAnalysis() {
    *     statt dem Bildungsträger eine möglicherweise falsche Zielrolle ohne
    *     jeden Hinweis anzuzeigen. Kein Backend-Katalog bekannt → Original-ID
    *     unverändert lassen wie bisher (kein Rätselraten ins Leere). */
-  const leadSession = useRef<{id: string; token: string} | null>(null);
-  const leadLock = useRef(false);
-  const pendingSubmission = useRef<import("../api/orbit").LeadCreateRequest | null>(null);
-  function leadPayload(intent: "start" | "info" | "consultation" | "save") {
-    if (!leadSession.current) leadSession.current = {id: crypto.randomUUID(), token: crypto.randomUUID() + crypto.randomUUID()};
-    return {
-      request_id: crypto.randomUUID(), journey_submission_id: leadSession.current.id,
-      submission_token: leadSession.current.token, submission_intent: intent,
-      text: "", target_role_id: targetRoleId ?? "", lead_name: leadName.trim() || null,
-      contact_email: leadEmail.trim(), contact_phone: leadPhone.trim() || null,
-      message: leadMessage.trim() || null, selected_course_id: selectedCourseId,
-      linked_course_ids: [...new Set([...(selectedCourseId ? [selectedCourseId] : []), ...additionalCourseIds])],
-      desired_start: desiredStart, career_goal: careerGoal, employment_type: employmentType,
-      work_location: workLocation, funding_preference: fundingPreference,
-      qualification_level: qualificationLevel, experience_years: experienceYears, german_level: germanLevel,
-      consultation_requested: intent === "consultation", consent_given: true,
-      consent_given_at: new Date().toISOString(), consent_text_version: CONSENT_TEXT_VERSION,
-      cv_processing_consent_given: !!cvProcessingConsentAt, cv_processing_consent_at: cvProcessingConsentAt,
-      consultation_snapshot: {
-        version: 1, profile: consultationProfile(), summary: profileSummary(consultationProfile(), allCourses),
-        target_role_name: targetRoleName, source: method === "fragebogen" ? "self_report" : "document_suggestions",
-        matched_skills: gapResult?.covered_skills.map(s => s.preferred_label) ?? [],
-        gap_skills: gapResult?.gap_skills.map(s => s.preferred_label) ?? [],
-      },
-    } satisfies import("../api/orbit").LeadCreateRequest;
+  function normalizeRoleNameForMatch(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/\([^)]*\)/g, " ")
+      .replace(/[^a-zäöüß0-9]+/gi, " ")
+      .trim()
+      .replace(/\s+/g, " ");
   }
-  async function sendConsultation(intent: "start" | "info" | "consultation" | "save") {
-    if (leadLock.current) return;
-    const early = intent === "save";
-    const setError = early ? setEarlyCaptureError : setLeadError;
-    if (!EMAIL_RE.test(leadEmail.trim())) { setError("Bitte gib eine gültige E-Mail-Adresse an."); return; }
-    if (!consent) { setError("Bitte stimme der Speicherung deiner Angaben zu."); return; }
-    if (!baseUrl || !apiKey) { setError("Die Verbindung zum Bildungsträger ist noch nicht eingerichtet."); return; }
-    // After ambiguous network failure only retry the exact same operation.
-    if (pendingSubmission.current && pendingSubmission.current.submission_intent !== intent) {
-      setError("Bitte wiederhole zuerst die vorherige Anfrage, damit wir ihren Eingang bestätigen können."); return;
+  function backendRoleNameOverlapScore(normalizedWanted: string, normalizedCandidate: string): number {
+    const wordsWanted = new Set(normalizedWanted.split(" ").filter((w) => w.length >= 4));
+    const wordsCandidate = new Set(normalizedCandidate.split(" ").filter((w) => w.length >= 4));
+    if (wordsWanted.size === 0 || wordsCandidate.size === 0) return 0;
+    let shared = 0;
+    wordsWanted.forEach((w) => {
+      if (wordsCandidate.has(w)) shared += 1;
+    });
+    return shared;
+  }
+  function resolveLeadTargetRoleId(
+    rawTargetRoleId: string,
+    rawTargetRoleName: string | null,
+    catalogRoles: CatalogRole[],
+    backendRoles: TargetRole[]
+  ): { id: string; nameConfirmed: boolean } {
+    // 1. ID direkt im Backend-Katalog bekannt — der Normalfall.
+    if (backendRoles.some((r) => r.role_id === rawTargetRoleId)) {
+      return { id: rawTargetRoleId, nameConfirmed: true };
     }
-    leadLock.current = true;
-    (early ? setEarlyCaptureBusy : setLeadBusy)(true);
-    setError(null);
+    const wantedName = rawTargetRoleName ? normalizeRoleNameForMatch(rawTargetRoleName) : "";
+    // 2. Exakter Namensabgleich gegen den Backend-Katalog.
+    if (wantedName) {
+      const exactByName = backendRoles.find((r) => normalizeRoleNameForMatch(r.role_name) === wantedName);
+      if (exactByName) return { id: exactByName.role_id, nameConfirmed: true };
+    }
+    // 3. Bereichs-Kurzweg: zugrunde liegende echte ROLES_CATALOG-Rolle
+    //    bestimmen (bisheriges Verhalten) und deren Namen erneut exakt gegen
+    //    den Backend-Katalog abgleichen.
+    if (rawTargetRoleId.startsWith("bereich:")) {
+      const bereichKeys = rawTargetRoleId.slice("bereich:".length).split(":")[0].split(",");
+      const realRole = catalogRoles.find((r) => !r.role_id.startsWith("bereich:") && bereichKeys.includes(r.bereich_key));
+      if (realRole) {
+        const realName = normalizeRoleNameForMatch(realRole.role_name);
+        const byRealName = backendRoles.find((r) => normalizeRoleNameForMatch(r.role_name) === realName);
+        if (byRealName) return { id: byRealName.role_id, nameConfirmed: true };
+      }
+    }
+    // 4. Weicher Namensabgleich (gemeinsame, aussagekräftige Wörter).
+    if (wantedName && backendRoles.length > 0) {
+      let best: TargetRole | null = null;
+      let bestScore = 0;
+      for (const r of backendRoles) {
+        const score = backendRoleNameOverlapScore(wantedName, normalizeRoleNameForMatch(r.role_name));
+        if (score > bestScore) {
+          bestScore = score;
+          best = r;
+        }
+      }
+      if (best) return { id: best.role_id, nameConfirmed: true };
+    }
+    // 5. Letzter Ausweg, siehe Erklärung oben — Lead retten statt verlieren,
+    //    aber ehrlich als nicht bestätigt markieren.
+    if (backendRoles.length > 0) {
+      console.warn(
+        `[JourneyPage] resolveLeadTargetRoleId: keine passende Backend-Zielrolle für "${rawTargetRoleName ?? rawTargetRoleId}" gefunden — verwende ersatzweise "${backendRoles[0].role_name}", Hinweis geht mit ins Freitext-Anliegen.`
+      );
+      return { id: backendRoles[0].role_id, nameConfirmed: false };
+    }
+    return { id: rawTargetRoleId, nameConfirmed: false };
+  }
+  async function submitLead(intent: "start" | "info" | "consultation") {
+    const consultationRequested = intent === "consultation";
+    // "Kurs direkt buchen" ist eine qualifizierte Startanfrage. Wir nutzen
+    // das bereits vorhandene desired_start-Feld und setzen es für diesen CTA
+    // bewusst auf "asap", ohne einen neuen Backend-Endpunkt zu erfinden.
+    // "info" lässt den im Präferenzen-Schritt genannten Startwunsch
+    // unverändert, statt fälschlich "asap" zu behaupten.
+    const requestedStart = intent === "start" ? "asap" : desiredStart;
+    const trimmedEmail = leadEmail.trim();
+    if (!trimmedEmail || !EMAIL_RE.test(trimmedEmail)) {
+      setLeadError("Bitte gib eine gültige E-Mail-Adresse an — nur so kann dich dein Bildungsträger erreichen.");
+      return;
+    }
+    if (!consent) {
+      setLeadError("Bitte stimme der Speicherung deiner Angaben zu.");
+      return;
+    }
+    if (!targetRoleId) {
+      setLeadError("Dein Ziel konnte gerade nicht übernommen werden. Bitte geh einen Schritt zurück und versuch es erneut.");
+      return;
+    }
+    if (!baseUrl || !apiKey) {
+      setLeadError("Die Verbindung zum Bildungsträger ist gerade nicht eingerichtet. Bitte versuch es später erneut.");
+      return;
+    }
+    setLeadBusy(true);
+    setLeadError(null);
     try {
-      const payload = pendingSubmission.current ?? leadPayload(intent);
-      pendingSubmission.current = payload;
-      const receipt = await createLead(baseUrl, apiKey, payload);
-      if (!receipt?.lead_id) throw new Error("Bestätigung fehlt");
-      pendingSubmission.current = null;
-      if (analyticsEnabled && !early) emit(analytics, {name: "submit_success", step: "contact", entry: entryPath});
-      if (early) setEarlyLeadSaved(true);
-      else { setWantsConsultation(intent === "consultation"); setDone(true); }
-    } catch {
-      if (analyticsEnabled) emit(analytics,{name:"error",step:"contact",entry:entryPath});
-      setError("Der Eingang konnte nicht bestätigt werden. Bitte wiederhole dieselbe Anfrage; sie wird nur einmal gespeichert. Die Wiederholung sendet unverändert deine vorherige Anfrage.");
+      // Siehe ausführlichen Kommentar an resolveLeadTargetRoleId oben — bei
+      // nameConfirmed:false konnte die Zielrolle nicht sauber im
+      // Backend-Katalog wiedergefunden werden; damit das nicht wortlos
+      // untergeht, wird es dem Freitext-Anliegen vorangestellt (Version 38,
+      // 17.09.), statt dem Bildungsträger stillschweigend eine evtl. falsche
+      // Zielrolle anzuzeigen.
+      const resolvedTargetRole = resolveLeadTargetRoleId(targetRoleId, targetRoleName, effectiveRoles, roles);
+      const combinedMessage = [
+        !resolvedTargetRole.nameConfirmed && targetRoleName
+          ? `[Automatischer Hinweis: Zielrolle „${targetRoleName}“ konnte im System nicht eindeutig zugeordnet werden — bitte manuell prüfen.]`
+          : null,
+        leadMessage.trim() || null,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      const created = await createLead(baseUrl, apiKey, {
+        text,
+        target_role_id: resolvedTargetRole.id,
+        lead_name: leadName.trim() || null,
+        contact_email: trimmedEmail,
+        // Telefonnummer (Version 27, siehe leadPhone oben), optional.
+        contact_phone: leadPhone.trim() || null,
+        // Freitext-Anliegen (Version 38, 17.09., siehe leadMessage oben) —
+        // optional, damit der Bildungsträger schon vor dem ersten Kontakt
+        // weiß, worum es der Person konkret geht. Siehe combinedMessage oben
+        // für den zusätzlichen Zielrollen-Hinweis bei nameConfirmed:false.
+        message: combinedMessage || null,
+        // Zusätzliche Qualifizierungsmerkmale (Version 15): welchen Kurs die
+        // Person aktiv gewählt hat und wann sie starten möchte. Bewusst als
+        // optionale Zusatzfelder verschickt — ein Backend, das sie noch nicht
+        // kennt, ignoriert sie einfach, statt die Anfrage abzulehnen.
+        selected_course_id: selectedCourseId,
+        // Bei Bereich-Flows ist targetRoleId synthetisch (bereich:*).
+        // Die bereits berechnete Journey-Auswertung wird deshalb mitgesendet,
+        // damit das Backend keinen nicht existierenden target_role-Datensatz
+        // erneut analysieren muss.
+        journey_snapshot: gapResult ? {
+          target_role_name: gapResult.target_role_name,
+          match_percentage: gapResult.match_percentage,
+          matched_skills: gapResult.covered_skills.map((s) => s.preferred_label),
+          gap_skills: gapResult.gap_skills.map((s) => s.preferred_label),
+          selected_course_id: selectedCourseId,
+        } : null,
+        desired_start: requestedStart,
+        // Motivationale Qualifizierung aus dem Ziel-Schritt (Version 16),
+        // ebenfalls optional (null, wenn übersprungen).
+        career_goal: careerGoal,
+        // Beschäftigungsart/Arbeitsort aus dem "Präferenzen"-Schritt
+        // (Version 24), ebenfalls optional (null, wenn übersprungen).
+        employment_type: employmentType,
+        work_location: workLocation,
+        // Förderungs-Präferenz aus dem "Präferenzen"-Schritt (Version 32,
+        // 14.09.), ebenfalls optional (null, wenn übersprungen) — damit der
+        // Bildungsträger beim Nachfassen weiß, ob Förderung ein Thema ist.
+        funding_preference: fundingPreference,
+        // Voraussetzungs-Auskunft aus dem "Präferenzen"-Schritt (Version 34,
+        // 22.09.), ebenfalls optional (null, wenn übersprungen) — der
+        // Bildungsträger sieht damit beim Nachfassen direkt, welche
+        // Vorbildung/Erfahrung/Sprachkenntnisse die Person selbst angibt,
+        // ohne im Skill-Profil danach suchen zu müssen.
+        qualification_level: qualificationLevel,
+        experience_years: experienceYears,
+        german_level: germanLevel,
+        // Beratungswunsch (Version 20, seit Version 27 ueber den gewaehlten
+        // CTA-Button mitgegeben statt ueber eine Checkbox, siehe Kommentar
+        // an der Funktionssignatur oben).
+        consultation_requested: consultationRequested,
+        // DSGVO-Nachweis (Version 28, Art. 7 Abs. 1 DSGVO): WANN genau und zu
+        // welcher Textversion die Person zugestimmt hat — vorher wurde die
+        // Checkbox nur geprüft, aber nie mitgeschickt (siehe consent_given_at
+        // in orbit.ts). consent_given ist hier immer true, weil ohne Haken
+        // (Check oben) gar nicht abgeschickt würde.
+        consent_given: true,
+        consent_given_at: new Date().toISOString(),
+        consent_text_version: CONSENT_TEXT_VERSION,
+        // Separater Nachweis für die frühere Einwilligung im CV-Schritt (siehe
+        // cvProcessingConsentAt oben) — null, falls die Person z.B. über den
+        // Fragebogen ohne CV-Upload zur Zielrolle gekommen ist.
+        cv_processing_consent_given: cvProcessingConsentAt ? true : null,
+        cv_processing_consent_at: cvProcessingConsentAt,
+      });
+      if (!created?.lead_id) {
+        throw new Error("Lead wurde ohne lead_id zurückgegeben");
+      }
+      // Mehrfach-Kursanfrage (siehe additionalCourseIds oben): früher wurde
+      // hier pro zusätzlich markiertem Kurs ein EIGENER Lead angelegt — das
+      // ließ dieselbe Person im Dashboard als mehrere separate Karten
+      // auftauchen. Jetzt genau wie beim manuellen Anlegen eines Leads im
+      // Dashboard (siehe handleCreateLead/setLeadLinkedCourses dort): EIN
+      // Lead, alle zusätzlich gewählten Kurse hängen als linked_course_ids
+      // dran, damit sie auf DERSELBEN Kachel erscheinen (siehe
+      // linked-course-chips in DashboardPage.tsx). Fire-and-forget-tauglich:
+      // schlägt das Verlinken fehl, ist der Haupt-Lead trotzdem sicher
+      // angelegt und die Person sieht ganz normal den Erfolgs-Screen.
+      const extraCourseIds = Array.from(additionalCourseIds).filter((id) => id !== selectedCourseId);
+      if (extraCourseIds.length > 0) {
+        try {
+          await setLeadLinkedCourses(baseUrl, apiKey, created.lead_id, [
+            ...(selectedCourseId ? [selectedCourseId] : []),
+            ...extraCourseIds,
+          ]);
+        } catch (err) {
+          console.error("[JourneyPage] submitLead (Kurse verlinken):", err);
+        }
+      }
+      setDone(true);
+    } catch (err) {
+      setLeadError(reportError("submitLead", err));
     } finally {
-      leadLock.current = false;
-      (early ? setEarlyCaptureBusy : setLeadBusy)(false);
+      setLeadBusy(false);
     }
   }
-  async function submitLead(intent: "start" | "info" | "consultation") { await sendConsultation(intent); }
-  async function saveResultEarly() { await sendConsultation("save"); }
+  /** Sichert das Gap-Ergebnis vorzeitig per E-Mail (siehe earlyLeadSaved oben) —
+   * erzeugt technisch bereits einen vollwertigen Lead, genau wie submitLead().
+   * Bewusster Kompromiss: Es gibt aktuell keinen "Lead aktualisieren"-Endpunkt
+   * im Backend (nur create/list/booked-Status), daher entsteht ein ZWEITER
+   * Lead-Datensatz, falls dieselbe Person später im Anfrage-Schritt erneut
+   * absendet. Für den Bildungsträger ist das unproblematisch (beide Einträge
+   * zeigen dieselbe Zielrolle/E-Mail und lassen sich leicht zuordnen), aber
+   * bewusst dokumentiert für den Fall, dass später ein Upsert-Endpunkt ergänzt
+   * wird — dann kann dieser zweite create-Aufruf durch ein Update ersetzt werden. */
+  async function saveResultEarly() {
+    const trimmedEmail = leadEmail.trim();
+    if (!trimmedEmail || !EMAIL_RE.test(trimmedEmail)) {
+      setEarlyCaptureError("Bitte gib eine gültige E-Mail-Adresse an.");
+      return;
+    }
+    if (!consent) {
+      setEarlyCaptureError("Bitte stimme der Speicherung deiner Angaben zu.");
+      return;
+    }
+    if (!targetRoleId) return;
+    setEarlyCaptureBusy(true);
+    setEarlyCaptureError(null);
+    try {
+      // Siehe resolveLeadTargetRoleId oben — hier gibt es kein Freitextfeld
+      // wie in submitLead(), daher landet ein nameConfirmed:false-Hinweis
+      // ersatzweise direkt im message-Feld (additiv, siehe orbit.ts).
+      const resolvedTargetRole = resolveLeadTargetRoleId(targetRoleId, targetRoleName, effectiveRoles, roles);
+      await createLead(baseUrl, apiKey, {
+        text,
+        target_role_id: resolvedTargetRole.id,
+        message:
+          !resolvedTargetRole.nameConfirmed && targetRoleName
+            ? `[Automatischer Hinweis: Zielrolle „${targetRoleName}“ konnte im System nicht eindeutig zugeordnet werden — bitte manuell prüfen.]`
+            : null,
+        lead_name: leadName.trim() || null,
+        contact_email: trimmedEmail,
+        career_goal: careerGoal,
+        desired_start: desiredStart,
+        employment_type: employmentType,
+        work_location: workLocation,
+        funding_preference: fundingPreference,
+        qualification_level: qualificationLevel,
+        experience_years: experienceYears,
+        german_level: germanLevel,
+        // Siehe gleichnamige Felder in submitLead() oben — derselbe DSGVO-
+        // Nachweis gilt auch für die vorzeitige Sicherung per E-Mail.
+        consent_given: true,
+        consent_given_at: new Date().toISOString(),
+        consent_text_version: CONSENT_TEXT_VERSION,
+        cv_processing_consent_given: cvProcessingConsentAt ? true : null,
+        cv_processing_consent_at: cvProcessingConsentAt,
+      });
+      setEarlyLeadSaved(true);
+    } catch (err) {
+      setEarlyCaptureError(reportError("saveResultEarly", err));
+    } finally {
+      setEarlyCaptureBusy(false);
+    }
+  }
   useEffect(() => {
     const nextSkills: SkillItem[] = gapResult
       ? [...gapResult.covered_skills, ...gapResult.gap_skills].map((skill) => ({
@@ -2759,11 +3131,7 @@ async function runDemoAnalysis() {
     }
   }, [courseResult, selectedGoal, allCourses]);
 
-  const consultationPhase = done ? 4 : stepKey === "kurs" ? 4 : stepKey === "gap" ? 3 : stepKey === "motivation" ? 2 : ["bereich", "zielrolle", "skills"].includes(stepKey ?? "") ? 1 : 0;
-  useEffect(() => {
-    if (analyticsEnabled) emit(analytics, {name: "phase_view", step: done ? "done" : stepKey === "kurs" ? "results" : stepKey === "gap" ? "results" : stepKey === "motivation" ? "review" : stepKey === "praeferenzen" ? "frame" : "direction", entry: entryPath});
-  }, [stepKey, done, analyticsEnabled, analytics, entryPath]);
-  const topCourse: CourseRecommendation | undefined = courseResult?.recommended_courses?.find(c => c.consultation_status !== "blocked");
+  const topCourse: CourseRecommendation | undefined = courseResult?.recommended_courses?.[0];
   // Die Person kann im Kurs-Schritt bewusst einen Alternativ-Kurs statt der
   // Top-Empfehlung wählen (siehe selectedCourseId) — ab hier zählt für Pitch,
   // Anfrage und Abschluss-Screen diese aktive Auswahl, nicht mehr blind die
@@ -2826,14 +3194,14 @@ async function runDemoAnalysis() {
             Powered by DYD ORBIT
           </div>
           <div className="widget-head">
-            <div className="widget-eyebrow">Deine digitale Weiterbildungsberatung</div>
+            <div className="widget-eyebrow">Berufsberatung &amp; Weiterbildungs-Finder · ca. 2 Minuten</div>
             <h1 className="display">Finde die Weiterbildung, die dich wirklich weiterbringt</h1>
             <div className="sub">
               Ob du schon ein klares Ziel hast oder erst noch die passende Richtung finden willst: Wir gleichen dein
-              Profil in Echtzeit ab und helfen dir, passende Lernmöglichkeiten und offene Fragen zu erkennen.
+              Profil in Echtzeit ab und zeigen dir genau, welcher nächste Schritt dich deinem Traumjob näherbringt.
             </div>
             <div className="trust-row">
-              <span>✓ Konkrete Lernziele statt Lebenslaufpflicht</span>
+              <span>✓ EU-ESCO-Standard</span>
               {/* Bewusst nicht mehr "✓ DSGVO-konform" (Version 28): eine
                   pauschale Compliance-Behauptung ohne verlinkte
                   Datenschutzerklärung, nachweisbare Einwilligung und
@@ -2845,7 +3213,7 @@ async function runDemoAnalysis() {
                   Consent-Felder tatsächlich speichert, kann hier wieder eine
                   stärkere Aussage stehen. Bis dahin bewusst zurückhaltender
                   formuliert. */}
-              <span>✓ Du entscheidest, welche Angaben du teilst</span>
+              <span>✓ Datenschutz nach EU-Standard</span>
               <span>✓ Kostenlos &amp; unverbindlich</span>
             </div>
           </div>
@@ -2854,21 +3222,21 @@ async function runDemoAnalysis() {
               <div className="progress-track" aria-hidden="true">
                 <div
                   className="progress-fill"
-                  style={{ width: `${Math.min(100, ((consultationPhase + 1) / PHASES.length) * 100)}%` }}
+                  style={{ width: `${Math.min(100, ((current + 1) / steps.length) * 100)}%` }}
                 />
               </div>
               <div className="stepper" data-tour="tour-stepper">
-                {PHASES.map((label, i) => (
-                  <div key={label} className={`step-node ${i < consultationPhase ? "done" : i === consultationPhase ? "active" : ""}`}>
-                    <div className="step-circle">{i < consultationPhase ? "✓" : i + 1}</div>
-                    <div className="step-label">{label}</div>
-                    {i < PHASES.length - 1 && <div className={`step-line ${i < consultationPhase ? "done" : ""}`} />}
+                {steps.map((s, i) => (
+                  <div key={s.key} className={`step-node ${i < current ? "done" : i === current ? "active" : ""}`}>
+                    <div className="step-circle">{i < current ? "✓" : i + 1}</div>
+                    <div className="step-label">{s.label}</div>
+                    {i < steps.length - 1 && <div className={`step-line ${i < current ? "done" : ""}`} />}
                   </div>
                 ))}
               </div>
             </>
           )}
-          <div className="widget-body" ref={widgetBodyRef} tabIndex={-1}>
+          <div className="widget-body" ref={widgetBodyRef}>
             {done ? (
               <FinalScreen
                 leadName={leadName}
@@ -2879,39 +3247,12 @@ async function runDemoAnalysis() {
               />
             ) : knowsRole === null ? (
               <div className="panel-step">
-                <p className="hint">{CONTEXT[tenantKind]} Du erhältst eine Auswahl aus dem Portfolio {tenantName}. Ein Lebenslauf und Kontaktdaten sind dafür nicht erforderlich.</p>
-                {contextCourseId && <div className="consultation-frame">
-                  <strong>{allCourses.find(c => c.course_id === contextCourseId)?.course_name ?? "Dein gewähltes Angebot"}</strong>
-                  <button type="button" className="btn-forward" disabled={courseCatalogLoading || !allCourses.some(c => c.course_id === contextCourseId)} onClick={() => {
-                    const course = allCourses.find(c => c.course_id === contextCourseId);
-                    if (!course) return;
-                    setEntryPath("learn");
-                    if (analyticsEnabled) emit(analytics,{name:"start",step:"entry",entry:"learn"});
-                    setKnowsRole(false);
-                    selectBereich(courseAreaKeys(course), new Set(course.covered_skill_uris));
-                    setRoleSuggestSkillIds(new Set(course.covered_skill_uris));
-                    setMethod("fragebogen");
-                    setCurrent(WITH_BEREICH_STEPS.findIndex(s => s.key === "skills"));
-                  }}>Dieses Angebot prüfen →</button>
-                  <button type="button" className="btn-back" onClick={() => setContextCourseId(null)}>Andere Angebote entdecken</button>
-                </div>}
-                {!courseCatalogLoading && (courseCatalogError || allCourses.length === 0) && <div className="consultation-frame" role="status">
-                  <p>Derzeit können wir dir keine verlässliche Kursauswahl anzeigen. Du kannst es erneut versuchen oder dein Anliegen direkt besprechen.</p>
-                  <button type="button" className="btn-back" onClick={() => void loadFeaturedCourses()}>Kurse erneut laden</button>
-                  <button type="button" className="btn-forward" onClick={() => { setKnowsRole(false); setTargetRoleId("open"); setTargetRoleName("Weiterbildungsberatung"); setCurrent(WITH_BEREICH_STEPS.findIndex(s => s.key === "kurs")); }}>Ohne Kursauswahl Beratung anfragen</button>
-                </div>}
                 <IntroStep
                   onKnowsRole={() => {
-                    setContextCourseId(null);
-                    setEntryPath("change");
-                    if (analyticsEnabled) emit(analytics,{name:"start",step:"entry",entry:"change"});
                     setKnowsRole(true);
                     setCurrent(0); // erster Schritt von BASE_STEPS ("ziel")
                   }}
-                  onUnsure={(entry) => {
-                    setContextCourseId(null);
-                    setEntryPath(entry);
-                    if (analyticsEnabled) emit(analytics,{name:"start",step:"entry",entry});
+                  onUnsure={() => {
                     setKnowsRole(false);
                     setCurrent(0); // erster Schritt von WITH_BEREICH_STEPS ("ziel")
                   }}
@@ -2923,8 +3264,7 @@ async function runDemoAnalysis() {
                   <GoalStep
                     selected={careerGoal}
                     onSelect={selectGoal}
-                    onSkip={() => {selectGoal(null); setCurrent(stepIndex("praeferenzen"));}}
-                    onForward={() => setCurrent(stepIndex("praeferenzen"))}
+                    onSkip={() => selectGoal(null)}
                     onBack={() => {
                       setKnowsRole(null);
                       setCurrent(-1);
@@ -2932,11 +3272,7 @@ async function runDemoAnalysis() {
                   />
                 )}
                 {stepKey === "praeferenzen" && (
-                  <><div className="consultation-frame">
-                    <label><input type="checkbox" checked={hardFrame} onChange={e => setHardFrame(e.target.checked)} /> Lernformat, Zeitmodell und maximale Dauer sind für mich zwingend.</label>
-                    <label htmlFor="journey-budget">Maximales Gesamtbudget in Euro (optional)</label>
-                    <input id="journey-budget" type="number" min="0" step="50" value={budgetLimit ?? ""} onChange={e => setBudgetLimit(e.target.value === "" ? null : Math.max(0, Number(e.target.value)))} />
-                  </div><PraeferenzenStep
+                  <PraeferenzenStep
                     employmentType={employmentType}
                     onSelectEmploymentType={setEmploymentType}
                     workLocation={workLocation}
@@ -2958,7 +3294,7 @@ async function runDemoAnalysis() {
                     onSelectGermanLevel={setGermanLevel}
                     onForward={continuePreferences}
                     onBack={() => setCurrent(stepIndex("ziel"))}
-                  /></>
+                  />
                 )}
                 {stepKey === "bereich" && (
                   <RoleSuggestStep
@@ -3005,7 +3341,6 @@ async function runDemoAnalysis() {
                     skillDepthByUri={skillDepthByUri}
                     learningGoalSkillIds={roleSuggestSkillIds}
                     onAnswerSkill={answerQuizSkill}
-                    quizAnswers={quizAnswers}
                     onSubmitQuiz={submitQuizMethod}
                     skillsBusy={skillsBusy}
                     skillsError={skillsError}
@@ -3019,9 +3354,6 @@ async function runDemoAnalysis() {
                 )}
                 {stepKey === "motivation" && gapResult && (
                   <MotivationStep
-                    summary={profileSummary(consultationProfile(), allCourses)}
-                    onEditFrame={() => { setReturnToReview(true); setCurrent(stepIndex("praeferenzen")); }}
-                    onEditGoal={() => setCurrent(stepIndex("ziel"))}
                     gapResult={gapResult}
                     goalLabel={GOAL_OPTIONS.find((g) => g.key === careerGoal)?.label}
                     onForward={() => setCurrent(stepIndex("gap"))}
@@ -3037,14 +3369,13 @@ async function runDemoAnalysis() {
                     depthOverallAssessment={depthOverallAssessment}
                     depthBusy={depthBusy}
                     selfLevelByUri={selfLevelByUri}
-                    onSetSelfLevel={(uri, level) => {
-                      handleMoveSkill(uri, true);
+                    onSetSelfLevel={(uri, level) =>
                       setSelfLevelByUri((prev) => {
                         const next = new Map(prev);
                         next.set(uri, level);
                         return next;
-                      });
-                    }}
+                      })
+                    }
                     manualSkillUris={manualSkillUris}
                     onMoveSkill={handleMoveSkill}
                     busy={gapBusy}
@@ -3057,7 +3388,7 @@ async function runDemoAnalysis() {
                       null
                     }
                     portfolioRoles={rolesInPortfolio}
-                    onForward={() => void goToKurs()}
+                    onForward={goToKurs}
                     onBack={() => setCurrent(stepIndex("skills"))}
                     leadEmail={leadEmail}
                     setLeadEmail={setLeadEmail}
@@ -3070,22 +3401,7 @@ async function runDemoAnalysis() {
                   />
                 )}
                 {stepKey === "kurs" && (
-                  <><div className="consultation-frame">
-                    <strong>Was möchtest du noch klären?</strong>
-                    {courseCatalogError && <button type="button" className="btn-back" onClick={async () => {await loadFeaturedCourses(); setCurrent(stepIndex("gap"));}}>Kurskatalog erneut laden</button>}
-                    {!!courseResult?.recommended_courses.filter(c => c.consultation_status !== "blocked").length && <details><summary>Angebote kompakt vergleichen</summary><div className="consultation-comparison"><table><thead><tr><th>Angebot</th><th>Dauer</th><th>Kosten</th><th>Einordnung</th></tr></thead><tbody>
-                    {courseResult.recommended_courses.filter(c => c.consultation_status !== "blocked").slice(0,3).map(c => <tr key={c.course_id}><td>{c.course_name}</td><td>{formatCourseDuration(c)}</td><td>{formatCoursePrice(allCourses.find(x => x.course_id === c.course_id) ?? {}) ?? "Preis noch offen"}</td><td>{c.consultation_status === "explore" ? "Zum Entdecken" : "Details klären"}</td></tr>)}
-                    </tbody></table></div></details>}
-                    <button type="button" className="btn-back" onClick={() => {setReturnToReview(true); setCurrent(stepIndex("praeferenzen"));}}>Zeitaufwand oder Kosten anpassen</button>
-                    <button type="button" className="btn-back" onClick={() => {setLeadMessage("Ich möchte Finanzierung und Förderung klären."); setFundingPreference("gefoerdert");}}>Finanzierung für die Beratung vormerken</button>
-                    <button type="button" className="btn-back" onClick={() => setLeadMessage("Ich bin beim Einstiegsniveau unsicher und möchte die Voraussetzungen klären.")}>Einstiegsniveau für die Beratung vormerken</button>
-                    <button type="button" className="btn-back" onClick={() => {setContextCourseId(null); setCurrent(stepIndex(knowsRole === false ? "bereich" : "zielrolle"));}}>Richtung ändern</button>
-                    <details><summary>Diese Angaben erhält {tenantName} bei deiner Anfrage</summary>
-                      <ul>{profileSummary(consultationProfile(), allCourses).map((line,i) => <li key={i}>{line}</li>)}</ul>
-                      <p>{leadMessage || "Noch keine zusätzliche Frage vorgemerkt."}</p>
-                    </details>
-                    <p role="status">{leadMessage.startsWith("Ich möchte Finanzierung") || leadMessage.startsWith("Ich bin beim Einstiegsniveau") ? leadMessage : ""}</p>
-                  </div><KursStep
+                  <KursStep
                     courseResult={courseResult}
                     targetRoleName={targetRoleName}
                     bereichLabel={targetBereichLabel}
@@ -3137,7 +3453,7 @@ async function runDemoAnalysis() {
                     setWantsConsultation={setWantsConsultation}
                     privacyPolicyUrl={privacyPolicyUrl}
                     onBack={() => setCurrent(stepIndex("gap"))}
-                  /></>
+                  />
                 )}
               </div>
             )}
@@ -3239,6 +3555,39 @@ function JourneyStepHeading({ step, kicker, title, description, className = "" }
  * Nutzt dieselben .ring-box/.ring-value-Klassen, die schon in journey.css
  * für einen früheren Ring-Stand vorbereitet waren (siehe Kommentar an
  * .gap-method-note), nur der Kreis selbst ist hier inline gestylt. */
+function MatchRing({ percent, size = 96 }: { percent: number; size?: number }) {
+  const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
+  const stroke = 9;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - safePercent / 100);
+  return (
+    <div className="ring-box" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--border-soft)" strokeWidth={stroke} />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="url(#dydMatchRingGradient)"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(.4,0,.2,1)" }}
+        />
+        <defs>
+          <linearGradient id="dydMatchRingGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="var(--dyd-mint)" />
+            <stop offset="100%" stopColor="var(--dyd-blue)" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <div className="ring-value">{safePercent}%</div>
+    </div>
+  );
+}
 
 /**
  * Avatar/Guide (22.09.2026, "kriegen wir noch einen kleinen Avatar mit dazu
@@ -3299,7 +3648,7 @@ function GuideAvatarBubble({
 
 /** Einstieg: Nicht mit "Traumposition" starten, sondern den Nutzer dort abholen,
  * wo er bei Weiterbildung typischerweise steht: klares Ziel vs. Richtung suchen. */
-function IntroStep({ onKnowsRole, onUnsure }: { onKnowsRole: () => void; onUnsure: (entry: "learn" | "discover") => void }) {
+function IntroStep({ onKnowsRole, onUnsure }: { onKnowsRole: () => void; onUnsure: () => void }) {
   return (
     <div>
       <JourneyStepHeading
@@ -3311,25 +3660,21 @@ function IntroStep({ onKnowsRole, onUnsure }: { onKnowsRole: () => void; onUnsur
       <div className="method-grid">
         <div className="method-card" onClick={onKnowsRole} role="button" tabIndex={0} onKeyDown={(e) => handleCardKeyDown(e, onKnowsRole)}>
           <div className="method-icon" aria-hidden="true">🎯</div>
-          <div className="method-title">Ich möchte beruflich etwas verändern.</div>
+          <div className="method-title">Ja, ich weiß ziemlich genau, was ich möchte</div>
           <div className="method-sub">Ich möchte direkt mit einer konkreten Zielrolle starten.</div>
         </div>
-        <div className="method-card" onClick={() => onUnsure("learn")} role="button" tabIndex={0} onKeyDown={(e) => handleCardKeyDown(e, () => onUnsure("learn"))}>
+        <div className="method-card" onClick={onUnsure} role="button" tabIndex={0} onKeyDown={(e) => handleCardKeyDown(e, onUnsure)}>
           <div className="method-icon" aria-hidden="true">🧭</div>
-          <div className="method-title">Ich weiß, was ich lernen möchte.</div>
-          <div className="method-sub">Ich möchte ein bestimmtes Thema lernen. Eine Zielrolle ist dafür nicht nötig.</div>
+          <div className="method-title">Ich kenne eher die Richtung</div>
+          <div className="method-sub">Zeig mir passende Bereiche und Skills, bevor wir eine konkrete Rolle festlegen.</div>
         </div>
-        <button className="method-card" type="button" onClick={() => onUnsure("discover")}>
-          <span className="method-title">Ich möchte herausfinden, was zu mir passt.</span>
-          <span className="method-sub">Ich möchte erst Bereiche und Lernmöglichkeiten entdecken.</span>
-        </button>
       </div>
     </div>
   );
 }
 /** Ziel-Schritt: fragt nach der beruflichen Entwicklung statt nach einem einzelnen
  * Ergebnis wie "mehr Geld". Das Signal kann später sinnvoll für die Empfehlung genutzt werden. */
-function GoalStep({ selected, onSelect, onSkip, onBack, onForward }: { selected: string | null; onSelect: (goalKey: string) => void; onSkip: () => void; onBack: () => void; onForward: () => void }) {
+function GoalStep({ selected, onSelect, onSkip, onBack }: { selected: string | null; onSelect: (goalKey: string) => void; onSkip: () => void; onBack: () => void }) {
   return (
     <div>
       <JourneyStepHeading
@@ -3352,7 +3697,7 @@ function GoalStep({ selected, onSelect, onSkip, onBack, onForward }: { selected:
       <div className="method-switch" onClick={onSkip} role="button" tabIndex={0} onKeyDown={(e) => handleCardKeyDown(e, onSkip)} style={{ marginTop: "8px" }}>
         Überspringen
       </div>
-      <ActionsRow onBack={onBack} forwardLabel="Weiter →" onForward={onForward} forwardDisabled={!selected} />
+      <ActionsRow onBack={onBack} hideForward />
     </div>
   );
 }
@@ -3471,7 +3816,7 @@ function RoleSuggestStep({
     if (advancing || keys.length === 0) return;
     setAdvancing(true);
     onSelectBereich(keys);
-    onForward();
+    window.setTimeout(onForward, 220);
   }
 
   const selectedLabels = [...effectiveSelectedBereich]
@@ -3696,9 +4041,12 @@ function ZielrolleStep({
   // Zustand fest, damit der Haken sichtbar aufploppt (siehe .role-card-check,
   // popIn-Animation), bevor automatisch zum naechsten Schritt gesprungen
   // wird — fuehlt sich dadurch bestaetigt statt abrupt an.
-  const pendingId = null;
+  const [pendingId, setPendingId] = useState<string | null>(null);
   function pickRole(role: TargetRole) {
+    if (pendingId) return;
     onSelect(role);
+    setPendingId(role.role_id);
+    window.setTimeout(() => onForward(), 320);
   }
 
   if (loading) return <div className="hint">Lade Zielrollen…</div>;
@@ -3821,8 +4169,7 @@ interface SkillsMethodStepProps {
   learningGoalSkillIds?: ReadonlySet<string>;
   /** Einziger Schreibpfad im Fragebogen-Pfad für Teil 2 (ersetzt toggleSkill
    *  dort) — siehe answerQuizSkill() in JourneyPage. */
-  onAnswerSkill: (uri: string, depth: SkillDepth | null | "unknown") => void;
-  quizAnswers: Record<string, SkillDepth | "no" | "unknown">;
+  onAnswerSkill: (uri: string, depth: SkillDepth | null) => void;
   onSubmitQuiz: () => void;
   skillsBusy: boolean;
   skillsError: string | null;
@@ -4142,10 +4489,9 @@ function FragebogenMethod({
   avatarName,
   avatarAccentColor,
   learningGoalSkillIds,
-  quizAnswers,
 }: SkillsMethodStepProps) {
   const [index, setIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, SkillDepth | "no" | "unknown">>(quizAnswers);
+  const [answers, setAnswers] = useState<Record<string, SkillDepth | "no">>({});
   const [phase, setPhase] = useState<"asking" | "done">("asking");
   const [extraOpen, setExtraOpen] = useState(false);
   // Avatar-Tipp (22.09.2026, siehe GuideAvatarBubble-Kommentar): erklärt
@@ -4158,7 +4504,7 @@ function FragebogenMethod({
 
   useEffect(() => {
     setIndex(0);
-    setAnswers(quizAnswers);
+    setAnswers({});
     setPhase("asking");
     setExtraOpen(false);
     setTipDismissed(false);
@@ -4174,7 +4520,7 @@ function FragebogenMethod({
   // Teil 2: alle Rollen-Skills außerhalb der Kern-Auswahl — Kandidaten für
   // den "+ N weitere"-Link im "done"-Zwischenstand unten.
   const extraSkills = useMemo(
-    () => roleSkills.filter((s) => !questionSkills.some((q) => q.esco_uri === s.esco_uri)).slice(0, Math.max(0, 10 - questionSkills.length)),
+    () => roleSkills.filter((s) => !questionSkills.some((q) => q.esco_uri === s.esco_uri)),
     [roleSkills, questionSkills]
   );
 
@@ -4183,6 +4529,16 @@ function FragebogenMethod({
   // das erst am Ende gebaute gapResult — jede beantwortete Frage lässt den
   // Ring sofort sichtbar wachsen, bis er am Ende exakt dem Wert entspricht,
   // den die Motivations-Zwischenseite direkt danach zeigt.
+  const liveMatch = useMemo(() => {
+    let totalWeight = 0;
+    let coveredWeight = 0;
+    for (const s of questionSkills) {
+      totalWeight += s.weight;
+      const a = answers[s.esco_uri];
+      if (a && a !== "no") coveredWeight += s.weight * (quizSkillScore(a) / 100);
+    }
+    return totalWeight > 0 ? Math.round((coveredWeight / totalWeight) * 1000) / 10 : 0;
+  }, [answers, questionSkills]);
 
   if (loadingRoleSkills) {
     return (
@@ -4223,13 +4579,13 @@ function FragebogenMethod({
 
   function advance() {
     if (safeIndex < questionSkills.length - 1) {
-      setIndex((i) => Math.min(questionSkills.length - 1, i + 1));
+      window.setTimeout(() => setIndex((i) => Math.min(questionSkills.length - 1, i + 1)), 260);
     } else {
       // Nach der letzten Kern-Frage: kurzer Zwischenstand statt sofortigem
       // Auto-Submit (siehe Funktionskommentar oben) — die Person sieht ihr
       // Ergebnis wachsen und kann optional noch ergänzende Skills angeben,
       // statt direkt weitergerissen zu werden.
-      setPhase("done");
+      window.setTimeout(() => setPhase("done"), 320);
     }
   }
 
@@ -4237,15 +4593,13 @@ function FragebogenMethod({
     const depth: SkillDepth = { proficiency, recency };
     setAnswers((prev) => ({ ...prev, [skill.esco_uri]: depth }));
     onAnswerSkill(skill.esco_uri, depth);
+    advance();
   }
 
-  function markUnknown() {
-    setAnswers(prev => ({ ...prev, [skill.esco_uri]: "unknown" }));
-    onAnswerSkill(skill.esco_uri, "unknown");
-  }
   function markNotYet() {
     setAnswers((prev) => ({ ...prev, [skill.esco_uri]: "no" }));
     onAnswerSkill(skill.esco_uri, null);
+    advance();
   }
 
   function previous() {
@@ -4271,7 +4625,7 @@ function FragebogenMethod({
 
         <div className="quiz-done">
           <div className="quiz-done-ring">
-            <span aria-label="Angaben erfasst">✓</span>
+            <MatchRing percent={liveMatch} size={88} />
           </div>
           <div className="quiz-done-headline">Kern-Skills erfasst ✓</div>
           <div className="quiz-done-sub">
@@ -4295,13 +4649,13 @@ function FragebogenMethod({
             <div style={{ display: "grid", gap: "8px" }}>
               {questionSkills.map((s) => {
                 const answer = answers[s.esco_uri];
-                const levelLabel = answer && answer !== "no" && answer !== "unknown"
+                const levelLabel = answer && answer !== "no"
                   ? ({ grundkenntnisse: "Grundkenntnisse", fortgeschritten: "Fortgeschritten", experte: "Sehr sicher" } as Record<ProficiencyBucket, string>)[answer.proficiency]
-                  : answer === "no" ? "Noch keine Erfahrung" : "Noch offen";
-                const recencyLabel = answer && answer !== "no" && answer !== "unknown"
+                  : "Noch keine Erfahrung";
+                const recencyLabel = answer && answer !== "no"
                   ? answer.recency === "aktuell" ? "aktuell" : "vor einiger Zeit"
                   : "";
-                const isGoal = learningGoalSkillIdsSafe.has(s.esco_uri);
+                const isGoal = learningGoalSkillIdsSafe.has(s.skill_id);
                 return (
                   <div key={s.esco_uri} style={{ padding: "12px 13px", borderRadius: "14px", border: "1px solid var(--border-soft)", background: "var(--surface, #fff)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -4327,7 +4681,7 @@ function FragebogenMethod({
               ) : (
                 <div className="quiz-extra-list">
                   <div className="quiz-extra-hint">
-                    Optional: Bestätige nur Themen, bei denen du aktuell Grundkenntnisse hast.
+                    Optional — zählt zusätzlich mit, sobald du eine Fähigkeit antippst.
                   </div>
                   <div className="quiz-extra-chips">
                     {extraSkills.map((s) => {
@@ -4387,7 +4741,7 @@ function FragebogenMethod({
       {showAvatar && !tipDismissed && safeIndex === 0 && (
         <GuideAvatarBubble
           name={avatarName}
-          message="Wähle die Antwort, die deiner praktischen Erfahrung entspricht. Wenn du unsicher bist, bleibt die Fähigkeit offen."
+          message="Tipp: Ein Antippen genügt — wähle einfach die Zelle, die am besten zu deinem Grad und deiner Aktualität passt. 'Noch nicht' bleibt als eigener Button darunter."
           accentColor={avatarAccentColor}
           onDismiss={() => setTipDismissed(true)}
         />
@@ -4395,7 +4749,7 @@ function FragebogenMethod({
 
       <div className="quiz-progress-row">
         <div className="quiz-live-ring">
-          <span>{answeredCount}/{questionSkills.length}</span>
+          <MatchRing percent={liveMatch} size={52} />
         </div>
         <div className="quiz-progress-text">
           <div className="quiz-progress-count">
@@ -4415,24 +4769,24 @@ function FragebogenMethod({
                 <div className="quiz-depth-card-title" style={{ fontSize: "28px", lineHeight: 1.12 }}>{skill.preferred_label}</div>
               </div>
               <div style={{ fontSize: "12px", fontWeight: 750, padding: "8px 11px", borderRadius: "999px", background: "rgba(47,143,214,.08)", whiteSpace: "nowrap" }}>
-                Praxisfrage
+                {Math.round(skill.weight * 100)}% Relevanz
               </div>
             </div>
 
             <div style={{ fontSize: "20px", fontWeight: 820, lineHeight: 1.25, marginBottom: "8px" }}>{context.title}</div>
-            <div className="hint" style={{ fontSize: "14px", lineHeight: 1.55, marginBottom: "6px" }}>{activityExample(skill.preferred_label)}</div>
+            <div className="hint" style={{ fontSize: "14px", lineHeight: 1.55, marginBottom: "6px" }}>{context.body}</div>
             <div style={{ fontSize: "12px", opacity: .62, marginBottom: "20px" }}>{context.signal}</div>
 
             <div style={{ display: "grid", gap: "10px" }}>
               {[
-                { key: "strong", title: "Ich kann das selbstständig", body: "Ich setze es aktuell praktisch ein.", depth: { proficiency: "fortgeschritten" as ProficiencyBucket, recency: "aktuell" as RecencyBucket } },
+                { key: "strong", title: "Ich kann das selbstständig", body: "Ich setze es aktuell praktisch ein.", depth: { proficiency: "experte" as ProficiencyBucket, recency: "aktuell" as RecencyBucket } },
                 { key: "solid", title: "Ich habe damit gearbeitet", body: "Ich kann Aufgaben damit selbstständig lösen, aber nicht regelmäßig.", depth: { proficiency: "fortgeschritten" as ProficiencyBucket, recency: "letzte_jahre" as RecencyBucket } },
                 { key: "basic", title: "Ich kenne die Grundlagen", body: "Ich habe erste Erfahrung oder theoretisches Wissen.", depth: { proficiency: "grundkenntnisse" as ProficiencyBucket, recency: "letzte_jahre" as RecencyBucket } },
                 { key: "gap", title: "Das ist für mich neu", body: "Genau hier könnte eine Weiterbildung ansetzen.", depth: null },
               ].map((option) => {
                 const selected = option.key === "gap"
                   ? answered === "no"
-                  : !!answered && answered !== "no" && answered !== "unknown" && answered.proficiency === option.depth?.proficiency && answered.recency === option.depth?.recency;
+                  : !!answered && answered !== "no" && answered.proficiency === option.depth?.proficiency && answered.recency === option.depth?.recency;
                 return (
                   <button
                     key={option.key}
@@ -4461,7 +4815,6 @@ function FragebogenMethod({
                   </button>
                 );
               })}
-              <button type="button" className="dyd-btn-ghost" onClick={markUnknown}>Kann ich noch nicht einschätzen</button>
             </div>
 
             <div style={{ marginTop: "16px", paddingTop: "14px", borderTop: "1px solid var(--border-soft)", fontSize: "12px", opacity: .65 }}>
@@ -4475,13 +4828,13 @@ function FragebogenMethod({
         <button type="button" className="btn-back" onClick={previous} disabled={safeIndex === 0}>
           ← Zurück
         </button>
-        {answered && (
+        {!isLast && answered && (
           <button
             type="button"
             className="btn-forward"
-            onClick={advance}
+            onClick={() => setIndex((i) => Math.min(questionSkills.length - 1, i + 1))}
           >
-            {isLast ? "Antworten prüfen →" : "Weiter →"}
+            Nächster Skill →
           </button>
         )}
       </div>
@@ -4515,7 +4868,11 @@ function skillImportance(weight: number): { label: string; cls: string } {
 }
 /** Kurzlabel für proficiency_level aus der KI-Tiefenanalyse (Version 3 der
  *  Edge Function) — reine Anzeige-Übersetzung, keine eigene Einschätzung. */
-
+const PROFICIENCY_LABELS: Record<string, string> = {
+  grundkenntnisse: "Grundkenntnisse",
+  fortgeschritten: "Fortgeschritten",
+  experte: "Experte",
+};
 /** Auswahloptionen für die Pill-Leiste, mit der die Person im Gap-Schritt ihr
  *  eigenes Erfahrungslevel zu einem "Vorhanden"-Skill wählt (siehe
  *  selfLevelByUri in JourneyPage) - dieselben drei Stufen wie
@@ -4686,22 +5043,74 @@ function skillReasonInfo(
  * Kein Auto-Advance (siehe Kommentar an runGapAnalysis/submitQuizMethod):
  * die Person klickt sich über onForward selbst weiter.
  */
-function MotivationStep({gapResult, goalLabel, summary, onEditFrame, onEditGoal, onForward, onBack}: {
-  gapResult: GapAnalysisResponse; goalLabel?: string; summary: string[];
-  onEditFrame: () => void; onEditGoal: () => void; onForward: () => void; onBack: () => void;
+function MotivationStep({
+  gapResult,
+  goalLabel,
+  allCourses,
+  targetBereichKey,
+  portfolioRoles,
+  onForward,
+  onBack,
+}: {
+  gapResult: GapAnalysisResponse;
+  goalLabel?: string;
+  allCourses: OrbitCourse[];
+  targetBereichKey: string | null;
+  portfolioRoles: CatalogRole[];
+  onForward: () => void;
+  onBack: () => void;
 }) {
-  return <div className="motivation-step consultation-review">
-    <h2>Haben wir dich richtig verstanden?</h2>
-    <p>{goalLabel || "Deine Weiterbildung"} · {gapResult.target_role_name}</p>
-    <ul>{summary.map((line, i) => <li key={i}>{line}</li>)}</ul>
-    <p>Deine Angaben sind eine Selbsteinschätzung. Offene Fragen bleiben offen; ein Kurs ersetzt keine Prüfung von Zugangsvoraussetzungen.</p>
-    <div className="consultation-edit-actions">
-      <button type="button" className="btn-back" onClick={onEditGoal}>Ziel ändern</button>
-      <button type="button" className="btn-back" onClick={onBack}>Erfahrung ändern</button>
-      <button type="button" className="btn-back" onClick={onEditFrame}>Rahmen ändern</button>
+  const coveredCount = gapResult.covered_skills.length;
+  const gapCount = gapResult.gap_skills.length;
+  const totalCount = coveredCount + gapCount;
+
+  const headline =
+    coveredCount === 0
+      ? `Alles klar — jetzt kennen wir deinen Startpunkt für ${gapResult.target_role_name}.`
+      : gapCount === 0
+        ? `Stark! Du bringst schon alle wichtigen Kompetenzen für ${gapResult.target_role_name} mit.`
+        : `Stark! Dein Profil für ${gapResult.target_role_name} steht.`;
+
+  const sub =
+    totalCount === 0
+      ? "Wir werten deine Angaben jetzt aus."
+      : coveredCount === 0
+        ? `Wir haben ${totalCount} zentrale Kompetenzen für diese Rolle im Blick — als Nächstes zeigen wir dir, wie du sie gezielt aufbaust.`
+        : gapCount === 0
+          ? "Eine gezielte Vertiefung kann dein Profil trotzdem noch schärfen — wir zeigen dir gleich, wie."
+          : `Du bringst bereits ${coveredCount} von ${totalCount} zentralen Kompetenzen mit. Wir zeigen dir jetzt genau, was noch fehlt${goalLabel ? ` auf dem Weg zu „${goalLabel}"` : ""}.`;
+
+  return (
+    <div className="motivation-step">
+      <div className="motivation-step-ring">
+        {/* MatchRing zeigt den Prozentwert bereits selbst mittig im Ring an
+            (.ring-value, siehe MatchRing-Komponente) — hier keine zweite,
+            duplizierte Zahl daneben. */}
+        <MatchRing percent={gapResult.match_percentage} size={132} />
+      </div>
+      <div className="motivation-step-headline">{headline}</div>
+      <div className="motivation-step-sub">{sub}</div>
+      {totalCount > 0 && (
+        <div className="motivation-step-stats">
+          <div className="motivation-step-stat">
+            <strong>{coveredCount}</strong>
+            <span>schon vorhanden</span>
+          </div>
+          <div className="motivation-step-stat-divider" aria-hidden="true" />
+          <div className="motivation-step-stat">
+            <strong>{gapCount}</strong>
+            <span>als Lernfeld</span>
+          </div>
+        </div>
+      )}
+      <button type="button" className="btn-cta-primary" onClick={onForward}>
+        Weiter zu deiner Auswertung <span className="arrow">→</span>
+      </button>
+      <button type="button" className="dyd-btn-ghost motivation-step-back" onClick={onBack}>
+        Angaben noch anpassen
+      </button>
     </div>
-    <button type="button" className="btn-cta-primary" onClick={onForward}>Ja, meine Auswertung ansehen →</button>
-  </div>;
+  );
 }
 
 function courseAreaKeys(course: OrbitCourse): string[] {
@@ -4820,6 +5229,7 @@ function GapStep({
   const earlyEmailValid = leadEmail.trim().length > 0 && EMAIL_RE.test(leadEmail.trim());
   const coveredCount = gapResult.covered_skills.length;
   const gapCount = gapResult.gap_skills.length;
+  const totalCount = coveredCount + gapCount;
   // Einmal pro Text berechnet statt pro Skill (siehe detectCvSectionHeaders
   // oben) - reine Performance-Optimierung, das Ergebnis ist unabhängig vom
   // einzelnen Skill.
@@ -4855,7 +5265,7 @@ function GapStep({
         className="journey-step-heading-gap"
       />
       <div className="gap-summary" style={{ alignItems: "stretch" }}>
-        <span className="consultation-marker" aria-hidden="true">✓</span>
+        <MatchRing percent={gapResult.match_percentage} />
         <div
           style={{
             minWidth: "118px",
@@ -4871,12 +5281,12 @@ function GapStep({
         >
           <div style={{ fontSize: "30px", fontWeight: 850, lineHeight: 1 }}>{coveredCount}</div>
           <div style={{ fontSize: "12px", fontWeight: 700, marginTop: "6px", opacity: 0.7 }}>
-            Themen mit Erfahrungshinweisen
+            Skills bringst du mit
           </div>
         </div>
         <div className="gap-summary-text">
           <div className="gap-summary-headline">
-            Deine Angaben zu <b>{gapResult.target_role_name}</b>.
+            Dein Profil für <b>{gapResult.target_role_name}</b> ist klar.
           </div>
           <div className="gap-summary-sub">
             {gapCount > 0 ? (
@@ -4885,7 +5295,7 @@ function GapStep({
                 {goalLabel && <> Das passt zu deinem Ziel „<b>{goalLabel}</b>".</>}
               </>
             ) : (
-              <>Aus deinen bisherigen Angaben ergibt sich kein bestätigtes neues Lernfeld. Du kannst Themen entdecken oder offene Fragen gemeinsam klären.</>
+              <>Du bringst bereits die relevanten Skills mit. Eine Weiterbildung kann dein Profil gezielt vertiefen.</>
             )}
           </div>
         </div>
@@ -4896,7 +5306,7 @@ function GapStep({
           So kommt diese Einschätzung zustande: Zuerst gleichen wir deine Angaben automatisch mit den typischen
           Anforderungen für <b>{gapResult.target_role_name}</b> ab.{" "}
           {method === "cv"
-            ? "Die KI sucht Hinweise in deinem Text. Diese Vorschläge sind kein Kompetenznachweis. Nicht erwähnte Fähigkeiten gelten als ungeklärt; bestätige oder korrigiere die Vorschläge."
+            ? "Parallel liest eine KI deinen Text im Detail und prüft für jeden Skill einzeln, ob sich ein echter Beleg findet."
             : "Im interaktiven Skill-Check zählt direkt, was du selbst als bereits vorhanden bestätigt hast."}{" "}
           Bei jedem Skill unten siehst du eine kurze Begründung, und bei „Vorhanden"-Skills kannst du dein eigenes
           Erfahrungslevel angeben. Stimmt etwas nicht? Du kannst jeden Skill unten auch manuell entfernen oder
@@ -4984,7 +5394,7 @@ function GapStep({
                     type="button"
                     className="skill-detail-remove-btn"
                     onClick={() => onMoveSkill(s.esco_uri, false)}
-                    title="Angabe korrigieren: Hier möchte ich lernen"
+                    title="Diesen Skill entfernen — zählt dann wieder als Lücke"
                   >
                     ✕ Entfernen
                   </button>
@@ -5070,7 +5480,7 @@ function GapStep({
             );
           })
         ) : (
-          <div className="hint">Kein bestätigter Lernbedarf aus den bisherigen Antworten. Ungeklärte Fähigkeiten bleiben offen.</div>
+          <div className="hint">Keine Lücke — starke Passung!</div>
         )}
       </div>
       {gapCount > GAP_SKILL_PREVIEW_LIMIT && (
@@ -5153,7 +5563,7 @@ function GapStep({
           <div className="early-capture-head">
             <span className="early-capture-icon" aria-hidden="true">💾</span>
             <div>
-              <div className="early-capture-title">Ergebnis beim Bildungsträger sichern</div>
+              <div className="early-capture-title">Ergebnis per E-Mail sichern</div>
               <div className="early-capture-sub">
                 Falls du gerade nicht weitermachen kannst: Wir merken uns dein Ergebnis, dein Bildungsträger kann sich
                 trotzdem bei dir melden.
@@ -5187,7 +5597,7 @@ function GapStep({
           </div>
           <label className="early-capture-consent">
             <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-            {LEAD_CONSENT_TEXT}
+            Ich stimme der DSGVO-konformen Speicherung meiner Angaben zu.
           </label>
           {earlyCaptureError && (
             <div className="status-line err" aria-live="polite">
@@ -5583,8 +5993,7 @@ function KursStep({
         .filter((n): n is string => Boolean(n)),
     [additionalCourseIds, selectedCourseId, allCourseById]
   );
-  const blockedCourses = (courseResult?.recommended_courses ?? []).filter(c => c.consultation_status === "blocked");
-  const courses = (courseResult?.recommended_courses ?? []).filter(c => c.consultation_status !== "blocked");
+  const courses = courseResult?.recommended_courses ?? [];
   const showCourseSystemStatus =
     courseCatalogLoading || Boolean(courseCatalogError);
   const top = courses[0];
@@ -5605,7 +6014,8 @@ function KursStep({
   // Version 34 — motivational transition after the Skill-Gap analysis.
   // The popup is intentionally local to KursStep: it appears exactly when
   // the existing Journey advances from Skill-Gap to the recommendation step.
-  const [showRecommendationIntro, setShowRecommendationIntro] = useState(false);
+  const [showRecommendationIntro, setShowRecommendationIntro] = useState(true);
+  const currentMatch = courseResult?.match_percentage ?? 0;
   const role = targetRoleName || "deiner Zielrolle";
   // Was tatsächlich als "meine Wahl" in Pitch/Anfrage einfließt: die aktive
   // Auswahl, falls getroffen — sonst die algorithmische Bestempfehlung.
@@ -5851,13 +6261,6 @@ function KursStep({
         </div>
       )}
 
-      {blockedCourses.length > 0 && <div className="consultation-frame">
-        <strong>Diese Angebote passen derzeit nicht zu deinen Bedingungen</strong>
-        {blockedCourses.map(c => <div className="consultation-course-reason" key={c.course_id}>
-          <strong>{c.course_name}</strong><p>Passt derzeit nicht: {c.consultation_conflicts?.join(" ")}</p>
-        </div>)}
-        <p>Du kannst oben deinen Rahmen anpassen oder die offenen Möglichkeiten unverbindlich klären.</p>
-      </div>}
       {top ? (
         <>
           <div id="dyd-kurs-result" className="dyd-kurs-result-anchor" />
@@ -6014,7 +6417,7 @@ function KursStep({
                         ? "★ Top-Kurs"
                         : "Ebenfalls beliebt"
                       : i === 0
-                        ? "Für dich eingeordnet"
+                        ? "Beste Passung"
                         : "Alternative"}
                   </span>
                   {/* Bugfix (14.09., Rückmeldung "keine Weiterbildungen mit
@@ -6039,7 +6442,7 @@ function KursStep({
                       "Empfehlung", statt eine erfundene 0% zu zeigen. */}
                   <div className="course-hero-coverage" aria-label="Skill-Abdeckung dieser Weiterbildung">
                     {isGenericFallback || showsZeroGapDirectly ? (
-                      <span className="course-hero-recommendation-badge">Zum Entdecken</span>
+                      <span className="course-hero-recommendation-badge">Empfehlung</span>
                     ) : course.is_role_fallback ? (
                       <>
                         <span className="course-hero-coverage-value">{course.covers_role_count ?? 0}</span>
@@ -6054,12 +6457,6 @@ function KursStep({
                   </div>
                 </div>
                 <div className="course-hero-name">{course.course_name}</div>
-                {course.consultation_status && <div className="consultation-course-reason">
-                  <strong>{course.consultation_status === "blocked" ? "Passt derzeit nicht zu deinen Voraussetzungen" : course.consultation_status === "explore" ? "Zum Entdecken – Passung noch offen" : "Inhaltlich passend – Details gemeinsam klären"}</strong>
-                  {course.consultation_reasons?.map(reason => <p key={reason}>{reason}</p>)}
-                  {!!course.consultation_conflicts?.length && <ul>{course.consultation_conflicts.map(reason => <li key={reason}>{reason}</li>)}</ul>}
-                  {!!course.consultation_open?.length && <details><summary>Vor der Entscheidung klären</summary><ul>{course.consultation_open.map(reason => <li key={reason}>{reason}</li>)}</ul></details>}
-                </div>}
                 <div className="course-hero-meta">
                   {course.provider} · {formatCourseDuration(fullCourse ?? course)}
                   {!isGenericFallback && !showsZeroGapDirectly && (
@@ -6352,16 +6749,18 @@ function KursStep({
             <div className="dyd-course-empty-recovery">
               <div className="dyd-course-empty-recovery-icon">✦</div>
               <div>
-                <strong>Aktuell gibt es keine unmittelbar passende Empfehlung.</strong>
+                <strong>Wir haben Weiterbildungsmöglichkeiten für dich.</strong>
                 <p>
-                  Für <b>{role}</b> und deine Angaben ist die Passung noch offen oder es besteht ein konkreter Widerspruch. Du kannst die Rahmenbedingungen ändern oder Beratung anfragen.
+                  Die automatische Zuordnung zu <b>{role}</b> war gerade nicht eindeutig.
+                  Deshalb zeigen wir dir echte Weiterbildungen aus dem Kurskatalog statt
+                  eine erfundene Empfehlung.
                 </p>
               </div>
             </div>
           ) : (
             <div className="hint">
               Für <b>{role}</b> wurde aktuell keine Weiterbildung aus dem Kurskatalog
-              gefunden. Du kannst trotzdem eine Beratung zu deinem Anliegen anfragen.
+              zurückgegeben. Bitte prüfe im Dashboard, ob Kurse veröffentlicht sind.
             </div>
           )}
           {additionalCourseIds.size > 0 && (
@@ -6444,7 +6843,7 @@ function KursStep({
           </p>
           <div className="journey-saved-note" role="status">
             <span className="journey-saved-icon" aria-hidden="true">✓</span>
-            <span><strong>Deine Angaben werden übernommen</strong><small>Mit deiner Anfrage erhält der Bildungsträger den Beratungskontext.</small></span>
+            <span><strong>Auswertung gespeichert</strong><small>Du musst die Journey nicht noch einmal ausfüllen.</small></span>
           </div>
         </div>
         <LeadStep
@@ -6485,7 +6884,7 @@ function KursStep({
           // Kurs noch keinen Link gepflegt hat (ältere Kurse) — LeadStep
           // blendet den "Kurs direkt buchen"-Button dann aus, statt einen
           // toten Link anzubieten.
-          bookingUrl={selected && selected.consultation_status !== "blocked" ? safeUrl(courseById(selected.course_id)?.booking_url) ?? null : null}
+          bookingUrl={selected ? courseById(selected.course_id)?.booking_url ?? null : null}
         />
       </section>
     </div>
@@ -6541,6 +6940,11 @@ function LeadStep({
   courseName,
   courseDescription,
   additionalCourseNames,
+  projectedMatch,
+  desiredStartLabel,
+  employmentTypeLabel,
+  workLocationLabel,
+  wantsConsultation,
   setWantsConsultation,
   privacyPolicyUrl,
   bookingUrl,
@@ -6649,8 +7053,8 @@ function LeadStep({
     // Anmeldeseite des Kurses in einem neuen Tab öffnen. window.open() direkt
     // im synchronen Klick-Handler (nicht erst nach einem await), damit
     // Browser-Popup-Blocker das nicht als nicht-nutzergesteuert einstufen.
-    if (safeUrl(bookingUrl)) {
-      window.open(safeUrl(bookingUrl), "_blank", "noopener,noreferrer");
+    if (bookingUrl) {
+      window.open(bookingUrl, "_blank", "noopener,noreferrer");
     }
   }
   function handleRequestInfo() {
@@ -6790,13 +7194,14 @@ function LeadStep({
       </div>
 
       <div className="email-trust-badge">
-        <span aria-hidden="true">🔒</span><strong>Du entscheidest über die Übermittlung.</strong> Deine Angaben helfen dem Bildungsträger, deine Anfrage zu bearbeiten.
+        <span aria-hidden="true">🔒</span><strong>Deine Daten bleiben bei deinem Bildungsträger.</strong> Sie werden sicher und nach EU-Datenschutzstandards verarbeitet.
       </div>
 
       <div className="consent-row">
         <input type="checkbox" id="consentBox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
         <label htmlFor="consentBox">
-          {LEAD_CONSENT_TEXT}
+          Ich stimme zu, dass meine Angaben gespeichert werden, damit der Bildungsträger mich zur passenden Weiterbildung
+          kontaktieren darf. Diese Einwilligung kann ich jederzeit gegenüber dem Bildungsträger widerrufen.
           {privacyPolicyUrl ? (
             <>
               {" "}
@@ -6940,7 +7345,7 @@ function FinalScreen({
       <div className="final-check">✓</div>
       <h2 className="display">Geschafft{leadName ? `, ${leadName}` : ""}!</h2>
       <p>
-        Deine Anfrage ist angekommen. Dein nächster Schritt ist damit vorbereitet: Dein Bildungsträger hat deine Anfrage erhalten zu{" "}
+        Deine Anfrage ist angekommen. Dein nächster Schritt ist damit vorbereitet: Dein Bildungsträger meldet sich zeitnah bei dir mit Details zu{" "}
         <b>{courseName || "deiner Weiterbildung"}</b>
         {additionalCourseNames && additionalCourseNames.length > 0 && (
           <>
@@ -6955,7 +7360,7 @@ function FinalScreen({
           <div className="final-recap-title">Dein nächster Schritt zu {targetRoleName}</div>
           <div className="final-recap-copy">
             <span className="final-recap-icon" aria-hidden="true">✓</span>
-            <span><b>{courseName}</b> wurde als dein Kursinteresse übermittelt.</span>
+            <span><b>{courseName}</b> ist für deinen aktuellen Weg vorgemerkt und setzt an deinen erkannten Lernfeldern an.</span>
           </div>
         </div>
       )}
@@ -6965,7 +7370,8 @@ function FinalScreen({
         </div>
       )}
       <div className="final-note">
-        Deine Angaben wurden gespeichert. Die Rückmeldung erfolgt über die angegebenen Kontaktdaten. Ein Kursplatz ist damit noch nicht gebucht.
+        In der Regel meldet sich dein Bildungsträger innerhalb von 1–2 Werktagen bei dir — du kannst diese Seite jetzt
+        einfach schließen.
       </div>
     </div>
   );

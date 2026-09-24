@@ -41,6 +41,7 @@ import {
   buildBereichRole,
   listBereiche,
   rolesWithBereichCoverage,
+  suggestRolesForSkillIds,
   toTargetRoleSummary,
   topSkillsForRoles,
   type BereichOption,
@@ -3345,6 +3346,8 @@ async function runDemoAnalysis() {
                     onBack={() => setCurrent(stepIndex("praeferenzen"))}
                     bereicheOptions={bereicheInPortfolio}
                     rolesInPortfolio={rolesInPortfolio}
+                    activityIds={activityIds}
+                    setActivityIds={setActivityIds}
                   />
                 )}
                 {stepKey === "zielrolle" && (
@@ -3759,6 +3762,40 @@ function GoalStep({ selected, onSelect, onSkip, onBack }: { selected: string | n
  *  taucht davon nichts auf. Wer eine konkrete Rolle kennt, nutzt weiterhin
  *  den expliziten Ausweg "Lieber selbst durch alle Rollen stöbern"
  *  (ZielrolleStep) — das ist eine bewusste Wahl, kein erzwungener Schritt. */
+/** Taetigkeits-Ebene, Schritt 3 (24.09.2026): Welche Bereiche passen zur
+ *  bisherigen ERFAHRUNG? Rein deterministisch ueber die bestehende
+ *  suggestRolesForSkillIds() (gleiche gewichtete Formel wie ueberall) — pro
+ *  Bereich zaehlt die am besten passende Rolle. Die Rollen selbst werden
+ *  bewusst NICHT angezeigt (Grundsatz dieses Schritts, siehe Kommentar oben:
+ *  unsichere Personen nicht mit Rollentiteln konfrontieren), nur der Bereich
+ *  plus die Taetigkeiten, die dazu gefuehrt haben ("weil du …"). */
+interface BereichExperienceFit {
+  bestMatchPct: number;
+  activityLabels: string[];
+}
+function bereicheFromActivities(activityIds: string[], roles: CatalogRole[]): Map<string, BereichExperienceFit> {
+  const result = new Map<string, BereichExperienceFit>();
+  if (activityIds.length === 0) return result;
+  const derived = deriveSkillsFromActivities(activityIds);
+  if (derived.size === 0) return result;
+  // 10 % statt des Default 5 %: sonst zeigt z. B. Gastronomie allein ueber
+  // "Hygieneregeln" schon "Erfahrung vorhanden" im Bereich Gesundheit an.
+  const suggestions = suggestRolesForSkillIds(new Set(derived.keys()), { roles, limit: roles.length, minMatchPercentage: 10 });
+  const roleById = new Map(roles.map((r) => [r.role_id, r] as const));
+  for (const s of suggestions) {
+    const role = roleById.get(s.role_id);
+    if (!role) continue;
+    const existing = result.get(role.bereich_key);
+    if (existing && existing.bestMatchPct >= s.match_percentage) continue;
+    const sourceIds = new Set<string>();
+    for (const rs of role.skills) derived.get(rs.skill_id)?.source_activity_ids.forEach((id) => sourceIds.add(id));
+    result.set(role.bereich_key, {
+      bestMatchPct: s.match_percentage,
+      activityLabels: [...sourceIds].map((id) => getActivity(id)?.label).filter((l): l is string => !!l),
+    });
+  }
+  return result;
+}
 function RoleSuggestStep({
   selectedSkillIds,
   onToggleSkill,
@@ -3768,6 +3805,8 @@ function RoleSuggestStep({
   onBack,
   bereicheOptions,
   rolesInPortfolio,
+  activityIds,
+  setActivityIds,
 }: {
   selectedSkillIds: Set<string>;
   onToggleSkill: (skillId: string) => void;
@@ -3777,10 +3816,17 @@ function RoleSuggestStep({
   onBack: () => void;
   bereicheOptions: BereichOption[];
   rolesInPortfolio: CatalogRole[];
+  activityIds: string[];
+  setActivityIds: (ids: string[]) => void;
 }) {
   const [selectedBereich, setSelectedBereich] = useState<Set<string>>(new Set());
   const [selectedInterests, setSelectedInterests] = useState<Set<string>>(new Set());
   const [discoveryMode, setDiscoveryMode] = useState(false);
+  const [activitiesOpen, setActivitiesOpen] = useState(activityIds.length > 0);
+  const experienceFit = useMemo(
+    () => bereicheFromActivities(activityIds, rolesInPortfolio),
+    [activityIds, rolesInPortfolio],
+  );
   const [skillAreaOpen, setSkillAreaOpen] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState(false);
 
@@ -3808,8 +3854,14 @@ function RoleSuggestStep({
     });
   }
 
+  // Zwei getrennte, ehrlich benannte Signale (Taetigkeits-Ebene 24.09.2026):
+  // Interesse ("das reizt dich") und Erfahrung ("hier bringst du schon was
+  // mit"). Bewusst NICHT verschmolzen — wer sich neu orientieren will, soll
+  // sehen, dass ein Bereich wegen Interesse ODER wegen Erfahrung auftaucht.
+  // Sortierung: Interessen-Treffer zaehlen je 1, Erfahrung 1 + bis zu 2 Punkte
+  // nach Passung, damit beide Signale sich die Plaetze fair teilen.
   const recommendedBereiche = useMemo(() => {
-    if (selectedInterests.size === 0) return [];
+    if (selectedInterests.size === 0 && experienceFit.size === 0) return [];
     const score = new Map<string, number>();
     for (const interest of BEREICH_DISCOVERY_OPTIONS) {
       if (!selectedInterests.has(interest.key)) continue;
@@ -3818,12 +3870,20 @@ function RoleSuggestStep({
         score.set(areaKey, (score.get(areaKey) ?? 0) + 1);
       }
     }
+    for (const [areaKey, fit] of experienceFit) {
+      if (!availableAreaKeys.has(areaKey)) continue;
+      score.set(areaKey, (score.get(areaKey) ?? 0) + 1 + Math.min(2, fit.bestMatchPct / 25));
+    }
     return [...score.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([key]) => bereicheOptions.find((bereich) => bereich.key === key))
       .filter((bereich): bereich is BereichOption => Boolean(bereich))
       .slice(0, 4);
-  }, [selectedInterests, availableAreaKeys, bereicheOptions]);
+  }, [selectedInterests, experienceFit, availableAreaKeys, bereicheOptions]);
+
+  function interestReason(areaKey: string): boolean {
+    return BEREICH_DISCOVERY_OPTIONS.some((i) => selectedInterests.has(i.key) && i.areaHints.includes(areaKey));
+  }
 
   const effectiveSelectedBereich = useMemo(
     () => selectedBereich,
@@ -3953,18 +4013,73 @@ function RoleSuggestStep({
               );
             })}
           </div>
+          {/* Taetigkeits-Ebene, Schritt 3 (24.09.2026): zweites, optionales
+              Signal neben den Interessen. Dieselbe Klick-Liste wie im
+              Profil-Schritt; die Auswahl wird dort wiederverwendet. */}
+          <div style={{ marginTop: "18px", border: "1px solid var(--border-soft)", borderRadius: "16px", overflow: "hidden" }}>
+            <button
+              type="button"
+              onClick={() => setActivitiesOpen((o) => !o)}
+              aria-expanded={activitiesOpen}
+              style={{ width: "100%", border: 0, padding: "14px 15px", background: activitiesOpen ? "rgba(95,220,153,.07)" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", gap: "12px", textAlign: "left" }}
+            >
+              <span style={{ fontSize: "21px" }} aria-hidden="true">👆</span>
+              <span style={{ flex: 1 }}>
+                <strong style={{ display: "block", fontSize: "14px" }}>Und was hast du bisher gemacht? (optional)</strong>
+                <span className="hint">
+                  {activityIds.length > 0
+                    ? `${activityIds.length} Tätigkeiten ausgewählt — wir zeigen dir, wo du schon Erfahrung mitbringst.`
+                    : "Tipp an, was du in bisherigen Jobs gemacht hast — dann sehen wir, wo du schon Erfahrung mitbringst."}
+                </span>
+              </span>
+              <span aria-hidden="true" style={{ fontSize: "18px", opacity: .55 }}>{activitiesOpen ? "⌃" : "→"}</span>
+            </button>
+            {activitiesOpen && (
+              <div style={{ padding: "4px 15px 15px" }}>
+                <ActivityChecklist activityIds={activityIds} setActivityIds={setActivityIds} />
+                {activityIds.length > 0 && experienceFit.size === 0 && (
+                  <div className="hint" style={{ marginTop: "8px" }}>
+                    Deine Tätigkeiten passen noch zu keinem unserer Bereiche besonders gut — das ist kein Problem. Wähle einfach nach Interesse.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {recommendedBereiche.length > 0 && (
             <div style={{ marginTop: "20px" }}>
               <strong style={{ fontSize: "15px" }}>Diese Bereiche könnten passen</strong>
               <div className="hint" style={{ margin: "4px 0 10px" }}>Wähle einen oder zwei Bereiche, die dich wirklich interessieren.</div>
               <div className="role-grid">
-                {recommendedBereiche.map((bereich) => (
-                  <button key={bereich.key} type="button" onClick={() => selectRecommendedArea(bereich.key)} className={`role-card ${selectedBereich.has(bereich.key) ? "selected" : ""}`} style={{ textAlign: "left", cursor: "pointer" }} aria-pressed={selectedBereich.has(bereich.key)}>
-                    {selectedBereich.has(bereich.key) && <span className="role-card-check" aria-hidden="true">✓</span>}
-                    <div className="role-card-icon" aria-hidden="true">{BEREICH_ICONS[bereich.key] ?? "🧭"}</div>
-                    <div className="role-card-name">{bereich.label}</div>
-                  </button>
-                ))}
+                {recommendedBereiche.map((bereich) => {
+                  const fit = experienceFit.get(bereich.key);
+                  const byInterest = interestReason(bereich.key);
+                  return (
+                    <button key={bereich.key} type="button" onClick={() => selectRecommendedArea(bereich.key)} className={`role-card ${selectedBereich.has(bereich.key) ? "selected" : ""}`} style={{ textAlign: "left", cursor: "pointer" }} aria-pressed={selectedBereich.has(bereich.key)}>
+                      {selectedBereich.has(bereich.key) && <span className="role-card-check" aria-hidden="true">✓</span>}
+                      <div className="role-card-icon" aria-hidden="true">{BEREICH_ICONS[bereich.key] ?? "🧭"}</div>
+                      <div className="role-card-name">{bereich.label}</div>
+                      <div style={{ display: "flex", gap: "5px", flexWrap: "wrap", marginTop: "6px" }}>
+                        {fit && (
+                          <span style={{ fontSize: "10.5px", fontWeight: 800, padding: "3px 7px", borderRadius: "999px", background: "rgba(95,220,153,.14)" }}>
+                            ✓ Erfahrung vorhanden
+                          </span>
+                        )}
+                        {byInterest && (
+                          <span style={{ fontSize: "10.5px", fontWeight: 800, padding: "3px 7px", borderRadius: "999px", background: "rgba(47,143,214,.10)" }}>
+                            Passt zu deinem Interesse
+                          </span>
+                        )}
+                      </div>
+                      {fit && fit.activityLabels.length > 0 && (
+                        <div className="hint" style={{ fontSize: "11.5px", marginTop: "5px", lineHeight: 1.4 }}>
+                          Weil du: {fit.activityLabels.slice(0, 2).join(" · ")}
+                          {fit.activityLabels.length > 2 ? ` +${fit.activityLabels.length - 2}` : ""}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -4318,8 +4433,9 @@ function SkillsMethodStep(props: SkillsMethodStepProps) {
             <div className="method-icon" aria-hidden="true">👆</div>
             <div className="method-title">Kein Lebenslauf zur Hand? Tätigkeiten anklicken</div>
             <div className="method-sub">
-              Tipp an, was du in bisherigen Jobs gemacht hast — ganz ohne Schreiben. Wir leiten daraus Vorschläge für
-              deinen Skill-Check ab.
+              {props.activityIds.length > 0
+                ? `Du hast schon ${props.activityIds.length} Tätigkeiten angegeben — kurz prüfen, ergänzen und daraus Vorschläge für deinen Skill-Check bekommen.`
+                : "Tipp an, was du in bisherigen Jobs gemacht hast — ganz ohne Schreiben. Wir leiten daraus Vorschläge für deinen Skill-Check ab."}
             </div>
           </div>
         </div>
@@ -4581,10 +4697,65 @@ function ActivityPicker({
   onForward: () => void;
 }) {
   const role = targetRoleName || "deine Zielrolle";
+  let summary: string;
+  if (activityIds.length === 0) {
+    summary = "Noch nichts ausgewählt — du kannst auch ohne Auswahl direkt zum Skill-Check.";
+  } else if (loadingRoleSkills) {
+    summary = `${activityIds.length} Tätigkeiten ausgewählt — wir gleichen sie gerade mit ${role} ab …`;
+  } else if (suggestionCount > 0) {
+    summary = `${activityIds.length} Tätigkeiten ausgewählt ✓ Daraus haben wir Vorschläge für ${suggestionCount} von ${questionCount} Fragen zu ${role}. Du bestätigst jeden Vorschlag selbst.`;
+  } else {
+    summary = `${activityIds.length} Tätigkeiten ausgewählt. Sie passen noch zu keiner der Kernfragen für ${role} — bei einem Wechsel in einen neuen Bereich ist das ganz normal. Im Skill-Check fragen wir dann alles direkt ab.`;
+  }
+
+  return (
+    <div>
+      <button type="button" className="method-switch" onClick={onBack} style={{ marginBottom: "10px" }}>
+        ← Andere Methode wählen
+      </button>
+      <JourneyStepHeading
+        step="06"
+        kicker="DEIN PROFIL"
+        title="Was hast du schon gemacht?"
+        description="Auch Aushilfsjobs, Praktika und Ehrenamt zählen. Wähle zuerst, wo du gearbeitet hast — dann tippst du an, was du dort gemacht hast."
+      />
+
+      <ActivityChecklist activityIds={activityIds} setActivityIds={setActivityIds} />
+
+      <div
+        aria-live="polite"
+        style={{ marginTop: "14px", padding: "11px 13px", borderRadius: "12px", background: "rgba(127,127,127,.045)", fontSize: "13px", lineHeight: 1.5 }}
+      >
+        {summary}
+      </div>
+
+      <ActionsRow
+        onBack={onBack}
+        forwardLabel={activityIds.length > 0 ? "Weiter zum Skill-Check →" : "Ohne Auswahl weiter →"}
+        onForward={onForward}
+      />
+    </div>
+  );
+}
+/**
+ * Taetigkeits-Ebene, Schritt 3 (24.09.2026): die reine Klick-Liste (erst
+ * Herkunftsfelder, dann Taetigkeiten), aus ActivityPicker herausgezogen,
+ * damit Entdeckungsmodus (RoleSuggestStep) und Profil-Schritt (ActivityPicker)
+ * exakt dieselbe Oberflaeche und denselben activityIds-State nutzen — wer im
+ * Entdeckungsmodus schon angeklickt hat, sieht es im Profil-Schritt wieder
+ * und muss nichts doppelt eingeben.
+ */
+function ActivityChecklist({
+  activityIds,
+  setActivityIds,
+}: {
+  activityIds: string[];
+  setActivityIds: (ids: string[]) => void;
+}) {
   const originFields = ACTIVITY_FIELDS.filter((f) => f.field_key !== "verantwortung");
   const crossField = ACTIVITY_FIELDS.find((f) => f.field_key === "verantwortung");
-  // Beim erneuten Betreten (z. B. nach Rollenwechsel) die Felder wieder
-  // oeffnen, in denen schon Taetigkeiten gewaehlt sind.
+  // Beim erneuten Betreten die Felder wieder oeffnen, in denen schon
+  // Taetigkeiten gewaehlt sind.
   const [openFields, setOpenFields] = useState<Set<string>>(
     () =>
       new Set(
@@ -4610,29 +4781,8 @@ function ActivityPicker({
     ...(openFields.size > 0 && crossField ? [crossField] : []),
   ];
 
-  let summary: string;
-  if (activityIds.length === 0) {
-    summary = "Noch nichts ausgewählt — du kannst auch ohne Auswahl direkt zum Skill-Check.";
-  } else if (loadingRoleSkills) {
-    summary = `${activityIds.length} Tätigkeiten ausgewählt — wir gleichen sie gerade mit ${role} ab …`;
-  } else if (suggestionCount > 0) {
-    summary = `${activityIds.length} Tätigkeiten ausgewählt ✓ Daraus haben wir Vorschläge für ${suggestionCount} von ${questionCount} Fragen zu ${role}. Du bestätigst jeden Vorschlag selbst.`;
-  } else {
-    summary = `${activityIds.length} Tätigkeiten ausgewählt. Sie passen noch zu keiner der Kernfragen für ${role} — bei einem Wechsel in einen neuen Bereich ist das ganz normal. Im Skill-Check fragen wir dann alles direkt ab.`;
-  }
-
   return (
     <div>
-      <button type="button" className="method-switch" onClick={onBack} style={{ marginBottom: "10px" }}>
-        ← Andere Methode wählen
-      </button>
-      <JourneyStepHeading
-        step="06"
-        kicker="DEIN PROFIL"
-        title="Was hast du schon gemacht?"
-        description="Auch Aushilfsjobs, Praktika und Ehrenamt zählen. Wähle zuerst, wo du gearbeitet hast — dann tippst du an, was du dort gemacht hast."
-      />
-
       <div className="field-label" style={{ marginBottom: "8px" }}>1. Wo hast du schon gearbeitet?</div>
       <div className="quiz-extra-chips" role="group" aria-label="Arbeitsfelder">
         {originFields.map((f) => {
@@ -4683,19 +4833,6 @@ function ActivityPicker({
           ))}
         </div>
       )}
-
-      <div
-        aria-live="polite"
-        style={{ marginTop: "14px", padding: "11px 13px", borderRadius: "12px", background: "rgba(127,127,127,.045)", fontSize: "13px", lineHeight: 1.5 }}
-      >
-        {summary}
-      </div>
-
-      <ActionsRow
-        onBack={onBack}
-        forwardLabel={activityIds.length > 0 ? "Weiter zum Skill-Check →" : "Ohne Auswahl weiter →"}
-        onForward={onForward}
-      />
     </div>
   );
 }

@@ -222,8 +222,31 @@ export function buildDirectionRole(bereichKeys: string[], narrowed: DirectionCan
   // weiter ausduennen.
   void goal;
   const base = buildBereichRole(bereichKeys, narrowedRoles.length > 0 ? narrowedRoles : undefined, null);
-  const suffix = narrowedRoles.length > 0 ? `:n=${narrowedRoles.map((r) => r.role_id).sort().join("+")}` : "";
-  return { ...base, role_id: `${base.role_id}${suffix}` };
+  if (narrowedRoles.length === 0) return base;
+  // Eigene Gewichtung statt des Durchschnitts aus buildBereichRole(): dort
+  // zaehlt ein Skill, den nur EIN Beruf hat, mit dessen vollem Gewicht —
+  // in den Tests stand so "Chemieanlagen fahren" (nur Chemikant/in) ganz
+  // oben im Check eines Produktionshelfers. Hier: gewichteter Mittelwert
+  // UEBER ALLE eingegrenzten Berufe (fehlt der Skill, zaehlt 0), der beste
+  // Beruf zaehlt am staerksten (1 / 0,6 / 0,4). Gemeinsame Skills und die
+  // des besten Berufs landen dadurch vorn.
+  const RANK_FACTORS = [1, 0.6, 0.4];
+  const factorSum = narrowedRoles.reduce((sum, _r, i) => sum + (RANK_FACTORS[i] ?? 0.4), 0);
+  const merged = new Map<string, { name: string; weight: number }>();
+  narrowedRoles.forEach((role, i) => {
+    const f = (RANK_FACTORS[i] ?? 0.4) / factorSum;
+    for (const sk of role.skills) {
+      const e = merged.get(sk.skill_id) ?? { name: sk.name, weight: 0 };
+      e.weight += sk.weight * f;
+      merged.set(sk.skill_id, e);
+    }
+  });
+  const total = [...merged.values()].reduce((sum, e) => sum + e.weight, 0) || 1;
+  const skills = [...merged.entries()]
+    .map(([skill_id, e]) => ({ skill_id, name: e.name, weight: Math.round((e.weight / total) * 1000) / 10 }))
+    .sort((a, b) => b.weight - a.weight || a.skill_id.localeCompare(b.skill_id));
+  const suffix = `:n=${narrowedRoles.map((r) => r.role_id).sort().join("+")}`;
+  return { ...base, role_id: `${base.role_id}${suffix}`, skills };
 }
 
 // ---------------------------------------------------------------------------
@@ -283,8 +306,10 @@ export function quickCheckQuestion(skillId: string, skillName: string): { questi
  *  - questions: hoechstens `max` Kern-Skills, die NICHT direkt belegt sind,
  *    nach Gewicht absteigend.
  * Kern = Skills bis 70 % des kumulierten Gewichts (gleiche ABC/Pareto-Logik
- * wie pickCoreQuestionSkills/classifyPriority). Reicht der Kern nicht fuer
- * mindestens 3 Fragen, wird mit den naechstwichtigen Skills aufgefuellt.
+ * wie pickCoreQuestionSkills/classifyPriority). Bewusst KEIN Auffuellen mit
+ * Nicht-Kern-Skills: belegen die Taetigkeiten schon viel, gibt es eben nur
+ * 2–3 Fragen — kuerzer ist besser fuer die Conversion, und Randskills
+ * waeren ohnehin selten entscheidend.
  */
 export function planQuickCheck(
   directionRole: CatalogRole,
@@ -321,7 +346,9 @@ export function planQuickCheck(
   }
   const open = sorted.filter((s) => !evidenceIds.has(s.skill_id));
   const kernOpen = open.filter((s) => kernIds.has(s.skill_id));
-  const pool = kernOpen.length >= 3 ? kernOpen : [...kernOpen, ...open.filter((s) => !kernIds.has(s.skill_id))];
+  // Sicherheitsnetz: nur wenn der Kern komplett belegt ist, EINE Frage aus
+  // dem Rest, damit der Check nie leer ist.
+  const pool = kernOpen.length > 0 ? kernOpen : open.slice(0, 1);
 
   const questions: QuickCheckItem[] = pool.slice(0, max).map((s) => {
     const { question, hint } = questionFor?.(s.skill_id, s.name) ?? quickCheckQuestion(s.skill_id, s.name);

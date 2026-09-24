@@ -133,7 +133,7 @@ export interface DirectionCandidate {
  *  - Bei Aufstiegszielen (weiterkommen/knowhow/fuehrung) nur Berufe ab dem
  *    Zielniveau (Fallback: nicht unter dem heutigen Niveau).
  *  - Zusammenhang: weitere Berufe kommen nur dazu, wenn sie mit dem besten
- *    fachlich zusammenhaengen (>= 20 % gemeinsame Skills) oder einen weiteren
+ *    fachlich zusammenhaengen (beidseitig >= 30 % gemeinsame Skills) oder einen weiteren
  *    gewaehlten Bereich vertreten. Sonst lieber 1 Beruf mit konkreten Fragen
  *    als 3 unzusammenhaengende mit beliebigen.
  *  - Deterministischer Tie-Break ueber role_id.
@@ -198,7 +198,10 @@ export function narrowDirection(params: {
     if (picked.includes(s)) continue;
     // Nur fachlich Zusammenhaengendes dazunehmen, und nur, wenn es nicht
     // deutlich schlechter passt als der beste Beruf.
-    const coherent = roleOverlap(top.role, s.role) >= 0.2 || roleOverlap(s.role, top.role) >= 0.2;
+    // Beidseitig mind. 30 % gemeinsame Skills (Tests 24.09.: bei "einseitig
+    // 20 %" rutschte z. B. Berufskraftfahrer/in zur Fachkraft Lagerlogistik
+    // und brachte Lkw-Fragen in den Check eines Lagerhelfers).
+    const coherent = Math.min(roleOverlap(top.role, s.role), roleOverlap(s.role, top.role)) >= 0.3;
     if (coherent && s.score >= top.score * 0.8) picked.push(s);
   }
   return picked.slice(0, max).sort((a, b) => b.score - a.score || a.role.role_id.localeCompare(b.role.role_id));

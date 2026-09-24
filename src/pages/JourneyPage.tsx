@@ -239,6 +239,21 @@ const BEREICH_ICONS: Record<string, string> = {
   handwerk: "🔧",
   "soziales-bildung": "🤝",
   marketing: "🎨",
+  // Rollen-Erweiterung 24.09.2026: vier neue Bereiche aus rolesCatalog.ts.
+  logistik: "🚚",
+  handel: "🛍️",
+  produktion: "🏭",
+  "gastro-service": "🍽️",
+};
+
+/** Anzeige-Label fuer CatalogRole.anforderungsniveau (Rollen-Erweiterung
+ *  24.09.2026, angelehnt an die KldB-2010-Stufen der BA) — bewusst
+ *  alltagssprachlich statt "Helfer/Spezialist/Experte". */
+const ANFORDERUNGSNIVEAU_LABELS: Record<1 | 2 | 3 | 4, string> = {
+  1: "Einstieg",
+  2: "Fachkraft",
+  3: "Spezialist/in",
+  4: "Leitung / Expert/in",
 };
 
 /**
@@ -266,7 +281,7 @@ const BEREICH_DISCOVERY_OPTIONS: Array<{
     icon: "💻",
     title: "Technologie & Digitales",
     description: "Digitale Lösungen entwickeln, automatisieren oder technisch verstehen.",
-    areaHints: ["it-tech", "wirtschaft"],
+    areaHints: ["it-tech", "produktion", "wirtschaft"],
   },
   {
     key: "kreativ",
@@ -287,14 +302,14 @@ const BEREICH_DISCOVERY_OPTIONS: Array<{
     icon: "⚙️",
     title: "Organisieren & verbessern",
     description: "Abläufe strukturieren, Projekte voranbringen und Dinge effizienter machen.",
-    areaHints: ["wirtschaft", "it-tech"],
+    areaHints: ["wirtschaft", "logistik", "produktion", "it-tech"],
   },
   {
     key: "praxis",
     icon: "🛠️",
     title: "Praktisch & anpacken",
     description: "Konkrete Lösungen umsetzen und direkt sehen, was du geschaffen hast.",
-    areaHints: ["handwerk", "it-tech"],
+    areaHints: ["handwerk", "produktion", "gastro-service", "it-tech"],
   },
   {
     key: "kommunikation",
@@ -309,6 +324,23 @@ const BEREICH_DISCOVERY_OPTIONS: Array<{
     title: "Zukunft & Veränderung",
     description: "Neue Themen lernen, Veränderung gestalten und dich beruflich neu orientieren.",
     areaHints: ["it-tech", "wirtschaft", "gesundheit", "soziales-bildung"],
+  },
+  // Rollen-Erweiterung 24.09.2026: zwei Interessen, die die neuen Bereiche
+  // (Handel, Gastro/Service, Logistik, Produktion) ehrlich erreichbar machen —
+  // vorher fuehrte kein Interesse dorthin.
+  {
+    key: "service",
+    icon: "🛎️",
+    title: "Kunden & Service",
+    description: "Kundinnen und Gäste beraten, bedienen und dafür sorgen, dass sie gern wiederkommen.",
+    areaHints: ["handel", "gastro-service"],
+  },
+  {
+    key: "bewegung",
+    icon: "🚚",
+    title: "Unterwegs & in Bewegung",
+    description: "Nicht den ganzen Tag am Schreibtisch: Waren bewegen, liefern, fahren und organisieren.",
+    areaHints: ["logistik", "produktion", "handel"],
   },
 ];
 
@@ -863,9 +895,17 @@ function roleMatchScore(query: string, roleName: string): number {
  * (score >= 30) — so landet niemand vor einer leeren Liste, sondern bekommt
  * zumindest die naechstliegenden echten Angebote vorgeschlagen (die Person
  * "matched" so immer mit tatsaechlich vorhandenen Jobs/Rollen). */
-function rankRolesByQuery(roles: TargetRole[], query: string): TargetRole[] {
+function rankRolesByQuery(roles: TargetRole[], query: string, altTextById?: ReadonlyMap<string, string>): TargetRole[] {
+  // Rollen-Erweiterung 24.09.2026: role_name ist jetzt die Berufsbezeichnung.
+  // Wer nach der Weiterbildung sucht ("Fachwirt Marketing"), soll trotzdem den
+  // passenden Beruf finden — deshalb zaehlt typische_weiterbildung als zweiter
+  // Suchtext (leicht abgewertet, der Berufsname bleibt vorrangig).
   const scored = roles
-    .map((role) => ({ role, score: roleMatchScore(query, role.role_name) }))
+    .map((role) => {
+      const alt = altTextById?.get(role.role_id);
+      const altScore = alt ? roleMatchScore(query, alt) * 0.95 : 0;
+      return { role, score: Math.max(roleMatchScore(query, role.role_name), altScore) };
+    })
     .sort((a, b) => b.score - a.score);
   const good = scored.filter((x) => x.score >= 30);
   const pool = good.length > 0 ? good : scored.slice(0, 5);
@@ -3353,6 +3393,7 @@ async function runDemoAnalysis() {
                 {stepKey === "zielrolle" && (
                   <ZielrolleStep
                     roles={rolesInPortfolio.map(toTargetRoleSummary)}
+                    catalogRoles={rolesInPortfolio}
                     loading={loadingRoles}
                     error={rolesError}
                     onRetry={loadRoles}
@@ -4175,6 +4216,7 @@ function ZielrolleStep({
   onSelect,
   onForward,
   onBack,
+  catalogRoles,
 }: {
   roles: TargetRole[];
   loading: boolean;
@@ -4184,7 +4226,20 @@ function ZielrolleStep({
   onSelect: (role: TargetRole) => void;
   onForward: () => void;
   onBack?: () => void;
+  /** Rollen-Erweiterung 24.09.2026: die vollen Katalog-Rollen (Bereich,
+   *  Niveau, typische Weiterbildung) zu `roles` — optional, ohne sie faellt
+   *  die Ansicht auf die bisherige flache Kartenliste zurueck. */
+  catalogRoles?: CatalogRole[];
 }) {
+  const catalogById = useMemo(() => new Map((catalogRoles ?? []).map((r) => [r.role_id, r] as const)), [catalogRoles]);
+  const weiterbildungById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of catalogRoles ?? []) if (r.typische_weiterbildung) m.set(r.role_id, r.typische_weiterbildung);
+    return m;
+  }, [catalogRoles]);
+  // Bei ~126 Berufen ist eine einzige flache Liste nicht mehr bedienbar —
+  // Bereichs-Filter oben, ohne Filter nach Bereich gruppiert.
+  const [bereichFilter, setBereichFilter] = useState<string | null>(null);
   // Freitext-Suche: eigene Wunschrolle eintippen, statt nur aus Karten zu
   // waehlen. Es kann dabei keine neue Rolle "erfunden" werden (das Backend
   // braucht fuer Skill-Gap/Kursmatching zwingend eine bekannte
@@ -4223,11 +4278,71 @@ function ZielrolleStep({
   let visible: TargetRole[];
   let weakMatch = false;
   if (trimmedQuery) {
-    visible = rankRolesByQuery(roles, trimmedQuery);
-    const bestScore = visible.length > 0 ? roleMatchScore(trimmedQuery, visible[0].role_name) : 0;
+    visible = rankRolesByQuery(roles, trimmedQuery, weiterbildungById);
+    const top = visible[0];
+    const bestScore = top
+      ? Math.max(roleMatchScore(trimmedQuery, top.role_name), roleMatchScore(trimmedQuery, weiterbildungById.get(top.role_id) ?? "") * 0.95)
+      : 0;
     weakMatch = bestScore < 55;
   } else {
-    visible = roles;
+    visible = bereichFilter ? roles.filter((r) => catalogById.get(r.role_id)?.bereich_key === bereichFilter) : roles;
+  }
+
+  // Bereichs-Gruppen (Reihenfolge wie im Katalog), innerhalb nach Niveau
+  // aufsteigend — Helfer/Einstieg zuerst, Leitung zuletzt: liest sich wie ein
+  // Karrierepfad statt wie eine zufaellige Liste.
+  const bereichOrder: { key: string; label: string }[] = [];
+  for (const r of roles) {
+    const c = catalogById.get(r.role_id);
+    if (c && !bereichOrder.some((b) => b.key === c.bereich_key)) bereichOrder.push({ key: c.bereich_key, label: c.bereich_label });
+  }
+  const grouped = !trimmedQuery && catalogById.size > 0;
+  const groups = grouped
+    ? bereichOrder
+        .map((b) => ({
+          ...b,
+          roles: visible
+            .filter((r) => catalogById.get(r.role_id)?.bereich_key === b.key)
+            .sort((x, y) => (catalogById.get(x.role_id)?.anforderungsniveau ?? 2) - (catalogById.get(y.role_id)?.anforderungsniveau ?? 2)),
+        }))
+        .filter((g) => g.roles.length > 0)
+    : [{ key: "_all", label: "", roles: visible }];
+
+  function renderRoleCard(r: TargetRole) {
+    const isSelected = selectedRoleId === r.role_id;
+    const isPending = pendingId === r.role_id;
+    const c = catalogById.get(r.role_id);
+    const niveau = c?.anforderungsniveau ? ANFORDERUNGSNIVEAU_LABELS[c.anforderungsniveau] : null;
+    return (
+      <div
+        key={r.role_id}
+        className={`role-card ${isSelected ? "selected" : ""} ${isPending ? "advancing" : ""}`}
+        onClick={() => pickRole(r)}
+        role="button"
+        tabIndex={0}
+        aria-pressed={isSelected}
+        onKeyDown={(e) => handleCardKeyDown(e, () => pickRole(r))}
+      >
+        {isSelected && (
+          <span className="role-card-check" aria-hidden="true">
+            ✓
+          </span>
+        )}
+        <div className="role-card-icon" aria-hidden="true">
+          {c ? BEREICH_ICONS[c.bereich_key] ?? roleIcon(r.role_name) : roleIcon(r.role_name)}
+        </div>
+        <div className="role-card-name">{r.role_name}</div>
+        <div className="role-card-meta">
+          {niveau ? `${niveau} · ` : ""}
+          {r.required_skill_count} Kern-Skills
+        </div>
+        {c?.typische_weiterbildung && (
+          <div className="role-card-meta" style={{ marginTop: "4px", lineHeight: 1.35 }}>
+            Weg dorthin z. B.: {c.typische_weiterbildung}
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -4242,10 +4357,34 @@ function ZielrolleStep({
         id="roleSearchInput"
         className="big-input"
         style={{ marginBottom: trimmedQuery ? "6px" : "14px" }}
-        placeholder="Rolle suchen oder selbst eintragen (z. B. „Data Analyst“)…"
+        placeholder="Beruf suchen (z. B. „Lagerleiter“, „Controller“ oder „Fachwirt“)…"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
+      {!trimmedQuery && bereichOrder.length > 1 && (
+        <div className="quiz-extra-chips" role="group" aria-label="Nach Bereich filtern" style={{ marginBottom: "14px" }}>
+          <button
+            type="button"
+            className={`quiz-extra-chip ${bereichFilter === null ? "checked" : ""}`}
+            onClick={() => setBereichFilter(null)}
+            aria-pressed={bereichFilter === null}
+          >
+            Alle Bereiche
+          </button>
+          {bereichOrder.map((b) => (
+            <button
+              key={b.key}
+              type="button"
+              className={`quiz-extra-chip ${bereichFilter === b.key ? "checked" : ""}`}
+              onClick={() => setBereichFilter(bereichFilter === b.key ? null : b.key)}
+              aria-pressed={bereichFilter === b.key}
+            >
+              <span aria-hidden="true">{BEREICH_ICONS[b.key] ?? "🧭"}</span>
+              {b.label}
+            </button>
+          ))}
+        </div>
+      )}
       {trimmedQuery && (
         <div className="hint" style={{ marginBottom: "10px" }}>
           {weakMatch
@@ -4259,37 +4398,20 @@ function ZielrolleStep({
         <>
           {!trimmedQuery && (
             <div className="hint" style={{ marginBottom: "10px" }}>
-              {visible.length} Zielrolle{visible.length === 1 ? "" : "n"} verfügbar
+              {visible.length} Beruf{visible.length === 1 ? "" : "e"} verfügbar
             </div>
           )}
-          <div className={`role-grid ${pendingId ? "picking" : ""}`}>
-            {visible.map((r) => {
-              const isSelected = selectedRoleId === r.role_id;
-              const isPending = pendingId === r.role_id;
-              return (
-                <div
-                  key={r.role_id}
-                  className={`role-card ${isSelected ? "selected" : ""} ${isPending ? "advancing" : ""}`}
-                  onClick={() => pickRole(r)}
-                  role="button"
-                  tabIndex={0}
-                  aria-pressed={isSelected}
-                  onKeyDown={(e) => handleCardKeyDown(e, () => pickRole(r))}
-                >
-                  {isSelected && (
-                    <span className="role-card-check" aria-hidden="true">
-                      ✓
-                    </span>
-                  )}
-                  <div className="role-card-icon" aria-hidden="true">
-                    {roleIcon(r.role_name)}
-                  </div>
-                  <div className="role-card-name">{r.role_name}</div>
-                  <div className="role-card-meta">{r.required_skill_count} Kern-Skills</div>
+          {groups.map((g) => (
+            <div key={g.key} style={{ marginBottom: grouped ? "18px" : 0 }}>
+              {grouped && (
+                <div style={{ fontSize: "14px", fontWeight: 850, margin: "4px 0 8px" }}>
+                  <span aria-hidden="true">{BEREICH_ICONS[g.key] ?? "🧭"}</span> {g.label}
+                  <span className="hint" style={{ fontWeight: 600, marginLeft: "6px" }}>({g.roles.length})</span>
                 </div>
-              );
-            })}
-          </div>
+              )}
+              <div className={`role-grid ${pendingId ? "picking" : ""}`}>{g.roles.map(renderRoleCard)}</div>
+            </div>
+          ))}
         </>
       )}
       {/* "Weiter"-Button bleibt als Fallback erhalten (z.B. falls jemand die

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { DashboardPage } from "./pages/DashboardPage";
 import { JourneyPage } from "./pages/JourneyPage";
 
-type View = "dashboard" | "journey";
+      {view === "dashboard" ? <DashboardPage /> : <JourneyPage journeyVersion="v2" />}
 
 /**
  * Einfacher Umschalter zwischen den beiden Vorschau-Oberflächen:

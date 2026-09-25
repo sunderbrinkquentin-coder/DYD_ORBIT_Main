@@ -1272,6 +1272,7 @@ export function fetchCourseUrlExtract(
     body: JSON.stringify({ mode: "extract", ...payload }),
   });
 }
+
 // ---------- Katalog-Assistent: Website verbinden & neue Kurse suchen ----------
 //
 // Eigene Edge Function "catalog-assistant" (supabase/functions/catalog-assistant).
@@ -1340,6 +1341,8 @@ export interface CatalogCrawlProgress {
   checked: number;
   total: number;
   found_so_far: number;
+  /** Zuletzt gefundene Kurstitel (Live-Anzeige waehrend der Suche). */
+  recent_found?: string[];
   resumed?: boolean;
   outcome?: CatalogCrawlOutcome;
 }
@@ -1357,10 +1360,19 @@ export interface CatalogOverview {
  * "Die Adresse ... ist nicht erreichbar"). Alles andere bleibt allgemein.
  */
 async function catalogRequest<T>(base: string, apiKey: string, path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${base.replace(/\/$/, "")}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", "X-API-Key": apiKey, ...(init?.headers ?? {}) },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${base.replace(/\/$/, "")}${path}`, {
+      ...init,
+      headers: { "Content-Type": "application/json", "X-API-Key": apiKey, ...(init?.headers ?? {}) },
+    });
+  } catch (err) {
+    // Netzwerkfehler/CORS: fetch wirft ohne HTTP-Status (z. B. "Failed to fetch").
+    console.error(`Katalog-Assistent ${path}: keine Antwort`, err);
+    throw new Error(
+      'Die Kurssuche ist nicht erreichbar. Bitte Internetverbindung prüfen und ob die Edge Function "catalog-assistant" deployt ist (Verify JWT aus).'
+    );
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     console.error(`Katalog-Assistent ${path} fehlgeschlagen (HTTP ${res.status})`, text);
@@ -1403,6 +1415,7 @@ export function ignoreCatalogProposal(base: string, apiKey: string, id: string, 
 export function acceptCatalogProposal(base: string, apiKey: string, id: string, courseId: string): Promise<{ ok: true }> {
   return catalogRequest(base, apiKey, `/proposals/${encodeURIComponent(id)}/accept`, { method: "POST", body: JSON.stringify({ course_id: courseId }) });
 }
+
 // ---------- Default-Werte ----------
 
 export const DEFAULT_MIN_SCORE = 60.0;

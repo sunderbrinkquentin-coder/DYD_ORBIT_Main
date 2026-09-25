@@ -5877,3 +5877,240 @@ input.big-input:focus {
     width: 100%;
   }
 }
+
+/* ---- Ergebnis: "Deine Möglichkeiten" beim Weg über die Branche ---- */
+.v2-options {
+  margin-bottom: 16px;
+  padding: 18px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(47, 143, 214, 0.08), rgba(95, 220, 153, 0.1));
+  border: 1px solid var(--blue-border);
+}
+.v2-options-title {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.v2-options-sub {
+  margin: 2px 0 14px;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+.v2-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.v2-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px 16px 14px;
+  border-radius: 16px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+.v2-option::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--dyd-blue);
+}
+.v2-option.is-top::before {
+  background: linear-gradient(180deg, var(--dyd-mint-2), var(--dyd-blue));
+}
+.v2-option.is-later::before {
+  background: var(--dyd-violet);
+}
+.v2-option.is-consult::before {
+  background: var(--text-muted);
+}
+.v2-option:hover,
+.v2-option:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--dyd-blue);
+  box-shadow: 0 10px 24px rgba(47, 143, 214, 0.16);
+  outline: none;
+}
+.v2-option.is-top {
+  border-color: var(--dyd-mint-2);
+  box-shadow: 0 8px 22px rgba(95, 220, 153, 0.18);
+}
+.v2-option.is-later,
+.v2-option.is-consult {
+  background: #fbfcff;
+}
+.v2-option-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.v2-option-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 10px;
+  background: var(--blue-bg);
+  font-size: 16px;
+}
+.v2-option.is-top .v2-option-icon {
+  background: var(--green-bg);
+}
+.v2-option.is-later .v2-option-icon {
+  background: rgba(124, 111, 224, 0.12);
+}
+.v2-option-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.v2-option-tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--border-soft);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.v2-option-tag.top {
+  background: var(--green-bg);
+  color: var(--green-text);
+}
+.v2-option-tag.later {
+  background: rgba(124, 111, 224, 0.12);
+  color: var(--dyd-violet);
+}
+.v2-option-name {
+  font-weight: 800;
+  font-size: 15.5px;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+.v2-option-fit {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--green-text);
+}
+.v2-option-course {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.v2-option-cta {
+  margin-top: auto;
+  padding-top: 4px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--dyd-blue);
+}
+.v2-option-cta .arrow {
+  display: inline-block;
+  transition: transform 0.15s;
+}
+.v2-option:hover .v2-option-cta .arrow {
+  transform: translateX(3px);
+}
+.v2-option.is-later .v2-option-cta,
+.v2-option.is-consult .v2-option-cta {
+  color: var(--dyd-violet);
+}
+
+/* ---- Ergebnis: Beratung immer sichtbar ---- */
+.v2-course-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v2-consult-btn {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1.5px solid var(--blue-border);
+  background: var(--surface);
+  color: var(--dyd-blue-dark);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.v2-consult-btn:hover {
+  background: var(--blue-bg);
+  border-color: var(--dyd-blue);
+}
+.v2-consult {
+  margin-top: 18px;
+  padding: 18px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, var(--dyd-navy), var(--dyd-navy-glow));
+  color: #fff;
+  box-shadow: var(--shadow-md);
+}
+.v2-consult-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+.v2-consult-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 14px;
+  background: rgba(143, 236, 180, 0.18);
+  font-size: 20px;
+}
+.v2-consult-title {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 19px;
+  font-weight: 700;
+}
+.v2-consult-sub {
+  margin-top: 2px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.78);
+}
+.v2-consult-cta {
+  width: 100%;
+  padding: 14px 18px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-mint-2));
+  color: var(--dyd-navy);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.v2-consult-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(95, 220, 153, 0.35);
+}
+.v2-consult .v2-lead {
+  background: var(--surface);
+  color: var(--text-primary);
+  border-radius: 16px;
+}

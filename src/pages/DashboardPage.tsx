@@ -1559,6 +1559,11 @@ export function DashboardPage({
   // automatisch in teachingUnits umgerechnet (1 Stunde != 1 UE), sondern nur
   // als Hinweis direkt am UE-Feld angezeigt, damit der Mensch selbst entscheidet.
   const [urlImportDurationHint, setUrlImportDurationHint] = useState<string | null>(null);
+  // Lerninhalte und Voraussetzungen aus dem URL-Import (course-url-import
+  // Version 4, 25.09.2026) - nur fuer die Skill-/Zielrollen-Erkennung, nicht
+  // gespeichert. Voraussetzungen dienen dabei ausschliesslich dem Ausschluss.
+  const [importLearningGoals, setImportLearningGoals] = useState<string[]>([]);
+  const [importPrerequisites, setImportPrerequisites] = useState("");
   // ------------------------------------------------------------
   // Live-Beispiele fuer den Rundgang: "Kurs manuell anlegen" und "Kurse per
   // CSV importieren" (siehe EXAMPLE_COURSE_FORM/EXAMPLE_CSV_* oben). Anders
@@ -2282,6 +2287,8 @@ export function DashboardPage({
     setCourseForm({ ...DEFAULT_COURSE_FORM, provider: effectiveTenantName });
     setUrlImportVerifiedFields([]);
     setUrlImportDurationHint(null);
+    setImportLearningGoals([]);
+    setImportPrerequisites("");
     setCourseSkillUris(new Set());
     setCourseSkillLevels({});
     setSkillPickerRoleId("");
@@ -2334,8 +2341,8 @@ export function DashboardPage({
       const { skills } = classifyCourse({
         title: courseForm.courseName,
         description: courseForm.description,
-        learningGoals: splitLearningGoals(courseForm.description),
-        prerequisites: courseForm.targetGroup,
+        learningGoals: [...importLearningGoals, ...splitLearningGoals(courseForm.description)],
+        prerequisites: [courseForm.targetGroup, importPrerequisites].filter(Boolean).join(". "),
       });
       const matches: MatchedSkill[] = skills.slice(0, 20).map((sk) => ({
         esco_uri: sk.skill_id,
@@ -2384,7 +2391,7 @@ export function DashboardPage({
       if (autoDetectTimerRef.current) window.clearTimeout(autoDetectTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseForm.courseName, courseForm.description, tourOpen]);
+  }, [courseForm.courseName, courseForm.description, importLearningGoals, importPrerequisites, tourOpen]);
   /** "Freigabe" eines einzelnen Vorschlags: verschiebt ihn von
    *  manualSuggestedSkills in die tatsaechliche Zuordnung courseSkillUris —
    *  inkl. einer per Heuristik vorbelegten Erfahrungslevel-Schätzung (siehe
@@ -2611,8 +2618,8 @@ export function DashboardPage({
           {
             title: courseForm.courseName,
             description: courseForm.description,
-            learningGoals: splitLearningGoals(courseForm.description),
-            prerequisites: courseForm.targetGroup,
+            learningGoals: [...importLearningGoals, ...splitLearningGoals(courseForm.description)],
+            prerequisites: [courseForm.targetGroup, importPrerequisites].filter(Boolean).join(". "),
             bereichKeys: courseForm.bereichKeys,
           },
           { limit: 4 },
@@ -2635,7 +2642,7 @@ export function DashboardPage({
     }, 400);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseForm.courseName, courseForm.description, courseForm.targetGroup, courseForm.bereichKeys, courseRoleOptions, tourOpen]);
+  }, [courseForm.courseName, courseForm.description, courseForm.targetGroup, courseForm.bereichKeys, courseRoleOptions, importLearningGoals, importPrerequisites, tourOpen]);
   // Bereichs-Vorschläge (siehe suggestBereicheForText oben) — rein
   // synchron/lokal, deshalb ohne Debounce/Busy-State wie beim
   // Zielrollen-Abgleich oben (der echte Netzwerk-Calls macht).
@@ -2910,6 +2917,8 @@ export function DashboardPage({
     }));
     setUrlImportVerifiedFields(res.verified_fields);
     setUrlImportDurationHint(d.duration_hint?.trim() || null);
+    setImportLearningGoals([...new Set([...(d.learning_goals ?? []), ...(res.content_topics ?? [])].map((g) => g.trim()).filter(Boolean))]);
+    setImportPrerequisites(d.prerequisites_text?.trim() ?? "");
     setCourseFormOpen(true);
     window.setTimeout(() => courseFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   }
@@ -3590,6 +3599,8 @@ export function DashboardPage({
    * course-manage-card-Warnhinweis) nachtraeglich zugeordnet werden koennen. */
   function startEditCourse(course: OrbitCourse) {
     setEditingCourseId(course.course_id);
+    setImportLearningGoals([]);
+    setImportPrerequisites("");
     setCourseForm({
       courseId: course.course_id,
       courseName: course.course_name,

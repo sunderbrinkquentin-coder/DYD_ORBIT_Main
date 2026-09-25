@@ -1,116 +1,5939 @@
-/*
- * DYD CI – gemeinsame Design-Tokens für beide Seiten (Dashboard + Journey).
- * Nachgebaut aus Screenshots der echten Landingpage (decide-your-dream.de),
- * kein offizielles Brand-Kit. Bei Bedarf hier zentral anpassen.
- */
+/* Seiten-spezifische Styles für JourneyPage (Interface B: Endnutzer-Assistent). */
 
-:root {
-  color-scheme: light;
-  --dyd-navy: #0c1c34;
-  --dyd-navy-2: #081426;
-  --dyd-navy-glow: #172c50;
-  --dyd-mint: #8fecb4;
-  --dyd-mint-2: #5fdc99;
-  --dyd-brand-green: #4fe08a;
-  --dyd-blue: #2f8fd6;
-  --dyd-blue-dark: #1f6fae;
-  --dyd-violet: #7c6fe0;
-  --page: #eef2f9;
-  --surface: #ffffff;
-  --border: #e6eaf2;
-  --border-soft: #eef1f7;
-  --text-primary: #0f1b2d;
-  --text-secondary: #5b6779;
-  --text-muted: #93a0b3;
-  --red-bg: #fdeff0;
-  --red-border: #f6d3d7;
-  --red-text: #c23a3a;
-  --blue-bg: #eaf4fc;
-  --blue-border: #cfe6f8;
-  --green-bg: #e5f8ec;
-  --green-text: #178a4c;
-  --amber-bg: #fff3da;
-  --amber-text: #92640a;
-  --shadow-sm: 0 1px 2px rgba(15, 27, 45, 0.04);
-  --shadow-md: 0 8px 24px rgba(15, 27, 45, 0.08);
-  --shadow-lg: 0 24px 64px rgba(15, 27, 45, 0.16);
+/* ---------- Host-site chrome (simuliert die Website des Bildungsträgers drumherum) ---------- */
+.host-chrome {
+  background: #fff;
+  border-bottom: 1px solid #e2e6ee;
+  padding: 12px 26px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.host-logo-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.host-logo-placeholder .box {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1.5px dashed #c7ced9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+.host-nav {
+  display: flex;
+  gap: 22px;
+  font-size: 12.5px;
+  color: #b7bfcc;
+  font-weight: 600;
 }
 
-* {
-  box-sizing: border-box;
+.stage {
+  min-height: calc(100vh - 50px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 44px 20px 70px;
+  background: radial-gradient(circle at 20% 0%, rgba(143, 236, 180, 0.16), transparent 45%),
+    radial-gradient(circle at 85% 10%, rgba(47, 143, 214, 0.14), transparent 45%);
 }
 
-html {
-  scroll-behavior: smooth;
+.widget {
+  width: 100%;
+  max-width: 620px;
+  background: var(--surface);
+  border-radius: 22px;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  position: relative;
 }
 
-body {
+.powered-badge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(12, 28, 52, 0.9);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 6px 10px 6px 7px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.powered-badge .mark {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, var(--dyd-mint), var(--dyd-blue));
+  flex-shrink: 0;
+}
+
+.widget-head {
+  padding: 26px 30px 18px;
+  text-align: center;
+  background: linear-gradient(180deg, #f6f9fd, #fff);
+  border-bottom: 1px solid var(--border-soft);
+}
+.widget-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--dyd-blue-dark);
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+  padding: 4px 11px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 12px;
+}
+.widget-head h1 {
   margin: 0;
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  background: var(--page);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.widget-head .sub {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  margin-top: 6px;
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.trust-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 14px;
+}
+.trust-row span {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--green-text);
+  letter-spacing: 0.01em;
+}
+
+/* ---------- Fortschrittsbalken (über dem Stepper) ---------- */
+.progress-track {
+  height: 4px;
+  background: var(--border-soft);
+  margin: 16px 30px 0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+/* ---------- Stepper ---------- */
+.stepper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 18px 20px 4px;
+}
+.step-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 58px;
+}
+.step-circle {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11.5px;
+  font-weight: 800;
+  font-family: "Baloo 2", sans-serif;
+  background: #eef1f7;
+  color: var(--text-muted);
+  border: 2px solid #eef1f7;
+  transition: all 0.25s;
+}
+.step-node.done .step-circle {
+  background: var(--dyd-mint-2);
+  color: #fff;
+  border-color: var(--dyd-mint-2);
+}
+.step-node.active .step-circle {
+  background: #fff;
+  color: var(--dyd-blue-dark);
+  border-color: var(--dyd-blue);
+  box-shadow: 0 0 0 4px rgba(47, 143, 214, 0.14);
+}
+.step-label {
+  font-size: 9px;
+  color: var(--text-muted);
+  text-align: center;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.step-node.active .step-label {
+  color: var(--dyd-blue-dark);
+}
+.step-node.done .step-label {
+  color: var(--green-text);
+}
+.step-line {
+  flex: 1;
+  height: 2px;
+  background: #eef1f7;
+  margin: 0 -4px;
+  margin-top: -18px;
+  max-width: 26px;
+}
+.step-line.done {
+  background: var(--dyd-mint-2);
+}
+
+.widget-body {
+  padding: 26px 30px 30px;
+  min-height: 300px;
+}
+.panel-step {
+  animation: fadeInUp 0.35s ease both;
+}
+
+.field-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 8px;
+  display: block;
+}
+/* Präferenzen-Zusammenfassung im Kurs-Schritt (Version 31) — kompakter Recap
+   von Beschäftigungsart/Arbeitsort/Starttermin aus dem "Präferenzen"-Schritt,
+   direkt über den Kursempfehlungen (siehe preferenceSummaryParts in
+   KursStep, JourneyPage.tsx). Bewusst dezent statt als eigene Karte, da es
+   nur zur Einordnung dient, nicht als eigener Entscheidungspunkt. */
+.preference-summary {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  background: var(--border-soft);
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin: 0 0 14px;
+}
+.preference-summary-label {
+  font-weight: 700;
   color: var(--text-primary);
-  -webkit-font-smoothing: antialiased;
+}
+textarea.big-input,
+input.big-input {
+  width: 100%;
+  padding: 13px 14px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border);
+  font-size: 14px;
+  font-family: inherit;
+  background: #fbfcfe;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+textarea.big-input {
+  min-height: 110px;
+  resize: vertical;
+}
+textarea.big-input:focus,
+input.big-input:focus {
+  outline: none;
+  border-color: var(--dyd-blue);
+  box-shadow: 0 0 0 4px rgba(47, 143, 214, 0.12);
+  background: #fff;
+}
+.hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+/* Voraussetzungs-Hinweis an Kurskarten (Version 34, 22.09., siehe
+   prerequisite_status/course-prereq in JourneyPage.tsx) — .hint-warn für
+   "nicht_erfuellt" (echter, belegter Widerspruch), .hint-ok für "erfuellt"
+   (bestätigend). "unklar" bleibt bewusst beim neutralen .hint oben (keine
+   Ampel-Farbe für eine bloß fehlende Angabe, kein Widerspruch). */
+.hint-warn {
+  color: var(--red-text);
+}
+.hint-ok {
+  color: var(--green-text);
 }
 
-.display {
+/* ---------- Method choice cards (Profil-Text/Upload vs Fragebogen) ---------- */
+.method-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 4px;
+}
+.method-card {
+  border: 1.5px solid var(--border);
+  border-radius: 15px;
+  padding: 18px 16px;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+  background: #fff;
+}
+.method-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--dyd-blue);
+}
+.method-card .method-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  margin: 0 auto 10px;
+  background: var(--blue-bg);
+  color: var(--dyd-blue-dark);
+  font-size: 19px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.method-card .method-title {
+  font-weight: 700;
+  font-size: 13.5px;
+}
+.method-card .method-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.method-switch {
+  display: inline-block;
+  font-size: 11.5px;
+  color: var(--dyd-blue-dark);
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 14px;
+}
+.method-switch:hover {
+  text-decoration: underline;
+}
+
+/* ---------- CV upload ---------- */
+.upload-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 9px 14px;
+  border-radius: 9px;
+  border: 1.5px dashed var(--blue-border);
+  background: var(--blue-bg);
+  color: var(--dyd-blue-dark);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.upload-btn:hover {
+  border-color: var(--dyd-blue);
+}
+.upload-btn.busy {
+  opacity: 0.7;
+  cursor: wait;
+}
+.upload-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  border-style: solid;
+}
+.dsgvo-consent-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.dsgvo-consent-row input[type="checkbox"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.dsgvo-consent-row a {
+  color: var(--dyd-blue-dark);
+  font-weight: 600;
+}
+.upload-status {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.upload-status.ok {
+  color: var(--green-text);
+}
+.upload-status.err {
+  color: var(--red-text);
+}
+
+/* ---------- CV-Warteanimation (Extraktion / Skill-Gap-Berechnung) ---------- */
+.cv-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  padding: 34px 18px 26px;
+  animation: fadeInUp 0.35s ease;
+}
+.cv-loading-spinner {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cv-loading-spinner-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid var(--border-soft);
+  border-top-color: var(--dyd-mint-2);
+  border-right-color: var(--dyd-blue);
+  animation: spin 1s linear infinite;
+}
+.cv-loading-spinner-icon {
+  font-size: 20px;
+  animation: pulseDot 1.8s ease-in-out infinite;
+}
+.cv-loading-phase {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--dyd-blue-dark);
+  text-transform: uppercase;
+}
+.cv-loading-bar-track {
+  width: 100%;
+  max-width: 320px;
+  height: 6px;
+  background: var(--border-soft);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.cv-loading-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  border-radius: 999px;
+  transition: width 0.25s ease-out;
+}
+.cv-loading-message {
+  max-width: 380px;
+  min-height: 74px;
+  animation: popIn 0.35s ease;
+}
+.cv-loading-message-title {
   font-family: "Baloo 2", "Inter", system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
 }
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.cv-loading-message-body {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
 }
-
-@keyframes popIn {
-  from {
-    opacity: 0;
-    transform: scale(0.92);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
+@media (prefers-reduced-motion: reduce) {
+  .cv-loading-spinner-ring,
+  .cv-loading-spinner-icon {
+    animation: none;
   }
 }
 
-@keyframes ringDraw {
-  from {
-    stroke-dashoffset: var(--ring-full);
-  }
-  to {
-    stroke-dashoffset: var(--ring-offset);
-  }
+/* ---------- Fragebogen skill toggles ---------- */
+.quiz-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.quiz-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 13px;
+  border-radius: 11px;
+  border: 1.5px solid var(--border);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.quiz-item:hover {
+  border-color: var(--dyd-blue);
+}
+.quiz-item.checked {
+  border-color: var(--dyd-mint-2);
+  background: var(--green-bg);
+}
+.quiz-item .check-box {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1.5px solid var(--border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: transparent;
+  background: #fff;
+}
+.quiz-item.checked .check-box {
+  background: var(--dyd-mint-2);
+  border-color: var(--dyd-mint-2);
+  color: #fff;
+}
+.quiz-item-label {
+  font-size: 13px;
+  font-weight: 600;
 }
 
-@keyframes pulseDot {
+.role-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
+.role-card {
+  position: relative;
+  border: 1.5px solid var(--border);
+  border-radius: 13px;
+  padding: 13px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+  background: #fff;
+}
+.role-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.role-card.selected {
+  border-color: var(--dyd-blue);
+  background: var(--blue-bg);
+  box-shadow: 0 0 0 3px rgba(47, 143, 214, 0.12);
+}
+.role-card-check {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--dyd-blue);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px #fff;
+  animation: popIn 0.2s ease both;
+}
+.role-card-icon {
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+.role-card-name {
+  font-weight: 700;
+  font-size: 13.5px;
+}
+.role-card-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+/* ---------- Direkt-Weiter nach Rollenauswahl (Version 19) ----------
+   Kurzes visuelles "das war's, weiter geht's" beim Klick auf eine
+   Zielrollen-Karte: die gewählte Karte hebt sich kurz ab, die übrigen treten
+   zurück, dann springt die Journey automatisch zum nächsten Schritt (siehe
+   pickRole() in ZielrolleStep) — kein manuelles Scrollen zum Weiter-Button
+   mehr nötig. */
+.role-card.advancing {
+  border-color: var(--dyd-mint-2);
+  background: var(--green-bg);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: var(--shadow-md);
+}
+.role-grid.picking .role-card:not(.advancing) {
+  opacity: 0.4;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.skill-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: var(--green-bg);
+  color: var(--green-text);
+  animation: popIn 0.3s ease both;
+}
+.skill-chip.gap {
+  background: var(--red-bg);
+  color: var(--red-text);
+}
+.skill-chip .n {
+  opacity: 0.7;
+  font-weight: 500;
+  font-size: 11px;
+}
+.chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.6);
+  flex-shrink: 0;
+}
+
+/* ---------- Gap-Step: Sektions-Labels mit Zähler + Farb-Punkt ---------- */
+.gap-section-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.gap-section-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--green-text);
+}
+.gap-section-label.gap .gap-section-dot {
+  background: var(--red-text);
+}
+.gap-summary-headline {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+.gap-summary-headline b {
+  color: var(--dyd-blue-dark);
+}
+.gap-summary-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+.gap-summary {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin: 6px 0 20px;
+}
+.ring-box {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  flex-shrink: 0;
+}
+.ring-box svg {
+  transform: rotate(-90deg);
+}
+.ring-box .ring-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Baloo 2", sans-serif;
+  font-weight: 800;
+  font-size: 20px;
+}
+.gap-summary-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.gap-summary-text b {
+  color: var(--text-primary);
+}
+
+/* ---------- Methodik-Hinweis im Gap-Schritt ----------
+   Kurzer, immer sichtbarer Erklärtext direkt unter dem Ergebnis-Ring, WIE das
+   Ergebnis zustande kommt (schneller Abgleich + ggf. KI-Tiefenanalyse) - macht
+   den Schritt inhaltlich reichhaltiger, auch bevor/falls die Tiefenanalyse
+   noch läuft oder (Fragebogen-Pfad) gar nicht aufgerufen wird. Bewusst
+   dezenter als die Experten-Einschätzung unten (reiner Info-Text, keine
+   eigene KI-Ausgabe), siehe GapStep in JourneyPage.tsx. */
+.gap-method-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  background: var(--border-soft);
+  border-radius: 12px;
+  padding: 11px 14px;
+  margin: 0 0 16px;
+}
+.gap-method-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.gap-method-note b {
+  color: var(--text-primary);
+}
+
+/* ---------- KI-Experten-Einschätzung im Gap-Schritt (Version 30) ----------
+   Ganzheitliche Zusammenfassung der cv-depth-analysis Edge Function (siehe
+   overall_assessment in orbit.ts) - macht den "Was hat die KI wirklich
+   verstanden"-Teil der Analyse sichtbar statt ihn nur intern die
+   Skill-Einordnung beeinflussen zu lassen (Vertrauens-/Transparenz-Baustein,
+   siehe Kommentar an GapStep in JourneyPage.tsx). */
+.gap-ai-summary {
+  border: 1.5px solid var(--blue-border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin: 4px 0 20px;
+  background: var(--blue-bg);
+}
+.gap-ai-summary-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.gap-ai-summary-icon {
+  font-size: 15px;
+}
+.gap-ai-summary-title {
+  font-size: 11.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--dyd-blue-dark);
+}
+.gap-ai-summary-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.gap-ai-summary-text.muted {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+.gap-ai-summary-caption {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+/* ---------- Skill-Detail-Karten im Gap-Schritt ----------
+   Löst die vorherigen inline-"skill-chip"-Reihen ab: statt nur Name +
+   Gewichtungs-Badge in einem schmalen Chip zeigt jede Karte zusätzlich eine
+   sichtbare Kurzbegründung (skillReasonText() in JourneyPage.tsx, vorher nur
+   im Hover-Tooltip versteckt) und - bei "Vorhanden"-Skills - die eigene
+   Erfahrungslevel-Auswahl (skill-level-picker). Bewusst als vertikale Liste
+   statt als Flex-Chip-Reihe, weil pro Skill jetzt deutlich mehr Inhalt Platz
+   braucht. */
+.skill-detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+/* Aufklapp-Link unter "Vorhanden"/"Noch zu lernen" (15.09., "soll da nicht
+   so eine ewig lange Liste kommen ... aber so ein Ding, was man aufklappen
+   kann, sodass einen das nicht erschlägt") — bewusst als schlichter
+   Textlink statt Pill/Button, damit er sich der Karten-Optik unterordnet
+   und nicht mit den eigentlichen Skill-Aktionen (Entfernen/Als-vorhanden-
+   markieren) verwechselt wird. Gleiches Prinzip wie .course-hero-more. */
+.skill-list-expand-btn {
+  display: block;
+  margin: 8px auto 0;
+  padding: 4px 10px;
+  border: none;
+  background: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--dyd-blue-dark);
+  cursor: pointer;
+}
+.skill-list-expand-btn:hover {
+  text-decoration: underline;
+}
+.skill-detail-card {
+  border: 1.5px solid var(--green-bg);
+  background: var(--green-bg);
+  border-radius: 12px;
+  padding: 10px 14px;
+  animation: popIn 0.3s ease both;
+}
+.skill-detail-card.gap {
+  border-color: var(--red-bg);
+  background: var(--red-bg);
+}
+.skill-detail-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.skill-detail-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--green-text);
+}
+.skill-detail-card.gap .skill-detail-name {
+  color: var(--red-text);
+}
+.skill-detail-reason {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  margin-top: 5px;
+}
+.skill-detail-quote {
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--text-secondary);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+.skill-level-picker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+.skill-level-picker-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-right: 2px;
+}
+.skill-level-pill {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.skill-level-pill:hover {
+  background: rgba(255, 255, 255, 0.85);
+}
+.skill-level-pill.selected {
+  background: var(--dyd-blue-dark);
+  border-color: var(--dyd-blue-dark);
+  color: #fff;
+}
+
+/* ---------- Manuelles Entfernen/Hinzufügen im Gap-Schritt ----------
+   Antwort auf "Möglichkeit die Skills am Ende zu entfernen oder neu
+   hinzuzufügen, also manuell" (siehe handleMoveSkill/moveSkillManually in
+   JourneyPage.tsx). Bewusst unauffällig/dezent (reiner Text-Button, keine
+   auffällige Farbe) - es ist eine Korrekturmöglichkeit, kein Haupt-CTA. */
+.skill-detail-remove-btn {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.55);
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.skill-detail-remove-btn:hover {
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--red-text);
+}
+.skill-detail-add-btn {
+  margin-top: 9px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.55);
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
+  border-radius: 999px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.skill-detail-add-btn:hover {
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--green-text);
+}
+
+/* ---------- Kurskarten-Redesign (14.09., Rückmeldung "das Kursangebot am
+   Ende ... sieht aktuell nach 2008 aus, das soll maximal modern aussehen und
+   dem Nutzer zur Buchung bewegen"): weg vom flachen, eng gesetzten
+   Border+Zwei-Farb-Diagonal-Gradient-Look (harte Umrandung, 16px Radius,
+   winzige 24px-Zahl ohne Kontext, reiner Rechts-Text statt Button-Optik für
+   die Auswahl) hin zu echter Karten-Elevation (weicher Schatten statt harter
+   Kontur), mehr Weißraum, einer Score-"Chip" mit Beschriftung statt einer
+   isolierten Zahl, und einer Favoriten-Auswahl, die wie ein anklickbares
+   Pill-Element aussieht statt wie reiner Text. Alle Klassen bleiben
+   unverändert (siehe KursStep in JourneyPage.tsx), nur die Optik ändert
+   sich. ---------- */
+.course-hero {
+  position: relative;
+  border: 1px solid rgba(10, 25, 47, 0.07);
+  border-radius: 20px;
+  padding: 22px 24px;
+  background: linear-gradient(160deg, #f4faff 0%, #ffffff 60%);
+  margin-bottom: 14px;
+  box-shadow: 0 2px 6px rgba(10, 25, 47, 0.04), 0 14px 30px rgba(10, 25, 47, 0.05);
+  animation: popIn 0.3s ease both;
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+}
+.course-hero-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.course-hero-badge {
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #fff;
+  background: linear-gradient(90deg, var(--dyd-blue), var(--dyd-blue-dark));
+  padding: 5px 11px;
+  border-radius: 999px;
+  box-shadow: 0 3px 10px rgba(47, 143, 214, 0.28);
+}
+/* Score-"Chip" (Zahl + kleine Beschriftung darunter) statt einer isolierten
+   Prozentzahl — siehe KursStep, course-hero-score-wrap. Bei isGenericFallback
+   (kein Skill-Bezug zur Zielrolle) zeigt course-hero-score-label-lg statt
+   dessen "Empfehlung", bewusst ohne Zahl. */
+.course-hero-score-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.course-hero-score {
+  font-family: "Baloo 2", sans-serif;
+  font-weight: 800;
+  font-size: 28px;
+  color: var(--dyd-blue-dark);
+  line-height: 1;
+}
+.course-hero-score-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+.course-hero-score-label-lg {
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--dyd-blue-dark);
+  margin-top: 4px;
+}
+.course-hero-name {
+  font-weight: 800;
+  font-size: 18px;
+  color: var(--dyd-navy);
+  line-height: 1.25;
+}
+.course-hero-meta {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+/* Preis/Förderung/Abschluss-Fakten (Version 33) — siehe die neuen Felder an
+   OrbitCourse (price_eur/teaching_units/qualification_type/funding_types) und
+   den entsprechenden JSX-Block in KursStep (JourneyPage.tsx). Bewusst als
+   eigene Pill-Reihe statt als Fließtext wie course-hero-meta: das sind die
+   Fakten, nach denen Interessenten aktiv suchen (Preis, Förderfähigkeit),
+   sollen also auf einen Blick auffindbar sein statt in einer Meta-Zeile
+   unterzugehen. */
+.course-hero-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+.course-hero-fact {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: #fff;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  padding: 4px 11px;
+  white-space: nowrap;
+}
+.course-hero-fact-funding {
+  background: var(--green-bg);
+  color: var(--green-text);
+  border-color: transparent;
+}
+
+/* Individueller Pitch pro Kurskarte (Version 29) — siehe buildCoursePitch()
+   in JourneyPage.tsx. Bewusst optisch von course-hero-meta (reine Fakten)
+   abgesetzt: etwas dunklerer Text für die Skill-/Ziel-Begründung, echtes
+   Zitat-Styling für die Kursbeschreibung, damit klar bleibt, dass Letzteres
+   Wortlaut des Bildungsträgers ist, nicht unsere eigene Behauptung. Solide
+   statt gestrichelte Trennlinie (Redesign 14.09. — gestrichelte Ränder
+   gehören zum "sieht aus wie 2008"-Eindruck). */
+.course-hero-pitch {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(10, 25, 47, 0.08);
+}
+/* Kombinierte Ziel+Bereich-Headline (15.09., "ich will, dass man sein Ziel
+   mit den Bereichen/Branchen verbindet ... und das visuell eben perfekt
+   dargestellt") — bewusst als eigener, farbig abgesetzter Chip VOR dem
+   restlichen Pitch-Text, damit die Verbindung aus Ziel (z.B. "Mehr
+   Führungsverantwortung") und Bereich (z.B. "Wirtschaft & Handel") sofort
+   ins Auge fällt, statt in der übrigen Begründung unterzugehen. Farbverlauf
+   aus den beiden Markenfarben Sky Blue/Lime (siehe dashboard.css). */
+.course-hero-pitch-headline {
+  display: inline-block;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--dyd-blue-dark);
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.16), rgba(222, 255, 154, 0.32));
+  border-radius: 999px;
+  padding: 5px 13px;
+  margin-bottom: 8px;
+  line-height: 1.3;
+}
+.course-hero-pitch-text {
+  font-size: 12.5px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+.course-hero-pitch-quote {
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  line-height: 1.35;
+}
+/* "Mehr erfahren"-Umschalter (15.09.) — eigener, per stopPropagation von der
+   Karten-Auswahl getrennter Button, klappt die volle Kursbeschreibung auf.
+   Bewusst als Textlink statt Pill, damit er nicht mit course-hero-select
+   (der eigentlichen Favoriten-Auswahl) verwechselt wird. */
+.course-hero-more {
+  display: block;
+  margin-top: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--dyd-blue-dark);
+  cursor: pointer;
+}
+.course-hero-more:hover {
+  text-decoration: underline;
+}
+/* Volltext-Beschreibung auf den kompakteren "Beliebte Weiterbildungen"-
+   Kacheln (15.09.) — bisher gab es dort gar keine Beschreibung, nur
+   Anbieter/Dauer/Preis. */
+.popular-course-desc {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin-top: 6px;
+}
+
+/* ---------- Auswählbare Kurskarten (Version 15) — Person entscheidet sich
+   aktiv für einen Kurs statt nur die Bestempfehlung passiv zu sehen. ---------- */
+.course-hero.selectable {
+  cursor: pointer;
+  border-color: rgba(10, 25, 47, 0.07);
+  background: #fff;
+  opacity: 0.92;
+}
+.course-hero.selectable:hover {
+  border-color: var(--dyd-blue);
+  opacity: 1;
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(10, 25, 47, 0.06), 0 18px 36px rgba(47, 143, 214, 0.16);
+}
+.course-hero.selectable.selected {
+  opacity: 1;
+  border-color: var(--dyd-blue);
+  background: linear-gradient(160deg, #f4faff 0%, #ffffff 60%);
+  box-shadow: 0 0 0 3px rgba(47, 143, 214, 0.14), 0 14px 30px rgba(47, 143, 214, 0.14);
+}
+/* ---------- Bestempfehlung optisch hervorgehoben (Version 35, 15.09.,
+   Rückmeldung "noch besser visuell aussehen ... den Nutzer zum Kauf
+   anregen") — die erste Karte (i===0, echte Bestempfehlung bzw. bei
+   isGenericFallback die beliebteste verfügbare) bekommt schon VOR jeder
+   Auswahl/jedem Hover einen dezent farbigen Rahmen, analog zum "Meist
+   gewählt"-Tarif auf Preisseiten — kein erfundener Fakt, nur eine optische
+   Betonung der ohnehin schon berechneten Top-Position. Weicht bei Hover/
+   Auswahl den jeweils spezifischeren Regeln oben (Deklarationsreihenfolge:
+   diese Regel steht bewusst NACH .selected, .opacity/.box-shadow dort bleibt
+   also führend, nur border-color kann hier nochmal greifen). */
+.course-hero.selectable.course-hero-featured {
+  border-color: rgba(255, 138, 61, 0.45);
+  box-shadow: 0 4px 14px rgba(10, 25, 47, 0.05), 0 0 0 1px rgba(255, 138, 61, 0.12);
+}
+.course-hero.selectable.course-hero-featured:hover {
+  border-color: var(--dyd-blue);
+}
+.course-hero.selectable.course-hero-featured.selected {
+  border-color: var(--dyd-blue);
+}
+.course-hero.selectable:focus-visible {
+  outline: 2px solid var(--dyd-blue);
+  outline-offset: 2px;
+}
+.course-hero-badge.alt {
+  background: var(--border-soft);
+  box-shadow: none;
+  color: var(--text-secondary);
+}
+/* Favoriten-Auswahl als klickbares Pill-Element statt reinem Rechts-Text
+   (Redesign 14.09.) — width:fit-content + margin-left:auto rückt das Pill an
+   den rechten Rand, ganz ohne JSX-Änderung (course-hero ist weiterhin ein
+   normaler Block, kein Flex-Container). Pfeil per ::after, damit er bei
+   "✓ Deine Wahl" (siehe selected-Regel unten) sauber verschwindet, ohne den
+   JSX-Text selbst anzufassen. */
+.course-hero-select {
+  margin-top: 14px;
+  margin-left: auto;
+  width: fit-content;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--dyd-blue-dark);
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+  border-radius: 999px;
+  padding: 7px 14px;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+.course-hero-select::after {
+  content: "→";
+  transition: transform 0.15s;
+}
+.course-hero.selectable:hover .course-hero-select::after {
+  transform: translateX(3px);
+}
+.course-hero.selectable.selected .course-hero-select {
+  color: #fff;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  border-color: transparent;
+}
+.course-hero.selectable.selected .course-hero-select::after {
+  content: "";
+}
+
+/* ---------- "Auch anfragen"-Checkbox an Kurskarten (Version 19) — neben dem
+   Favoriten lassen sich weitere Empfehlungen/beliebte Kurse gleichzeitig
+   anfragen, siehe additionalCourseIds/toggleAdditionalCourse in
+   JourneyPage(). Bewusst dezent, damit die eigentliche
+   Favoriten-Entscheidung (Kartenklick) optisch führend bleibt. ---------- */
+.course-hero-also {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.course-hero-also input {
+  cursor: pointer;
+}
+.popular-course-card.selected {
+  border-color: var(--dyd-blue);
+  box-shadow: 0 0 0 2px rgba(47, 143, 214, 0.12);
+}
+
+/* ---------- Gewünschter Startzeitpunkt (Version 17) — eigene, deutlich
+   präsentere Karte statt eines schmalen Feld-Labels: eigener Hintergrund,
+   Icon und Unterzeile, damit die Frage nicht zwischen Kurs-Empfehlung und
+   CTA untergeht, obwohl sie weiterhin optional bleibt. ---------- */
+.start-date-card {
+  margin-top: 18px;
+  border-radius: 16px;
+  padding: 16px 18px;
+  background: linear-gradient(135deg, #fff8ec, #fffdf8);
+  border: 1.5px solid #f3dfae;
+}
+.start-date-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.start-date-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #f3dfae;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.start-date-title {
+  font-weight: 800;
+  font-size: 14.5px;
+  color: var(--text-primary);
+}
+.start-date-sub {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  line-height: 1.45;
+}
+.start-option-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.start-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1.5px solid var(--border);
+  background: #fff;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 9px 15px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.15s;
+  font-family: inherit;
+}
+.start-chip:hover {
+  border-color: var(--dyd-blue);
+  transform: translateY(-1px);
+}
+.start-chip.selected {
+  border-color: var(--dyd-mint-2);
+  background: var(--green-bg);
+  color: var(--green-text);
+}
+.start-chip-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--dyd-mint-2);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+}
+.start-chip:focus-visible {
+  outline: 2px solid var(--dyd-blue);
+  outline-offset: 2px;
+}
+
+.pitch-box {
+  margin-top: 14px;
+  border-radius: 14px;
+  padding: 16px 18px;
+  background: linear-gradient(135deg, var(--green-bg), #f7fdf9);
+  border: 1.5px solid #d3f0dd;
+}
+.pitch-box-title {
+  font-weight: 800;
+  font-size: 11.5px;
+  color: var(--green-text);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 6px;
+}
+.pitch-box-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+.pitch-box-text b {
+  color: var(--text-primary);
+}
+
+/* ---------- Personalisierter Pitch (dynamisch berechnet, siehe KursStep) ---------- */
+.pitch-hero {
+  margin-top: 16px;
+  border-radius: 16px;
+  padding: 18px 20px 20px;
+  background: linear-gradient(160deg, var(--dyd-navy), var(--dyd-navy-2));
+  color: #fff;
+  animation: popIn 0.35s ease both;
+}
+.pitch-hero-title {
+  font-weight: 800;
+  font-size: 11px;
+  color: var(--dyd-mint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 12px;
+}
+/* Überschreibt die helle course-hero-pitch-headline-Variante fürs dunkle
+   pitch-hero (Navy-Verlauf, siehe oben) — sonst wäre der dunkle Text auf dem
+   ebenfalls hellen Chip-Hintergrund unlesbar. Gleicher Ziel+Bereich-Chip,
+   nur ans dunkle Umfeld angepasst (heller, halbtransparenter Pill statt
+   Farbverlauf, Mint-Text wie pitch-hero-title). */
+.pitch-hero-headline-chip {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--dyd-mint);
+  margin-bottom: 10px;
+}
+.pitch-metric-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.pitch-metric {
+  text-align: center;
+}
+.pitch-metric-value {
+  font-family: "Baloo 2", sans-serif;
+  font-weight: 800;
+  font-size: 24px;
+  color: #cdd6e6;
+  line-height: 1;
+}
+.pitch-metric.highlight .pitch-metric-value {
+  color: var(--dyd-mint);
+  font-size: 30px;
+}
+.pitch-metric-label {
+  font-size: 10px;
+  color: #8fa0bc;
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.pitch-metric-arrow {
+  color: #52658a;
+  font-size: 18px;
+}
+.pitch-delta-badge {
+  margin-left: auto;
+  background: rgba(143, 236, 180, 0.14);
+  border: 1px solid rgba(143, 236, 180, 0.35);
+  color: var(--dyd-mint);
+  font-weight: 800;
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.pitch-hero-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #c3ccdd;
+}
+.pitch-hero-text b {
+  color: #fff;
+}
+
+/* ---------- Elevierter End-CTA (Kurs- und Anfrage-Schritt) ---------- */
+.cta-block {
+  margin-top: 22px;
+  text-align: center;
+}
+.btn-cta-primary {
+  width: 100%;
+  padding: 17px 24px;
+  border-radius: 14px;
+  border: none;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  color: var(--dyd-navy);
+  font-weight: 800;
+  font-size: 16px;
+  font-family: "Baloo 2", sans-serif;
+  cursor: pointer;
+  box-shadow: 0 14px 34px rgba(47, 143, 214, 0.32), 0 0 0 0 rgba(95, 220, 153, 0.5);
+  transition: transform 0.15s, box-shadow 0.15s;
+  /* Pulsiert kurz, um Aufmerksamkeit zu lenken, beruhigt sich dann wieder —
+     ein dauerhaft pulsierender Button wirkt auf Dauer aufdringlich statt
+     hochwertig. */
+  animation: ctaPulse 2.6s ease-in-out 3;
+}
+.btn-cta-primary .arrow {
+  display: inline-block;
+  transition: transform 0.15s;
+}
+.btn-cta-primary:hover {
+  transform: translateY(-2px);
+}
+.btn-cta-primary:hover .arrow {
+  transform: translateX(3px);
+}
+.btn-cta-primary:disabled {
+  opacity: 0.65;
+  cursor: wait;
+  animation: none;
+  transform: none;
+}
+@keyframes ctaPulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(143, 236, 180, 0.55);
-  }
-  70% {
-    box-shadow: 0 0 0 7px rgba(143, 236, 180, 0);
-  }
-}
-
-@keyframes meshDrift {
-  0% {
-    transform: translate(0, 0) scale(1);
+    box-shadow: 0 14px 34px rgba(47, 143, 214, 0.32), 0 0 0 0 rgba(95, 220, 153, 0.4);
   }
   50% {
-    transform: translate(-2%, 2%) scale(1.05);
+    box-shadow: 0 14px 34px rgba(47, 143, 214, 0.32), 0 0 0 8px rgba(95, 220, 153, 0);
   }
-  100% {
-    transform: translate(0, 0) scale(1);
+}
+.cta-trust-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.cta-trust-row span {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* ---------- Recap-Strip vor der finalen Anfrage ---------- */
+.recap-strip {
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+  color: var(--dyd-blue-dark);
+  border-radius: 11px;
+  padding: 11px 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+.recap-strip b {
+  color: var(--text-primary);
+}
+
+/* ---------- Recap auf dem Abschluss-Screen (15.09., Rückmeldung "auf der
+   Zielseite auch wieder die prozentuale Steigerung am Ende") — bisher ein
+   kleines, unauffälliges Grau-Pill (inline-block, 13px) direkt nach dem
+   letzten Schritt einer langen Journey leicht zu übersehen. Jetzt volle
+   Breite, größere Zahlen, farbiger Akzent statt neutralem Grau — dieselbe
+   Betonung wie der Match-Vergleich im Kurs-Schritt (.pitch-metric-row),
+   damit die erreichte Verbesserung am Ende genauso sichtbar bleibt wie
+   vorher im Prozess. */
+.final-recap {
+  margin-top: 18px;
+  border-radius: 14px;
+  padding: 18px 20px;
+  background: linear-gradient(135deg, var(--blue-bg), #f4faff);
+  border: 1px solid var(--blue-border);
+  display: block;
+  width: 100%;
+}
+.final-recap-title {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--dyd-blue-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 8px;
+}
+.final-recap-metrics {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 800;
+  font-family: "Baloo 2", sans-serif;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.final-recap-metrics .arrow {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 16px;
+}
+.final-recap-metrics .highlight {
+  color: var(--green-text);
+}
+
+.consent-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 18px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  background: var(--border-soft);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.consent-row input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.widget-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24px;
+  gap: 12px;
+}
+.btn-back {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 10px 6px;
+}
+.btn-back:hover {
+  color: var(--text-primary);
+}
+.btn-forward {
+  padding: 12px 24px;
+  border-radius: 11px;
+  border: none;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  color: var(--dyd-navy);
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: "Baloo 2", sans-serif;
+  box-shadow: 0 10px 24px rgba(47, 143, 214, 0.24);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.btn-forward:hover {
+  transform: translateY(-1px);
+}
+.btn-forward:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+.btn-forward.loading {
+  opacity: 0.75;
+  cursor: wait;
+}
+.btn-forward.loading,
+.btn-cta-primary.loading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* ---------- Kleiner Lade-Spinner in Buttons (unterscheidet "lädt" von "deaktiviert") ---------- */
+.btn-spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid rgba(12, 28, 52, 0.25);
+  border-top-color: currentColor;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ---------- Live-Feedback im E-Mail-Feld (grüner Haken, sobald gültig) ---------- */
+.input-wrap {
+  position: relative;
+}
+.input-wrap .big-input {
+  padding-right: 40px;
+}
+.input-check {
+  position: absolute;
+  top: 50%;
+  right: 13px;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--dyd-mint-2);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: popIn 0.2s ease both;
+}
+
+.status-line {
+  font-size: 12px;
+  margin-top: 10px;
+}
+.status-line.err {
+  color: var(--red-text);
+}
+.status-line.ok {
+  color: var(--green-text);
+  font-weight: 600;
+}
+
+/* ---------- Beratungswunsch-Checkbox im letzten Schritt (Version 20) —
+   vorher ein eigener, von der Kursanfrage GETRENNTER Button mit eigenem
+   Lead (siehe Git-Historie); jetzt eine prominente Checkbox VOR dem
+   Absenden-Button, wird beim normalen Absenden mit demselben Lead als
+   consultation_requested gespeichert, siehe wantsConsultation/submitLead
+   in JourneyPage(). ---------- */
+.consultation-optin {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1.5px solid var(--dyd-blue);
+  background: var(--blue-bg);
+  cursor: pointer;
+}
+.consultation-optin input {
+  margin-top: 3px;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--dyd-blue);
+  cursor: pointer;
+}
+.consultation-optin-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.consultation-optin-title {
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--dyd-blue-dark);
+}
+.consultation-optin-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.final-screen {
+  text-align: center;
+  padding: 10px 6px 4px;
+  animation: popIn 0.4s ease both;
+}
+.final-check {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  margin: 0 auto 16px;
+  background: var(--green-bg);
+  color: var(--green-text);
+  font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.final-screen h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+.final-screen p {
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.6;
+  max-width: 400px;
+  margin: 0 auto;
+}
+.final-note {
+  margin-top: 20px;
+  font-size: 12px;
+  color: var(--dyd-blue-dark);
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: inline-block;
+}
+/* Bestätigungszeile, wenn beim letzten Schritt die Beratungs-Checkbox
+   angehakt wurde (Version 20, siehe wantsConsultation in FinalScreen). */
+.final-consultation-note {
+  margin-top: 14px;
+  font-size: 12.5px;
+  color: var(--dyd-blue-dark);
+  font-weight: 600;
+}
+
+/* ---------- Settings drawer (Demo-Verbindungskonfiguration) ---------- */
+.settings-toggle {
+  position: fixed;
+  bottom: 18px;
+  right: 18px;
+  z-index: 20;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--dyd-navy);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  border: none;
+}
+.settings-drawer {
+  position: fixed;
+  bottom: 68px;
+  right: 18px;
+  z-index: 20;
+  width: 240px;
+  background: var(--dyd-navy);
+  border-radius: 14px;
+  padding: 14px;
+  color: #fff;
+  box-shadow: var(--shadow-lg);
+  display: none;
+}
+.settings-drawer.open {
+  display: block;
+  animation: popIn 0.2s ease both;
+}
+.settings-drawer .conn-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9fb0c9;
+  margin-bottom: 8px;
+}
+.settings-drawer label {
+  display: block;
+  font-size: 10px;
+  color: #8494ac;
+  margin-bottom: 3px;
+  text-transform: uppercase;
+}
+.settings-drawer input {
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 7px;
+  font-size: 12px;
+  margin-bottom: 8px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-family: inherit;
+}
+.settings-drawer .conn-btn {
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  border: none;
+  margin-top: 2px;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  color: var(--dyd-navy);
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: "Baloo 2", sans-serif;
+}
+.settings-drawer .conn-status {
+  font-size: 10.5px;
+  margin-top: 7px;
+}
+.settings-drawer .conn-status.ok {
+  color: var(--dyd-mint);
+}
+.settings-drawer .conn-status.err {
+  color: #ff9d9d;
+}
+
+@media (max-width: 520px) {
+  .role-grid,
+  .method-grid {
+    grid-template-columns: 1fr;
+  }
+  .widget-head,
+  .widget-body {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .progress-track {
+    margin-left: 20px;
+    margin-right: 20px;
+  }
+  .step-label {
+    display: none;
+  }
+  .step-node {
+    /* Ohne Label reicht deutlich weniger Breite pro Schritt — wichtig, seit
+       der Ziel-Schritt (Version 16) den "Ich weiß noch nicht"-Pfad auf 7
+       Schritte gebracht hat und sonst auf schmalen Handys abgeschnitten
+       würde (.widget hat overflow: hidden). */
+    width: 32px;
+  }
+  .step-line {
+    max-width: 10px;
+  }
+  .pitch-delta-badge {
+    margin-left: 0;
   }
 }
 
-@keyframes spin {
+/* ---------- Fokus-Ringe für Tastaturbedienung (barrierefrei + wirkt hochwertiger
+   als der Browser-Default) — diese Seite läuft öffentlich eingebettet auf der
+   Website eines Bildungsträgers, muss also auch ohne Maus sauber bedienbar sein. ---------- */
+.method-card:focus-visible,
+.role-card:focus-visible,
+.quiz-item:focus-visible,
+.method-switch:focus-visible {
+  outline: 2px solid var(--dyd-blue);
+  outline-offset: 2px;
+}
+
+/* ---------- Beliebte Weiterbildungen (Version 14) — vom Bildungsträger im
+   Dashboard als "Top" markierte Kurse, unten im Kurs-Schritt zusätzlich zur
+   individuellen Empfehlung. Bewusst dezenter gestaltet als die course-hero-
+   Karten oben, damit die persönliche Empfehlung optisch führend bleibt. ---------- */
+.popular-courses {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px dashed var(--border-soft);
+}
+.popular-course-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+/* Redesign 14.09. (siehe ausführlicher Kommentar am .course-hero-Block oben,
+   "sieht aus wie 2008 ... maximal modern"): weicher Schatten + Hover-Lift
+   statt reiner flacher Kontur, damit diese Karten optisch zur .course-hero-
+   Modernisierung passen. */
+.popular-course-card {
+  position: relative;
+  border: 1px solid rgba(10, 25, 47, 0.07);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(10, 25, 47, 0.04);
+  transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+}
+.popular-course-card:hover {
+  border-color: var(--dyd-blue);
+  box-shadow: 0 6px 18px rgba(47, 143, 214, 0.14);
+  transform: translateY(-3px);
+}
+.popular-course-badge {
+  display: inline-block;
+  background: linear-gradient(90deg, var(--dyd-mint-2), var(--dyd-blue));
+  color: var(--dyd-navy);
+  font-size: 9.5px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-bottom: 6px;
+}
+.popular-course-name {
+  font-weight: 700;
+  font-size: 13px;
+}
+.popular-course-meta {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+/* Preis-/Förder-Fakten auch auf den kompakteren "Beliebte Weiterbildungen"-
+   Kacheln (14.09., "Kursangebot ... visuell ansprechend ... mit den Daten
+   vom Kurskatalog") — bisher zeigten diese Kacheln nur Anbieter/Dauer, obwohl
+   dieselben echten Katalogdaten (price_eur/funding_types) wie bei den
+   course-hero-Karten oben vorliegen. Nutzt bewusst dieselben .course-hero-
+   fact-Pillen statt eigener Klassen, damit beide Kartentypen optisch
+   zusammengehören. */
+.popular-course-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+/* ---------- Konversions-Banner auf der Kurskachel (siehe CourseBadgeRow in
+   src/data/courseBadges.tsx) — Version 34, 14.09., Rückmeldung "Kursangebot
+   am Ende muss noch viel mehr visuell ansprechend sein ... startet in x
+   Wochen/Tagen oder ähnliche Sachen, die einen total ansprechen". Diese
+   Klassen fehlten hier bisher VOLLSTÄNDIG (nur in dashboard.css gepflegt —
+   der dortige Kommentar "dieselben Klassen wie in journey.css" stimmte
+   tatsächlich nie), wodurch die Badges auf der echten Endnutzer-Seite nur
+   als unformatierter, nackter Text erschienen, ganz ohne Farbe/Pille/Icon.
+   Jetzt nachgezogen und um den neuen "upcoming"-Typ ergänzt (siehe
+   courseBadges.tsx: ein bekanntes Startdatum wird jetzt IMMER als Badge
+   gezeigt, in Wochen/Monaten, nicht mehr nur innerhalb von
+   STARTS_SOON_DAYS). ---------- */
+.course-banner-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.course-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  padding: 5px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* Bereich-Badge (NEU, 18.09.) — bewusst eigene, kräftigere Farbgebung als
+   .course-banner (Status-/Verfügbarkeitshinweise): der Bereich soll auf der
+   Kurskarte (course-hero, popular-course-card) auf den ersten Blick
+   auffallen ("die angezeigten Bereiche müssen immer im Mittelpunkt
+   stehen"), statt wie ein weiterer beiläufiger Meta-Hinweis zu wirken.
+   Siehe BereichBadges in src/data/courseBadges.tsx (geteilt mit
+   dashboard.css/DashboardPage.tsx). */
+.bereich-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+.bereich-badge {
+  display: inline-block;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  padding: 4px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: linear-gradient(90deg, var(--dyd-navy), var(--dyd-violet));
+  color: #fff;
+}
+
+.course-banner-soon {
+  background: linear-gradient(90deg, #ff8a3d, #ff5f6d);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(255, 95, 109, 0.3);
+}
+.course-banner-upcoming {
+  background: var(--blue-bg);
+  color: var(--dyd-blue-dark);
+  border: 1px solid var(--blue-border);
+}
+.course-banner-seats {
+  background: var(--amber-bg);
+  color: var(--amber-text);
+}
+.course-banner-full {
+  background: var(--border-soft);
+  color: var(--text-secondary);
+}
+.course-banner-custom {
+  background: var(--green-bg);
+  color: var(--green-text);
+}
+/* Immer-sichtbare Fallback-Badges (Version 36, 15.09.) — siehe
+   courseBadges()/alwaysShow: greifen nur, wenn keiner der obigen,
+   datumsbasierten Banner zutrifft, damit die Leiste nie ganz leer bleibt.
+   featured = Bildungsträger hat is_featured gesetzt; bestmatch = die
+   tatsächliche algorithmische Bestempfehlung; sonst recommended als
+   neutraler, wahrer Hinweis. Kräftiger Farbverlauf statt blassem Grau, damit
+   die Leiste auf jeder Karte sofort auffällt. */
+.course-banner-featured {
+  background: linear-gradient(90deg, #ffb648, #ff8a3d);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(255, 138, 61, 0.3);
+}
+.course-banner-bestmatch {
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  color: var(--dyd-navy);
+  box-shadow: 0 2px 6px rgba(47, 143, 214, 0.25);
+}
+.course-banner-recommended {
+  background: var(--blue-bg);
+  color: var(--dyd-blue-dark);
+  border: 1px solid var(--blue-border);
+}
+
+/* ---------- Rabatt-/Incentive-Hinweis vor dem Kontaktformular (Version 14) ----------
+   Bewusst OHNE feste Prozentzahl formuliert, bis der Rabatt-Mechanismus mit
+   den Bildungsträgern geklärt ist — siehe Projekt-Dokument. */
+.incentive-note {
+  background: linear-gradient(135deg, var(--green-bg), #f7fdf9);
+  border: 1px solid var(--dyd-mint-2);
+  color: var(--text-primary);
+  border-radius: 11px;
+  padding: 11px 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+/* ---------- DSGVO-Vertrauenshinweis direkt am E-Mail-Feld (Version 18) ----------
+   Zusätzlich zur bestehenden Einwilligungs-Checkbox weiter unten im
+   Kontaktformular — dort wird der Zustimmung explizit zugestimmt, hier direkt
+   am Eingabefeld signalisiert, dass die Adresse sicher behandelt wird, damit
+   das Vertrauen schon beim Tippen da ist statt erst beim Absenden. */
+.email-trust-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--green-text);
+}
+
+/* ---------- Skill-Wichtigkeits-Badge in den Gap-Chips (Version 18) ----------
+   Nutzt das echte ESCO-Gewicht (weight, 0.6–1.0) der Rolle-Skill-Zuordnung,
+   um jedem Skill-Chip eine ehrliche Kurz-Einordnung mitzugeben — keine frei
+   erfundenen Erklärtexte pro Skill (siehe skillImportance() in JourneyPage.tsx). */
+.skill-weight-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
+}
+.skill-weight-badge.core {
+  background: rgba(255, 255, 255, 0.85);
+}
+.skill-weight-badge.helpful {
+  opacity: 0.75;
+}
+
+/* ---------- Erfahrungstiefe-Badge in den Gap-Chips (Version 30) ----------
+   Zeigt proficiency_level der KI-Tiefenanalyse (siehe DepthSkillAssessment
+   in orbit.ts) - nur sichtbar, wenn die Tiefenanalyse wirklich einen Beleg
+   fand, sonst kein Badge (keine erfundene Einordnung ohne Grundlage). */
+.skill-proficiency-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
+}
+.skill-proficiency-badge.level-experte {
+  background: rgba(255, 255, 255, 0.9);
+  font-weight: 800;
+}
+
+/* ---------- E-Mail-Zwischenspeicherung im Gap-Schritt (Version 18) ----------
+   Fängt Personen ab, die nach dem Gap-Ergebnis nicht bis zum finalen
+   Kontaktformular durchklicken — sichert das Ergebnis per E-Mail, ohne die
+   Journey zu unterbrechen. Bewusst dezenter gestaltet als der finale CTA
+   (helle Karte statt Verlaufs-Button), damit sie nicht mit dem Hauptablauf
+   "Kursempfehlung ansehen" konkurriert. */
+.early-capture-card {
+  margin-top: 22px;
+  border-radius: 14px;
+  padding: 16px 18px;
+  background: var(--border-soft);
+  border: 1.5px solid var(--border);
+}
+.early-capture-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.early-capture-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: #fff;
+  border: 1px solid var(--border);
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.early-capture-title {
+  font-weight: 800;
+  font-size: 13.5px;
+  color: var(--text-primary);
+}
+.early-capture-sub {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  line-height: 1.45;
+}
+.early-capture-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.early-capture-row .input-wrap {
+  flex: 1;
+}
+.early-capture-btn {
+  flex-shrink: 0;
+  padding: 12px 18px;
+  border-radius: 11px;
+  border: none;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  color: var(--dyd-navy);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: "Baloo 2", sans-serif;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 84px;
+}
+.early-capture-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+.early-capture-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  cursor: pointer;
+}
+.early-capture-consent input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.early-capture-saved {
+  margin-top: 22px;
+  border-radius: 12px;
+  padding: 12px 16px;
+  background: var(--green-bg);
+  border: 1px solid var(--dyd-mint-2);
+  color: var(--green-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.early-capture-saved b {
+  color: var(--text-primary);
+}
+
+/* ============ Geführter Rundgang (JourneyTour) ============
+ * 1:1 uebernommen aus dashboard.css (DashboardTour) - eigenes Stylesheet
+ * statt Cross-Import, damit beide Seiten unabhaengige Bundles bleiben. Bei
+ * Design-Aenderungen an einer Stelle bitte die andere mitziehen. */
+.tour-trigger-btn {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 45;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: none;
+  border-radius: 11px;
+  padding: 10px 16px;
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--dyd-navy);
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue) 130%);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.tour-trigger-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg);
+}
+.tour-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+}
+/* Angeglichen an dashboard.css (19./20.09., "die Touren sollen immer im
+   gleichen Stil sein"): Deckkraft/Rahmenabstand/Timing waren hier leicht
+   abweichend von DashboardTour.tsx's Overlay, obwohl beide Touren optisch
+   identisch wirken sollen -- keine funktionale Aenderung, reine Angleichung. */
+.tour-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 20, 38, 0.62);
+
+  z-index: 200;
+  pointer-events: auto;
+}
+.tour-spotlight {
+  position: fixed;
+  border-radius: 14px;
+  box-shadow: 0 0 0 9999px rgba(8, 20, 38, 0.62);
+  outline: 2px solid var(--dyd-mint);
+  outline-offset: 3px;
+  pointer-events: none;
+  transition: top 0.45s cubic-bezier(0.22, 1, 0.36, 1), left 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.45s cubic-bezier(0.22, 1, 0.36, 1), height 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* Haelt das echte, hervorgehobene Element ueber dem dunklen ".tour-scrim"-
+   Overlay -- sonst schimmert es nur durch den Spotlight-Ausschnitt hindurch.
+   Bleibt (anders als vorher) die GESAMTE Dauer eines Schritts gesetzt, siehe
+   Kommentar in JourneyTour.tsx: vorher sass diese Eigenschaft nur auf
+   "tour-pulse-target" unten, das nach 550ms wieder entfernt wurde -- das
+   Feld blitzte kurz auf und wirkte danach wieder dunkel. */
+.tour-highlight-active {
+  position: relative;
+  z-index: 201;
+}
+/* Angeglichen an dashboard.css Runde 27 ("Schritt 8 bis 11 und 15 ist
+   falsch/anders formatiert" -- ECHTE URSACHE dort: "transform: scale()"
+   wurde von "overflow: hidden"-Kartenraendern abgeschnitten, siehe
+   ausfuehrlicher Kommentar in dashboard.css). journey.css hatte bisher eine
+   EIGENE, unabhaengige Kopie dieser Animation, die den Fix nie mitbekam --
+   selbst wenn kein konkreter Fall dazu gemeldet wurde, ist das derselbe
+   Risikofall (ein Ziel nahe am Rand eines "overflow: hidden"-Vorfahren) und
+   zugleich der von Quentin explizit gewuenschte einheitliche Stil zwischen
+   beiden Touren. */
+.tour-pulse-target {
+  animation: tourPulse 0.55s ease;
+}
+@keyframes tourPulse {
+  0% {
+    filter: brightness(1);
+  }
+  40% {
+    filter: brightness(1.18);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
+.tour-card {
+  position: fixed;
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  padding: 18px 20px 16px;
+    /* Wichtig: Kachel muss über dem Overlay liegen */
+  z-index: 202;
+  pointer-events: auto;
+}
+/* Immer an derselben festen Stelle (unten mittig), unabhaengig von Groesse/
+ * Position des jeweils hervorgehobenen Elements - siehe Erklaerung im
+ * Kopf-Kommentar von JourneyTour.tsx. max-height + eigener Scroll als
+ * zusaetzliches Sicherheitsnetz auf sehr niedrigen Bildschirmen (z.B.
+ * Laptop mit Zoom), statt die Buttons ganz zu verlieren. */
+/* Rueckmeldung (19./20.09., "die Beschreibung soll immer sichtbar sein, egal
+   in welchem Format man die Seite offen hat") -- identischer Fix wie in
+   dashboard.css, siehe ausfuehrlicher Kommentar dort: Kopf und Buttonzeile
+   bleiben jetzt IMMER sichtbar, nur der mittlere Inhalt (.tour-card-body)
+   scrollt bei Bedarf. */
+.tour-card-dock {
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+}
+.tour-card-body {
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* Bugfix (14.09., "die Kachel von der Rundtour ist hinter den Infos, die
+ * muss irgendwo am Rand stehen, sodass man beides immer sieht"): unten mittig
+ * loest zwar das Ausserhalb-des-Bildschirms-Problem (siehe Kommentar oben),
+ * kann bei einem hohen, inhaltsreichen Schritt (z.B. "Skill-Gap-Ergebnis" mit
+ * mehreren Skill-Karten) aber trotzdem Teile des echten Inhalts ueberdecken.
+ * Ab genug Fensterbreite dockt die Karte deshalb stattdessen seitlich am
+ * rechten Rand, vertikal zentriert — echter, freier Platz, siehe
+ * ".journey-tour-open .stage" unten, das dem Widget dafuer per Body-Klasse
+ * (JourneyTour.tsx) tatsaechlich schmaler macht, statt die Karte einfach
+ * ueber den Inhalt zu legen. Schmalere Fenster (Media Query greift dort
+ * nicht) behalten unveraendert die bisherige unten-mittig-Position. */
+@media (min-width: 1100px) {
+  .tour-card-dock {
+    left: auto;
+    right: 28px;
+    bottom: auto;
+    top: 50%;
+    transform: translateY(-50%);
+    max-height: calc(100vh - 60px);
+  }
+  .journey-tour-open .stage {
+    padding-right: 420px;
+    transition: padding-right 0.25s ease;
+  }
+}
+.tour-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+.tour-step-count {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.tour-close {
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+.tour-close:hover {
+  background: var(--border-soft);
+  color: var(--text-primary);
+}
+
+/* NEU (18.09.) — Auto-Advance-Umschalter, Fortschrittsleiste, simulierte
+   Live-Hinweise (Toast) und Bildungsträger-Nutzen-Zeile; siehe
+   tourAutoplay.tsx sowie DashboardTour.tsx/JourneyTour.tsx.
+   ÜBERARBEITET (18.09., Rückmeldung "ich finde das Autoplay nicht"): der
+   Umschalter stand vorher als schmale, grau umrandete Pille im engen
+   Tour-Kopf zwischen Schrittzähler und ×-Button und ging dort optisch
+   unter. Jetzt eine eigene, ganzzeilige Zeile (.tour-autoplay-row) MIT
+   vollem Farbverlauf statt Rahmen — dieselbe Optik wie der primäre
+   Tour-Button (.tour-btn-primary) weiter unten, damit sofort klar ist,
+   dass das ein wichtiges, klickbares Element ist. */
+.tour-autoplay-row {
+  margin: 0 0 10px;
+}
+.tour-autoplay-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  border: none;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue) 130%);
+  color: var(--dyd-navy);
+  font-size: 12.5px;
+  font-weight: 800;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  transition: filter 0.15s, box-shadow 0.15s, background 0.15s, color 0.15s;
+  animation: tourAutoplayInvite 2.4s ease-in-out infinite;
+}
+.tour-autoplay-toggle:hover {
+  filter: brightness(1.05);
+}
+.tour-autoplay-toggle.active {
+  background: var(--dyd-navy);
+  color: #fff;
+  animation: none;
+  box-shadow: var(--shadow-sm);
+}
+.tour-autoplay-toggle-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+}
+.tour-autoplay-toggle.active .tour-autoplay-toggle-dot {
+  background: #ff5f6d;
+  opacity: 1;
+  animation: tourAutoplayRecDot 1.1s ease-in-out infinite;
+}
+@keyframes tourAutoplayInvite {
+  0%, 100% {
+    box-shadow: var(--shadow-sm);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(47, 143, 214, 0.16);
+  }
+}
+@keyframes tourAutoplayRecDot {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-autoplay-toggle,
+  .tour-autoplay-toggle-dot,
+  .tour-autoplay-toggle.active .tour-autoplay-toggle-dot {
+    animation: none;
+  }
+}
+
+.tour-autoplay-bar {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--border-soft);
+  margin: 0 0 12px;
+  overflow: hidden;
+}
+.tour-autoplay-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  transition: width 0.1s linear;
+}
+
+/* Bildungsträger-Nutzen-Satz je Schritt — bewusst optisch von .tour-desc
+   abgesetzt (eigener Kasten statt Fliesstext), damit der Nutzen für den
+   Bildungsträger selbst nicht im allgemeinen Beschreibungstext untergeht. */
+.tour-benefit {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--dyd-blue-dark);
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+  border-left: 3px solid var(--dyd-blue);
+  border-radius: 8px;
+  padding: 9px 12px;
+  margin: -4px 0 14px;
+}
+
+.tour-demo-toast {
+  position: fixed;
+  top: 22px;
+  right: 22px;
+  z-index: 203;
+  background: var(--dyd-navy);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: none;
+  max-width: 320px;
+}
+.tour-demo-toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.tour-title {
+  font-family: "Baloo 2", "Inter", sans-serif;
+  font-size: 18px;
+  margin: 0 0 6px;
+  color: var(--text-primary);
+}
+.tour-desc {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0 0 14px;
+}
+.tour-progress {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 14px;
+}
+/* .tour-dot ist jetzt ein <button> statt eines reinen <span> (NEU, 18.09.,
+   "es soll interaktiver sein" — Sprung zu jedem Schritt per Klick, siehe
+   TourStepDots in tourAutoplay.tsx) — Button-Grundformatierung zurückgesetzt,
+   damit es weiterhin wie der bisherige reine Anzeige-Punkt aussieht, nur mit
+   größerer Klickfläche (padding) und sichtbarem Hover-/Fokus-Zustand. */
+.tour-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  border: none;
+  padding: 0;
+  margin: 4px 0;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+.tour-dot:hover {
+  background: var(--dyd-blue);
+  transform: scale(1.3);
+}
+.tour-dot:focus-visible {
+  outline: 2px solid var(--dyd-blue);
+  outline-offset: 2px;
+}
+.tour-dot.done {
+  background: var(--dyd-blue);
+}
+.tour-dot.active {
+  background: var(--dyd-brand-green);
+  width: 16px;
+  border-radius: 4px;
+}
+.tour-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+.tour-nav-btns {
+  display: flex;
+  gap: 8px;
+}
+.tour-btn {
+  border: none;
+  border-radius: 9px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+.tour-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.tour-btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+}
+.tour-btn-ghost:hover {
+  color: var(--text-secondary);
+}
+.tour-btn-secondary {
+  background: var(--border-soft);
+  color: var(--text-primary);
+}
+.tour-btn-secondary:hover:not(:disabled) {
+  background: var(--border);
+}
+.tour-btn-primary {
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue) 130%);
+  color: var(--dyd-navy);
+}
+.tour-btn-primary:hover {
+  filter: brightness(1.04);
+}
+.tour-card-preparing {
+  text-align: center;
+}
+.tour-preparing-spinner {
+  width: 34px;
+  height: 34px;
+  margin: 6px auto 14px;
+  border-radius: 50%;
+  border: 3px solid var(--border-soft);
+  border-top-color: var(--dyd-mint-2);
+  border-right-color: var(--dyd-blue);
+  animation: spin 0.9s linear infinite;
+}
+@media (max-width: 560px) {
+  .tour-trigger-btn span.tour-trigger-label {
+    display: none;
+  }
+  .tour-card {
+    width: calc(100vw - 32px) !important;
+    left: 16px !important;
+    right: 16px;
+  }
+  /* .tour-card-dock zentriert per transform: translateX(-50%) relativ zu
+   * left: 50% - auf Mobile ist die Karte oben schon per left/right auf volle
+   * Breite gesetzt, der Transform wuerde sie dann zusaetzlich (und falsch)
+   * nach links verschieben. */
+  .tour-card-dock {
+    bottom: 12px;
+    transform: none;
+  }
+}
+
+/* ================================================================
+   Conversion UX v9 — Kurs & Anfrage
+   Ziel: klare visuelle Hierarchie, wenig Reibung, mobile first.
+   ================================================================ */
+.course-contact-divider {
+  height: 1px;
+  background: var(--border-soft);
+  margin: 28px 0 22px;
+}
+
+.course-contact-panel {
+  background: #fff;
+  border: 1px solid rgba(10, 25, 47, 0.08);
+  border-radius: 20px;
+  padding: 22px;
+  box-shadow: 0 8px 28px rgba(10, 25, 47, 0.07);
+}
+
+.course-contact-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--blue-bg);
+  color: var(--dyd-blue-dark);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.course-contact-title {
+  margin: 10px 0 6px;
+  color: var(--dyd-navy);
+  font-size: 22px;
+  line-height: 1.18;
+  font-weight: 800;
+}
+
+.course-contact-subtitle {
+  margin: 0 0 16px;
+  max-width: 680px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.journey-saved-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 11px 13px;
+  border: 1px solid rgba(58, 167, 118, .18);
+  border-radius: 12px;
+  background: var(--green-bg);
+  color: var(--green-text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.journey-saved-icon {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--dyd-mint-2);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+/* LeadStep: the two conversion choices should look like deliberate choices,
+   not like two equally important generic buttons. */
+.course-contact-panel .lead-step,
+.course-contact-panel .lead-form,
+.course-contact-panel .lead-actions {
+  width: 100%;
+}
+
+.course-contact-panel .lead-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.course-contact-panel .lead-actions button {
+  min-height: 50px;
+  border-radius: 13px;
+  font-weight: 800;
+}
+
+.course-secondary-heading {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-soft);
+}
+
+@media (max-width: 620px) {
+  .course-contact-panel {
+    padding: 17px;
+    border-radius: 16px;
+  }
+  .course-contact-title {
+    font-size: 19px;
+  }
+  .course-contact-subtitle {
+    font-size: 12.5px;
+  }
+  .journey-saved-note {
+    font-size: 11.5px;
+  }
+}
+
+/* ================================================================
+   Conversion UX v10 — smoother hierarchy, less percentage noise
+   ================================================================ */
+.journey-step-heading {
+  margin: 0 0 18px;
+}
+.journey-step-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 7px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--dyd-blue-dark);
+}
+.journey-step-kicker::before {
+  content: "";
+  width: 22px;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+}
+.journey-step-title {
+  max-width: 760px;
+  font-family: "Baloo 2", sans-serif;
+  font-size: clamp(22px, 3vw, 30px);
+  line-height: 1.12;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  color: var(--dyd-navy);
+}
+
+.course-hero-coverage {
+  min-width: 118px;
+  max-width: 145px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #f5fbfa, #f4f8fc);
+  border: 1px solid rgba(47,143,214,.10);
+  text-align: right;
+  flex-shrink: 0;
+}
+.course-hero-coverage-value {
+  display: block;
+  font-family: "Baloo 2", sans-serif;
+  font-size: 24px;
+  line-height: 1;
+  font-weight: 800;
+  color: var(--dyd-blue-dark);
+}
+.course-hero-coverage-label {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.course-hero-recommendation-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--blue-bg);
+  color: var(--dyd-blue-dark);
+  font-size: 11px;
+  font-weight: 800;
+}
+.course-coverage-summary {
+  margin-top: 14px;
+  padding: 12px 13px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid rgba(10,25,47,.06);
+}
+/* Ehrliche Alternativ-Formulierung, wenn ein Kurs (ohne Rollen-Fallback)
+   covers_gap_count === 0 hat — vermeidet eine nackte "0 von N"-Zahl, siehe
+   showsZeroGapDirectly in JourneyPage.tsx (KursStep). */
+.course-coverage-summary--indirect {
+  background: linear-gradient(135deg, rgba(95,220,153,.08), rgba(47,143,214,.06));
+}
+.course-coverage-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.course-coverage-head b {
+  color: var(--dyd-navy);
+  white-space: nowrap;
+}
+.course-coverage-track {
+  height: 6px;
+  margin-top: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e9eef4;
+}
+.course-coverage-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+}
+.course-coverage-copy {
+  margin-top: 7px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.course-hero-pitch {
+  margin-top: 14px;
+  padding: 15px 16px;
+  border: 1px solid rgba(47,143,214,.10);
+  border-radius: 15px;
+  background: linear-gradient(145deg, #fbfdff, #f6fbfa);
+}
+.course-hero-pitch-headline {
+  margin-bottom: 8px;
+}
+
+.pitch-hero {
+  padding: 22px 22px 20px;
+  border-radius: 20px;
+  background: linear-gradient(145deg, var(--dyd-navy), var(--dyd-navy-2));
+  box-shadow: 0 16px 36px rgba(10,25,47,.16);
+}
+.pitch-hero-kicker {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--dyd-mint);
+  margin-bottom: 9px;
+}
+.pitch-hero-headline-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 6px 10px;
+  margin-bottom: 11px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.12);
+  color: #dff8ed;
+  font-size: 11px;
+  font-weight: 700;
+}
+.pitch-hero-title {
+  max-width: 720px;
+  margin-bottom: 13px;
+  font-size: clamp(20px, 3vw, 27px);
+  line-height: 1.18;
+  color: #fff;
+}
+.pitch-hero-course-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+.pitch-hero-course-pill, .pitch-hero-focus-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+.pitch-hero-course-pill {
+  background: rgba(255,255,255,.11);
+  color: #fff;
+}
+.pitch-hero-focus-pill {
+  background: rgba(143,236,180,.14);
+  border: 1px solid rgba(143,236,180,.25);
+  color: var(--dyd-mint);
+}
+.pitch-hero-text {
+  max-width: 760px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: #d4dceb;
+}
+.pitch-hero-next {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin-top: 16px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.07);
+  color: #e9eef7;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.pitch-hero-next-icon {
+  color: var(--dyd-mint);
+  font-size: 16px;
+  line-height: 1.1;
+}
+
+.lead-form-eyebrow {
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--dyd-blue-dark);
+}
+.lead-form-heading-title {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 21px;
+  line-height: 1.2;
+  font-weight: 800;
+  color: var(--dyd-navy);
+}
+
+.final-recap-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--green-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.final-recap-icon {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--dyd-mint-2);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+@media (max-width: 620px) {
+  .journey-step-title { font-size: 22px; }
+  .course-hero-coverage { min-width: 98px; max-width: 108px; padding: 8px 9px; }
+  .course-hero-coverage-value { font-size: 21px; }
+  .course-hero-coverage-label { font-size: 9px; }
+  .pitch-hero { padding: 18px 17px; border-radius: 17px; }
+  .pitch-hero-text { font-size: 13px; }
+}
+
+
+/* ================================================================
+   Conversion UX v11 — persönlicher Pitch + Skill-Abdeckung
+   ================================================================ */
+.course-coverage-summary {
+  margin-top: 14px;
+  padding: 13px 14px 12px;
+  border-radius: 15px;
+  background: linear-gradient(180deg, #f8fbfd 0%, #f4f9f8 100%);
+  border: 1px solid rgba(10,25,47,.07);
+}
+.course-coverage-head {
+  align-items: baseline;
+}
+.course-coverage-head span {
+  font-weight: 700;
+  color: var(--dyd-navy);
+}
+.skill-coverage-meter {
+  margin-top: 10px;
+}
+.skill-coverage-segments {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18px, 1fr));
+  gap: 5px;
+  width: 100%;
+}
+.skill-coverage-segment {
+  height: 9px;
+  border-radius: 999px;
+  background: #dfe7ee;
+  border: 1px solid rgba(10,25,47,.035);
+}
+.skill-coverage-segment.filled {
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  border-color: transparent;
+  box-shadow: 0 2px 7px rgba(47,143,214,.15);
+}
+.skill-coverage-label {
+  margin-top: 7px;
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+.skill-coverage-label strong {
+  color: var(--dyd-navy);
+}
+.skill-coverage-meter.compact .skill-coverage-segments {
+  gap: 4px;
+}
+.skill-coverage-meter.compact .skill-coverage-segment {
+  height: 7px;
+}
+.skill-coverage-meter.compact .skill-coverage-label {
+  font-size: 10px;
+}
+
+.pitch-hero {
+  margin-top: 18px;
+  padding: 22px;
+  border-radius: 22px;
+  color: var(--dyd-navy);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(99,199,181,.14), transparent 34%),
+    linear-gradient(145deg, #ffffff 0%, #f5fafc 100%);
+  border: 1px solid rgba(47,143,214,.13);
+  box-shadow: 0 14px 36px rgba(10,25,47,.09);
+}
+.pitch-hero-topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+.pitch-hero-kicker {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #eaf7f4;
+  color: #197b6a;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .09em;
+}
+.pitch-hero-title {
+  margin-top: 11px;
+  max-width: 690px;
+  font-family: "Baloo 2", sans-serif;
+  font-size: clamp(22px, 3vw, 31px);
+  line-height: 1.12;
+  letter-spacing: -.025em;
+  font-weight: 800;
+  color: var(--dyd-navy);
+}
+.pitch-hero-context {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border: 1px solid rgba(47,143,214,.12);
+  border-radius: 999px;
+  color: var(--dyd-blue-dark);
+  background: rgba(255,255,255,.75);
+  font-size: 10px;
+  font-weight: 800;
+}
+.pitch-hero-divider {
+  height: 1px;
+  margin: 19px 0 17px;
+  background: rgba(10,25,47,.08);
+}
+.pitch-hero-course-label,
+.pitch-hero-analysis-title {
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--dyd-blue-dark);
+}
+.pitch-hero-course-name {
+  margin-top: 4px;
+  font-size: 15px;
+  line-height: 1.35;
+  font-weight: 800;
+  color: var(--dyd-navy);
+}
+.pitch-hero-analysis {
+  margin-top: 17px;
+  padding: 15px 16px;
+  border-radius: 16px;
+  background: rgba(255,255,255,.78);
+  border: 1px solid rgba(10,25,47,.065);
+}
+.pitch-hero-analysis p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.pitch-hero-analysis p b {
+  color: var(--dyd-navy);
+}
+.pitch-hero-coverage {
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid rgba(10,25,47,.07);
+}
+.pitch-hero-coverage-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.pitch-hero-coverage-head strong {
+  white-space: nowrap;
+  color: var(--dyd-navy);
+  font-size: 12px;
+}
+.pitch-hero-coverage .skill-coverage-meter {
+  margin-top: 9px;
+}
+.pitch-hero-coverage-note {
+  margin-top: 7px;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+.pitch-hero-fit {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 13px;
+  padding: 11px 13px;
+  border-radius: 13px;
+  background: #eef9f5;
+  color: #286b5e;
+  font-size: 11px;
+  line-height: 1.45;
+  font-weight: 650;
+}
+.pitch-hero-fit > span:first-child {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--dyd-mint-2);
+  color: white;
+  font-size: 10px;
+  font-weight: 900;
+}
+.pitch-hero-next {
+  margin-top: 16px;
+  padding: 14px 15px;
+  border-radius: 14px;
+  background: var(--dyd-navy);
+  color: #e9eef7;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.pitch-hero-next-title {
+  margin-bottom: 4px;
+  color: white;
+  font-size: 11px;
+  font-weight: 850;
+}
+.pitch-hero-next b {
+  color: white;
+}
+
+.course-contact-panel {
+  padding: 24px;
+  border-radius: 22px;
+  box-shadow: 0 12px 32px rgba(10,25,47,.075);
+}
+.course-contact-eyebrow {
+  letter-spacing: .09em;
+}
+.course-contact-title {
+  margin-top: 9px;
+  font-size: clamp(21px, 2.6vw, 26px);
+}
+.course-contact-subtitle {
+  max-width: 720px;
+  margin-bottom: 15px;
+}
+
+@media (max-width: 620px) {
+  .pitch-hero { padding: 18px; border-radius: 19px; }
+  .pitch-hero-topline { display: block; }
+  .pitch-hero-context { display: inline-flex; margin-top: 10px; }
+  .pitch-hero-title { font-size: 23px; }
+  .pitch-hero-analysis { padding: 14px; }
+  .pitch-hero-next { padding: 13px 14px; }
+  .course-contact-panel { padding: 18px; border-radius: 18px; }
+}
+
+/* ================================================================
+   Conversion UX v12 — Premium recommendation narrative
+   ================================================================ */
+.journey-rich-heading {
+  position: relative;
+  margin: 4px 0 22px;
+  padding: 2px 0 0 18px;
+}
+.journey-rich-heading::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  width: 4px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--dyd-mint), var(--dyd-blue));
+}
+.journey-rich-kicker {
+  margin-bottom: 7px;
+  color: var(--dyd-blue-dark);
+  font-size: 9.5px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.journey-rich-heading h2 {
+  margin: 0;
+  max-width: 760px;
+  color: var(--dyd-navy);
+  font-family: "Baloo 2", sans-serif;
+  font-size: clamp(24px, 4vw, 34px);
+  line-height: 1.08;
+  letter-spacing: -.025em;
+  font-weight: 800;
+}
+.journey-rich-heading p {
+  max-width: 680px;
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.journey-rich-heading-gap { margin-bottom: 18px; }
+.journey-rich-heading-course { margin-top: 8px; margin-bottom: 18px; }
+
+.pitch-hero-premium {
+  position: relative;
+  overflow: hidden;
+  margin-top: 20px;
+  padding: 28px;
+  border-radius: 26px;
+  color: var(--dyd-navy);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(95,220,153,.16), transparent 27%),
+    radial-gradient(circle at 0% 100%, rgba(47,143,214,.10), transparent 30%),
+    #fff;
+  border: 1px solid rgba(10,25,47,.09);
+  box-shadow: 0 22px 55px rgba(10,25,47,.11);
+}
+.pitch-hero-premium::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+}
+.pitch-hero-intro { max-width: 900px; }
+.pitch-hero-premium .pitch-hero-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 27px;
+  padding: 6px 10px;
+  margin: 0;
+  border-radius: 999px;
+  background: #eaf8f3;
+  color: #187866;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .1em;
+}
+.pitch-hero-premium .pitch-hero-kicker span { font-size: 12px; }
+.pitch-hero-context-row {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 13px;
+}
+.pitch-hero-premium .pitch-hero-context,
+.pitch-hero-role {
+  display: inline-flex;
+  align-items: center;
+  min-height: 27px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #f4f7fa;
+  border: 1px solid rgba(10,25,47,.07);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 800;
+}
+.pitch-hero-role { color: var(--dyd-blue-dark); background: #eef6fb; }
+.pitch-hero-premium .pitch-hero-title {
+  margin: 17px 0 0;
+  max-width: 820px;
+  color: var(--dyd-navy);
+  font-family: "Baloo 2", sans-serif;
+  font-size: clamp(25px, 4.2vw, 39px);
+  line-height: 1.04;
+  letter-spacing: -.032em;
+  font-weight: 800;
+}
+.pitch-hero-lead {
+  max-width: 790px;
+  margin: 14px 0 0;
+  color: #526174;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.pitch-hero-lead b { color: var(--dyd-navy); }
+.pitch-course-card {
+  margin-top: 24px;
+  padding: 17px 19px;
+  border-radius: 17px;
+  background: linear-gradient(135deg, #0a192f 0%, #132641 100%);
+  color: #fff;
+  box-shadow: 0 12px 25px rgba(10,25,47,.14);
+}
+.pitch-course-label {
+  color: var(--dyd-mint);
+  font-size: 8.5px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: .12em;
+}
+.pitch-course-name {
+  margin-top: 7px;
+  font-family: "Baloo 2", sans-serif;
+  font-size: clamp(19px, 2.8vw, 26px);
+  line-height: 1.12;
+  font-weight: 800;
+}
+.pitch-course-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  margin-top: 8px;
+  color: #aebbd0;
+  font-size: 10.5px;
+}
+.pitch-story-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 14px;
+}
+.pitch-story-block {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 11px;
+  padding: 17px;
+  border-radius: 17px;
+  background: #f7f9fb;
+  border: 1px solid rgba(10,25,47,.065);
+}
+.pitch-story-block-highlight {
+  background: linear-gradient(145deg, #f1faf6, #f5f9fc);
+  border-color: rgba(95,220,153,.22);
+}
+.pitch-story-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: var(--dyd-navy);
+  color: #fff;
+  font-family: "Baloo 2", sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+}
+.pitch-story-block-highlight .pitch-story-number { background: var(--dyd-mint-2); }
+.pitch-story-title {
+  color: var(--dyd-navy);
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 850;
+}
+.pitch-story-block p {
+  margin: 6px 0 0;
+  color: #5d6979;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.pitch-story-block p b { color: var(--dyd-navy); }
+.pitch-skill-panel {
+  margin-top: 14px;
+  padding: 19px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid rgba(47,143,214,.14);
+  box-shadow: 0 8px 22px rgba(10,25,47,.055);
+}
+.pitch-skill-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+}
+.pitch-skill-eyebrow {
+  color: var(--dyd-blue-dark);
+  font-size: 8.5px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: .12em;
+}
+.pitch-skill-title {
+  margin-top: 5px;
+  color: var(--dyd-navy);
+  font-size: 13px;
+  font-weight: 850;
+}
+.pitch-skill-count {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.pitch-skill-count strong {
+  color: var(--dyd-navy);
+  font-family: "Baloo 2", sans-serif;
+  font-size: 27px;
+  line-height: 1;
+}
+.pitch-skill-panel .skill-coverage-meter { margin-top: 14px; }
+.pitch-skill-panel .skill-coverage-segments {
+  grid-template-columns: repeat(auto-fit, minmax(28px, 1fr));
+  gap: 5px;
+}
+.pitch-skill-panel .skill-coverage-segment { height: 11px; }
+.pitch-skill-panel .skill-coverage-label { display: none; }
+.pitch-skill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 13px;
+}
+.pitch-skill-list span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 27px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #eef9f4;
+  border: 1px solid rgba(95,220,153,.19);
+  color: #286b5e;
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: 750;
+}
+.pitch-skill-list .pitch-skill-more {
+  background: #f3f6f9;
+  border-color: rgba(10,25,47,.06);
+  color: var(--text-muted);
+}
+.pitch-skill-explainer {
+  margin-top: 11px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+.pitch-why {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 11px;
+  margin-top: 14px;
+  padding: 16px 17px;
+  border-radius: 17px;
+  background: #f5f8fb;
+  border: 1px solid rgba(10,25,47,.065);
+}
+.pitch-why-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--dyd-mint-2);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+}
+.pitch-why-title,
+.pitch-course-detail-title,
+.pitch-closing-title {
+  color: var(--dyd-navy);
+  font-size: 12px;
+  font-weight: 850;
+}
+.pitch-why p,
+.pitch-course-detail p,
+.pitch-closing p {
+  margin: 5px 0 0;
+  color: #5d6979;
+  font-size: 11.5px;
+  line-height: 1.58;
+}
+.pitch-course-detail {
+  margin-top: 14px;
+  padding: 17px;
+  border-radius: 17px;
+  background: #fbfcfd;
+  border: 1px solid rgba(10,25,47,.06);
+}
+.pitch-target-group {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(10,25,47,.06);
+  color: #5d6979;
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+.pitch-target-group b { color: var(--dyd-navy); }
+.pitch-closing {
+  margin-top: 15px;
+  padding: 17px 18px;
+  border-radius: 17px;
+  background: linear-gradient(135deg, #0a192f, #142943);
+  color: #fff;
+}
+.pitch-closing-title { color: #fff; font-family: "Baloo 2", sans-serif; font-size: 18px; }
+.pitch-closing p { color: #c3cede; }
+
+/* The skill coverage inside the course cards remains compact, but visually
+   subordinate to the full explanation below. */
+.course-coverage-summary {
+  background: #f7fafb;
+  border-color: rgba(10,25,47,.07);
+}
+.course-coverage-head b { font-size: 12px; }
+
+@media (max-width: 700px) {
+  .pitch-hero-premium { padding: 22px 17px 18px; border-radius: 21px; }
+  .pitch-hero-premium .pitch-hero-title { font-size: 27px; }
+  .pitch-story-grid { grid-template-columns: 1fr; }
+  .pitch-story-block { padding: 15px; }
+  .pitch-skill-panel { padding: 16px; }
+}
+@media (max-width: 480px) {
+  .journey-rich-heading { padding-left: 14px; margin-bottom: 18px; }
+  .journey-rich-heading h2 { font-size: 25px; }
+  .pitch-hero-premium .pitch-hero-title { font-size: 25px; }
+  .pitch-hero-lead { font-size: 13px; }
+  .pitch-course-name { font-size: 20px; }
+  .pitch-skill-head { align-items: flex-start; }
+  .pitch-skill-count strong { font-size: 24px; }
+}
+
+
+/* V8 analysis / catalog states */
+
+.dyd-analysis-progress { display:flex; align-items:center; gap:14px; margin:0 0 16px; padding:13px 15px; border:1px solid rgba(47,143,214,.12); border-radius:16px; background:linear-gradient(135deg, rgba(95,220,153,.07), rgba(47,143,214,.06)); }
+.dyd-analysis-progress-orbit { position:relative; width:34px; height:34px; flex:0 0 34px; border:1px solid rgba(47,143,214,.18); border-radius:50%; }
+.dyd-analysis-progress-orbit::before { content:""; position:absolute; inset:5px; border:2px solid rgba(95,220,153,.28); border-top-color:var(--dyd-blue); border-radius:50%; animation:dydSpin 1s linear infinite; }
+.dyd-analysis-progress-orbit span { position:absolute; width:5px; height:5px; top:2px; left:50%; margin-left:-2.5px; border-radius:50%; background:var(--dyd-mint); }
+.dyd-analysis-progress-kicker { display:block; margin-bottom:3px; color:var(--dyd-blue-dark); font-size:8px; font-weight:900; letter-spacing:.14em; }
+.dyd-analysis-progress strong { display:block; color:var(--dyd-navy); font-size:13px; }
+.dyd-analysis-progress p { margin:3px 0 0; color:var(--text-muted); font-size:11px; line-height:1.45; }
+@keyframes dydSpin { to { transform:rotate(360deg); } }
+.course-catalog-status { margin-bottom:14px; }
+.course-empty-recovery { margin-top:14px; }
+@media (max-width:620px) { .dyd-analysis-progress { align-items:flex-start; } }
+
+
+/* ================================================================
+   DYD V11 — ONE heading system for the complete journey
+   ================================================================ */
+.journey-step-heading {
+  position: relative;
+  margin: 0 0 24px;
+  padding: 2px 0 0 20px;
+}
+
+.journey-step-heading::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--dyd-mint), var(--dyd-blue));
+}
+
+.journey-step-meta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 8px;
+}
+
+.journey-step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(47,143,214,.08);
+  border: 1px solid rgba(47,143,214,.12);
+  color: var(--dyd-blue-dark);
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.journey-step-kicker {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  color: var(--dyd-blue-dark);
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.journey-step-kicker::before {
+  content: "";
+  width: 18px;
+  height: 2px;
+  margin-right: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+}
+
+.journey-step-title {
+  display: block;
+  max-width: 760px;
+  margin: 0;
+  color: var(--dyd-navy);
+  font-family: "Baloo 2", sans-serif;
+  font-size: clamp(27px, 4vw, 36px);
+  line-height: 1.08;
+  font-weight: 800;
+  letter-spacing: -.025em;
+}
+
+.journey-step-description {
+  max-width: 680px;
+  margin: 9px 0 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+@media (max-width: 620px) {
+  .journey-step-heading {
+    margin-bottom: 19px;
+    padding-left: 15px;
+  }
+  .journey-step-title { font-size: 25px; }
+  .journey-step-description { font-size: 12px; }
+}
+
+
+/* DYD V11 — the single heading component owns every journey step.
+   Legacy .journey-rich-heading rules remain for unrelated legacy blocks,
+   but the actual step headings below always use this component. */
+.journey-step-heading-gap { margin-bottom: 18px; }
+.journey-step-heading-course { margin-top: 8px; margin-bottom: 20px; }
+
+
+/* DYD V12 — premium result hierarchy */
+.dyd-course-recommendations{display:grid;gap:12px}.dyd-course-recommendations-intro{display:flex;align-items:center;gap:9px;margin:0 0 2px;color:var(--text-muted);font-size:11px;line-height:1.4}.dyd-course-recommendations-kicker{flex:0 0 auto;color:var(--dyd-blue-dark);font-size:9px;font-weight:900;letter-spacing:.12em}
+.course-hero.course-hero-primary{padding:18px;border-radius:20px;border:1px solid rgba(47,143,214,.22);background:linear-gradient(145deg,#f8fcff 0%,#fff 72%);box-shadow:0 12px 30px rgba(10,25,47,.08),0 0 0 3px rgba(47,143,214,.05)}.course-hero.course-hero-primary .course-hero-name{font-family:"Baloo 2",sans-serif;font-size:21px;line-height:1.12;letter-spacing:-.02em}.course-hero.course-hero-primary .course-hero-meta{font-size:11px;margin-top:6px}.course-hero.course-hero-primary .course-coverage-summary{margin-top:12px;padding:11px 12px;border-radius:13px}.course-hero.course-hero-primary .course-hero-pitch{margin-top:11px;padding:12px 13px;border-radius:13px}.course-hero.course-hero-primary .course-hero-facts{gap:5px;margin-top:9px}.course-hero.course-hero-primary .course-hero-fact{font-size:10px;padding:4px 8px}.course-hero.course-hero-primary .course-hero-select{width:100%;justify-content:center;margin-top:13px;padding:10px 14px;font-size:12px}
+.course-hero.course-hero-alternative{padding:13px 15px;border-radius:15px;background:#fff;box-shadow:0 4px 14px rgba(10,25,47,.045)}.course-hero.course-hero-alternative .course-hero-name{font-size:14px;line-height:1.25}.course-hero.course-hero-alternative .course-hero-meta{font-size:10.5px}.course-hero.course-hero-alternative .course-coverage-summary,.course-hero.course-hero-alternative .course-hero-pitch,.course-hero.course-hero-alternative .course-hero-facts,.course-hero.course-hero-alternative .course-hero-coverage,.course-hero.course-hero-alternative .course-hero-also{display:none}.course-hero.course-hero-alternative .course-hero-select{margin-top:9px;padding:6px 10px;font-size:10px}
+.pitch-hero.pitch-hero-conversion{margin-top:14px;padding:17px;border-radius:19px;box-shadow:0 12px 28px rgba(10,25,47,.10)}.pitch-conversion-head h2{max-width:620px;margin:8px 0 6px;font-family:"Baloo 2",sans-serif;font-size:clamp(20px,3.5vw,28px);line-height:1.08}.pitch-conversion-head p{max-width:620px;margin:0;font-size:11.5px;line-height:1.5}.pitch-conversion-grid{gap:8px;margin-top:13px}.pitch-conversion-card{padding:11px 12px;border-radius:13px}.pitch-conversion-value,.pitch-conversion-course-name{font-size:13px;line-height:1.25}.pitch-conversion-fit{gap:10px;margin-top:10px;padding:12px;border-radius:13px}.pitch-conversion-fit h3{font-size:14px;line-height:1.25}.pitch-conversion-fit p{font-size:11px;line-height:1.45}.pitch-conversion-why{margin-top:10px;padding:11px 12px;border-radius:13px}.pitch-conversion-next{margin-top:10px;padding:11px 12px;border-radius:13px}.pitch-conversion-next p{font-size:10.5px;line-height:1.45}.lead-step-conversion{margin-top:14px;padding:17px;border-radius:20px;background:#fff;border:1px solid rgba(10,25,47,.08);box-shadow:0 12px 30px rgba(10,25,47,.07)}
+@media(max-width:620px){.journey-step-heading{padding-left:15px;margin-bottom:18px}.journey-step-heading::before{width:3px}.journey-step-meta{gap:7px;margin-bottom:6px}.journey-step-number{min-width:27px;height:19px;font-size:8px}.journey-step-kicker{font-size:8px;letter-spacing:.12em}.journey-step-kicker::before{width:14px;height:2px;margin-right:6px}.journey-step-title{font-size:22px;line-height:1.08}.journey-step-description{font-size:10.5px;line-height:1.45;margin-top:7px}.dyd-course-recommendations-intro{align-items:flex-start;font-size:10px}.course-hero.course-hero-primary{padding:14px;border-radius:17px}.course-hero.course-hero-primary .course-hero-name{font-size:18px}.course-hero.course-hero-primary .course-hero-coverage{min-width:82px;max-width:94px;padding:7px 8px}.course-hero.course-hero-primary .course-hero-coverage-value{font-size:19px}.course-hero.course-hero-primary .course-hero-coverage-label{font-size:8px}.course-hero.course-hero-primary .course-hero-pitch-text{font-size:10.5px}.course-hero.course-hero-primary .course-hero-pitch-quote{font-size:10px}.course-hero.course-hero-alternative{padding:11px 12px}.pitch-hero.pitch-hero-conversion{padding:14px;border-radius:17px}.pitch-conversion-grid{grid-template-columns:1fr}.pitch-conversion-head h2{font-size:21px}.pitch-conversion-head p{font-size:10.5px}.lead-step-conversion{padding:14px;border-radius:17px}}
+@media(max-width:360px){.journey-step-title{font-size:20px}.course-hero.course-hero-primary .course-hero-top{display:block}.course-hero.course-hero-primary .course-hero-coverage{margin-top:9px;text-align:left}}
+
+
+/* ================================================================
+   Recommendation-Intro Popup (Kurs-Schritt) — kurzes, motivierendes
+   Pop-up direkt beim Erscheinen der Kursempfehlung. Schließt nur
+   manuell (Backdrop-Klick, "×" oder einer der beiden Buttons) — kein
+   Auto-Dismiss, siehe showRecommendationIntro in JourneyPage.tsx
+   (KursStep). Bewusst position:fixed (echtes Modal, unabhängig vom
+   Scrollstand) statt in .dyd-kurs-result-wrap eingehängt — siehe auch
+   .settings-drawer/.tour-layer weiter oben, die dasselbe Muster in
+   diesem Stylesheet bereits verwenden. */
+.dyd-recommendation-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 7vh 16px 16px;
+  overflow-y: auto;
+}
+.dyd-recommendation-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 20, 38, 0.58);
+  backdrop-filter: blur(2px);
+  animation: fadeInUp 0.22s ease both;
+}
+.dyd-recommendation-modal {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  padding: 28px 26px 24px;
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+  animation: popIn 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.12) both;
+}
+.dyd-recommendation-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: var(--border-soft);
+  color: var(--text-secondary);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.dyd-recommendation-close:hover {
+  background: var(--border);
+  color: var(--dyd-navy);
+}
+.dyd-recommendation-modal-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--dyd-mint), var(--dyd-blue));
+  color: var(--dyd-navy);
+  font-size: 26px;
+  font-weight: 900;
+  box-shadow: 0 10px 22px rgba(47, 143, 214, 0.28);
+  animation: dydIconPop 0.45s 0.1s cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
+}
+.dyd-recommendation-modal .dyd-eyebrow {
+  margin-bottom: 6px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--dyd-blue-dark);
+}
+.dyd-recommendation-modal h2 {
+  margin: 0 0 10px;
+  font-family: "Baloo 2", sans-serif;
+  font-size: 22px;
+  line-height: 1.25;
+  color: var(--dyd-navy);
+}
+.dyd-recommendation-modal-copy {
+  margin: 0 0 18px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.dyd-recommendation-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border-radius: 15px;
+  background: linear-gradient(135deg, rgba(143, 236, 180, 0.16), rgba(47, 143, 214, 0.08));
+  border: 1px solid rgba(47, 143, 214, 0.14);
+  text-align: left;
+}
+.dyd-recommendation-preview-label {
+  margin-bottom: 2px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--dyd-blue-dark);
+}
+.dyd-recommendation-preview strong {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 15px;
+  line-height: 1.3;
+  color: var(--dyd-navy);
+}
+.dyd-recommendation-preview span:last-child {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.dyd-recommendation-modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.dyd-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 13px 18px;
+  border-radius: 12px;
+  border: none;
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 13.5px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+.dyd-btn-primary {
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  color: var(--dyd-navy);
+  box-shadow: 0 10px 22px rgba(47, 143, 214, 0.28);
+}
+.dyd-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(47, 143, 214, 0.34);
+}
+.dyd-btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 8px 18px;
+}
+.dyd-btn-ghost:hover {
+  color: var(--dyd-navy);
+}
+@keyframes dydIconPop {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dyd-recommendation-backdrop,
+  .dyd-recommendation-modal,
+  .dyd-recommendation-modal-icon {
+    animation: none;
+  }
+}
+@media (max-width: 480px) {
+  .dyd-recommendation-overlay { padding: 0 12px 12px; align-items: flex-end; }
+  .dyd-recommendation-modal { max-width: 100%; padding: 24px 20px 20px; border-radius: 20px 20px 0 0; }
+}
+
+
+/* ================================================================
+   Kurs-Karussell (KursStep) — Rückmeldung 17.09.: "die anderen Kurse
+   sollen rotieren und dort präsent präsentiert werden". Ersetzt die
+   beiden vorherigen, statischen .popular-course-grid-Listen ("Startet
+   bald"/"Weitere Top-Kurse"), die bisher ganz unten NACH dem
+   kompletten Kontaktformular standen (siehe .popular-courses weiter
+   oben, jetzt nicht mehr referenziert). Jetzt direkt nach der
+   Hauptempfehlung, automatisch rotierend (siehe useEffect mit
+   setInterval in KursStep) — Pause bei Hover/Fokus, kein Auto-Advance
+   bei prefers-reduced-motion. Nutzt weiterhin dieselbe .popular-course-
+   card-Optik (siehe oben), nur eine statt vieler gleichzeitig sichtbar. */
+.course-carousel {
+  margin-top: 16px;
+  padding: 18px 19px 20px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid rgba(10, 25, 47, 0.07);
+  box-shadow: 0 8px 22px rgba(10, 25, 47, 0.05);
+}
+.course-carousel-heading {
+  margin-bottom: 14px;
+}
+.course-carousel-heading .field-label {
+  margin-bottom: 3px;
+}
+.course-carousel-heading p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.course-carousel-viewport {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+.course-carousel-track {
+  flex: 1 1 auto;
+  min-width: 0;
+  animation: fadeInUp 0.25s ease both;
+}
+.course-carousel-nav {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border-soft);
+  background: #fff;
+  color: var(--dyd-navy);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.course-carousel-nav:hover {
+  background: var(--blue-bg);
+  border-color: var(--dyd-blue);
+  transform: translateY(-1px);
+}
+.course-carousel-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 13px;
+}
+.course-carousel-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  background: var(--border);
+  cursor: pointer;
+  transition: background 0.15s ease, width 0.15s ease;
+}
+.course-carousel-dot.active {
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  width: 18px;
+  border-radius: 999px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .course-carousel-track { animation: none; }
+}
+@media (max-width: 620px) {
+  .course-carousel { padding: 15px 14px 16px; }
+  .course-carousel-nav { width: 30px; height: 30px; font-size: 16px; }
+}
+
+/* ================================================================
+   LeadStep (Kontaktformular am Ende von KursStep) — Rückmeldung
+   17.09.: "bei deine ausgewählte Weiterbildung unten die Schrift und
+   die Ansicht nicht akzeptabel". Root Cause identisch zum Popup/Pitch-
+   Fund von vorhin: das JSX (lead-course-recap, lead-fields-grid,
+   lead-readiness-strip, lead-intent-heading, …) war schon vollständig
+   da, aber ohne jedes CSS — rendert dadurch als nackter, zusammen-
+   laufender Text statt als Formular. .cta-block/.btn-cta-primary/
+   .consent-row/.big-input/.email-trust-badge hatten dagegen schon CSS
+   (siehe weiter oben) und sind hier bewusst nicht angefasst.
+   ================================================================ */
+.lead-course-recap {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border-radius: 15px;
+  background: linear-gradient(135deg, rgba(143, 236, 180, 0.14), rgba(47, 143, 214, 0.07));
+  border: 1px solid rgba(47, 143, 214, 0.14);
+}
+.lead-course-recap-icon {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--dyd-mint), var(--dyd-blue));
+  color: var(--dyd-navy);
+  font-size: 15px;
+  font-weight: 900;
+}
+.lead-course-recap-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lead-course-recap-copy span {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dyd-blue-dark);
+}
+.lead-course-recap-copy strong {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 15.5px;
+  line-height: 1.3;
+  color: var(--dyd-navy);
+}
+.lead-course-recap-copy small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.lead-data-heading {
+  margin-bottom: 13px;
+}
+.lead-data-title {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 17px;
+  color: var(--dyd-navy);
+}
+.lead-data-subtitle {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.lead-fields-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.lead-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lead-field-full {
+  grid-column: 1 / -1;
+}
+.lead-field label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.optional-label,
+.required-label {
+  margin-left: 5px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+.optional-label {
+  background: var(--border-soft);
+  color: var(--text-muted);
+}
+.required-label {
+  background: var(--blue-bg);
+  color: var(--dyd-blue-dark);
+}
+@media (max-width: 560px) {
+  .lead-fields-grid { grid-template-columns: 1fr; }
+}
+
+.lead-readiness-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin: 14px 0;
+  padding: 10px 13px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid var(--border-soft);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.ready-ok,
+.ready-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 800;
+  flex: 0 0 auto;
+}
+.ready-ok {
+  background: var(--green-bg);
+  color: var(--green-text);
+}
+.ready-open {
+  background: var(--border);
+  color: var(--text-muted);
+}
+.ready-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+  margin: 0 3px;
+}
+.lead-readiness-strip strong {
+  color: var(--dyd-navy);
+  font-size: 11.5px;
+  flex: 1 1 auto;
+}
+@media (max-width: 480px) {
+  .ready-divider { display: none; }
+  .lead-readiness-strip strong { flex-basis: 100%; margin-top: 4px; }
+}
+
+.lead-intent-heading {
+  margin: 4px 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lead-intent-heading strong {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 15px;
+  color: var(--dyd-navy);
+}
+.lead-intent-heading span {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+
+/* ================================================================
+   Rückmeldung 17.09.: "die Kachel mit dem Pitch finde ich zu wenig
+   präsent" + "die Rahmendaten müssen klar vorhanden sein bei den
+   Kursen". Überschreibt gezielt nur die zu stark komprimierenden
+   Primary-/Alternative-Regeln aus dem minifizierten "DYD V12"-Block
+   weiter oben (spätere Regel gewinnt bei gleicher Spezifität, siehe
+   .course-hero.course-hero-primary/-alternative dort) — die Basis-
+   .course-hero-pitch/-fact-Regeln selbst (weiter oben in dieser Datei)
+   bleiben unangetastet.
+   ================================================================ */
+.course-hero.course-hero-primary .course-hero-pitch {
+  margin-top: 14px;
+  padding: 16px 17px;
+  border-radius: 15px;
+  border: 1px solid rgba(47, 143, 214, 0.18);
+  border-left: 3px solid var(--dyd-blue);
+  background: linear-gradient(135deg, rgba(143, 236, 180, 0.16), rgba(47, 143, 214, 0.07));
+  box-shadow: 0 6px 16px rgba(47, 143, 214, 0.08);
+}
+.course-hero.course-hero-primary .course-hero-pitch-headline {
+  font-size: 13px;
+}
+.course-hero.course-hero-primary .course-hero-pitch-text {
+  font-size: 13.5px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--dyd-navy);
+}
+.course-hero.course-hero-primary .course-hero-pitch-quote {
+  font-size: 12px;
+}
+.course-hero.course-hero-primary .course-hero-facts {
+  gap: 7px;
+  margin-top: 10px;
+}
+.course-hero.course-hero-primary .course-hero-fact {
+  font-size: 12px;
+  padding: 5px 12px;
+  font-weight: 800;
+  border-color: rgba(47, 143, 214, 0.18);
+}
+/* Preis/Dauer/Förderfähigkeit gehören zu den Rahmendaten, nach denen aktiv
+   gesucht wird — bisher auf den kompakteren Alternativ-Karten komplett
+   ausgeblendet (siehe .course-hero-alternative-Regel oben, "display:none"),
+   das betraf faelschlich auch die Fakten-Pillen, nicht nur die persönliche
+   Tiefenanalyse. Coverage-Summary/Pitch/Prozent-Badge bleiben dort bewusst
+   weiterhin ausgeblendet (kompakte Optik), nur die Fakten kommen zurück. */
+.course-hero.course-hero-alternative .course-hero-facts {
+  display: flex;
+  margin-top: 8px;
+}
+.course-hero.course-hero-alternative .course-hero-fact {
+  font-size: 10.5px;
+  padding: 3px 9px;
+}
+
+/* ================================================================
+   Kurskarten-Reveal ("Das bringt dir dieser Kurs konkret") — Rückmeldung
+   17.09.: "es muss dann kommen welche Skills man mit der Weiterbildung
+   erlernt und dass man damit näher an seinem Ziel ist". Erscheint direkt
+   an der jeweils ausgewählten Kurskarte (siehe course-hero-reveal in
+   KursStep, JourneyPage.tsx) — ersetzt das vormalige, von der Karte
+   losgelöste .skill-focus-panel (jetzt entfernt, JSX + CSS). Bewusst als
+   eigene weiße Karte mit farbigem Rahmen/Schatten statt nochmal einem
+   Verlaufshintergrund wie .course-hero-pitch direkt darüber — sonst zwei
+   sehr ähnliche Farbflächen direkt übereinander. */
+.course-hero-reveal {
+  margin-top: 14px;
+  padding: 15px 16px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid rgba(47, 143, 214, 0.2);
+  box-shadow: 0 8px 20px rgba(47, 143, 214, 0.1);
+  animation: fadeInUp 0.25s ease both;
+  cursor: default;
+}
+.course-hero-reveal-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.course-hero-reveal-icon {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--dyd-mint), var(--dyd-blue));
+  color: var(--dyd-navy);
+  font-size: 11px;
+  font-weight: 900;
+}
+.course-hero-reveal-head strong {
+  font-size: 13.5px;
+  color: var(--dyd-navy);
+}
+/* Rahmendaten (Dauer/Ort/Kosten/Niveau/Förderung/Start) — Rückmeldung
+   17.09. "die Infos Dauer, Ort, Kosten, Niveau etc. sollen auch
+   drinstehen". Kompakte Definitionsliste, bewusst vor den Skills, damit
+   die harten Fakten zuerst kommen. */
+.course-hero-reveal-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px 14px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.course-hero-reveal-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.course-hero-reveal-fact-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.course-hero-reveal-fact span:last-child {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--dyd-navy);
+}
+
+/* Gelernte Skills bewusst deutlich im Vordergrund (Rückmeldung 17.09.
+   "die erlernten Skills sollten viel mehr im Vordergrund stehen als die
+   noch offenen Skills"): große, satte grüne Chips mit eigener
+   Zwischenüberschrift. Die vormalige "Danach noch offen: ..."-Zeile
+   (.course-hero-reveal-open) wurde auf erneute Rückmeldung ersatzlos
+   entfernt, siehe Kommentar am JSX in JourneyPage.tsx. */
+.course-hero-reveal-covered-heading {
+  margin-bottom: 9px;
+  font-family: "Baloo 2", sans-serif;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--dyd-navy);
+}
+.course-hero-reveal-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.course-hero-reveal-chip.is-covered {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 800;
+  background: var(--green-bg);
+  color: var(--green-text);
+  border: 1px solid rgba(23, 138, 76, 0.16);
+}
+.course-hero-reveal-progress {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(143, 236, 180, 0.14), rgba(47, 143, 214, 0.08));
+}
+.course-hero-reveal-progress-icon {
+  font-size: 16px;
+  line-height: 1.2;
+}
+.course-hero-reveal-progress strong {
+  display: block;
+  font-size: 12.5px;
+  color: var(--dyd-navy);
+  margin-bottom: 2px;
+}
+.course-hero-reveal-progress p {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.course-hero-reveal-next {
+  margin-top: 12px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+@media (prefers-reduced-motion: reduce) {
+  .course-hero-reveal { animation: none; }
+}
+@media (max-width: 620px) {
+  .course-hero.course-hero-primary .course-hero-pitch { padding: 14px 15px; }
+  .course-hero-reveal { padding: 13px 14px; }
+}
+
+/* ---------- Redesign "Weitere passende Kurse"-Karussell (Rückmeldung
+   17.09., "in einer besseren Darstellung ... Kosten Dauer in einem
+   einheitlichen Format ... Beschreibung soll sichtbar bzw. ausklappbar
+   sein") — die Kachel hatte bisher spürbar weniger visuelles Gewicht als
+   die Hauptempfehlung, obwohl dieselben Katalogdaten vorliegen. Größerer
+   Name (Baloo 2, wie course-hero-name), mehr Innenabstand, eigene benannte
+   Beschreibungs-Sektion statt beiläufigem Fließtext. */
+.popular-course-card {
+  padding: 18px 19px;
+}
+.popular-course-name {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--dyd-navy);
+  line-height: 1.3;
+  margin-top: 2px;
+}
+.popular-course-meta {
+  font-size: 12.5px;
+  margin-top: 4px;
+}
+.popular-course-facts {
+  margin-top: 9px;
+  gap: 7px;
+}
+.popular-course-desc-block {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(10, 25, 47, 0.08);
+}
+.popular-course-desc-label {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.popular-course-desc {
+  font-size: 12px;
+}
+
+/* ---------- "Mehr Informationen anfragen" als eigene Option neben "Kurs
+   direkt buchen"/"Persönliches Beratungsgespräch" (Rückmeldung 17.09.) —
+   nutzt dieselbe .consultation-optin-Struktur, nur mit Mint/Grün statt Blau
+   als Akzent, damit die drei Optionen auf einen Blick unterscheidbar
+   bleiben, ohne drei völlig verschiedene Bauweisen pflegen zu müssen. */
+.info-optin {
+  border-color: var(--dyd-mint-2);
+  background: var(--green-bg);
+}
+.info-optin .consultation-optin-title {
+  color: var(--green-text);
+}
+
+/* ---------- Kursbeschreibung + "außerdem angefragt"-Zeile in der
+   lead-course-recap-Karte (Rückmeldung 17.09.: "Ich will die Beschreibung
+   beim Kurs sehen" / "hier oben sollen dann alle Kurse stehen, die man
+   anfragt") — ersetzt die vorherige separate .lead-additional-courses-Box
+   direkt vor den CTA-Buttons, jetzt alles zusammen oben in der Recap-Karte. */
+.lead-course-recap-desc {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: normal;
+  margin-top: 2px;
+}
+.lead-course-recap-extra {
+  font-size: 11.5px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.lead-course-recap-extra b {
+  color: var(--dyd-navy);
+  font-weight: 700;
+}
+/* Freitext-Anliegen-Feld (Version 38, 17.09.) — nutzt dieselbe .big-input-
+   Basis wie die anderen Formularfelder, nur mit fester Mindesthöhe fürs
+   Textarea-Verhalten. */
+.lead-message-input {
+  min-height: 72px;
+  resize: vertical;
+}
+
+/* ================================================================
+   Motivations-Zwischenseite (MotivationStep, 22.09.2026) — kurzer,
+   ruhiger Moment zwischen Profil-Eingabe und der dichten Match-Auswertung,
+   nach dem Vorbild von Taxfix & Co. Nutzt bewusst dieselben Tokens/Keyframes
+   wie der Rest der Journey (theme.css: popIn/fadeInUp, --shadow-md,
+   .ring-box/.ring-value aus MatchRing, .btn-cta-primary, .dyd-btn-ghost) statt
+   einen eigenen visuellen Stil einzuführen — der Unterschied zu einem
+   normalen Formular-Schritt kommt allein aus Layout/Ruhe, nicht aus neuer
+   Optik.
+   ================================================================ */
+.motivation-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 36px 20px 12px;
+  animation: fadeInUp 0.5s ease both;
+}
+.motivation-step-ring {
+  animation: popIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.motivation-step-ring .ring-value {
+  font-size: 30px;
+}
+.motivation-step-headline {
+  font-family: "Baloo 2", "Inter", sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.3;
+  margin-top: 20px;
+  max-width: 420px;
+  animation: fadeInUp 0.5s ease 0.08s both;
+}
+.motivation-step-sub {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  margin-top: 10px;
+  max-width: 400px;
+  animation: fadeInUp 0.5s ease 0.14s both;
+}
+.motivation-step-stats {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 22px;
+  padding: 14px 26px;
+  border-radius: 18px;
+  background: var(--green-bg);
+  animation: fadeInUp 0.5s ease 0.2s both;
+}
+.motivation-step-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 64px;
+}
+.motivation-step-stat strong {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--green-text);
+  line-height: 1.1;
+}
+.motivation-step-stat span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.motivation-step-stat-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+}
+.motivation-step .btn-cta-primary {
+  margin-top: 28px;
+}
+.motivation-step-back {
+  margin-top: 6px;
+  font-size: 13px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .motivation-step,
+  .motivation-step-ring,
+  .motivation-step-headline,
+  .motivation-step-sub,
+  .motivation-step-stats {
+    animation: none;
+  }
+}
+@media (max-width: 480px) {
+  .motivation-step {
+    padding: 24px 12px 8px;
+  }
+  .motivation-step-headline {
+    font-size: 19px;
+  }
+  .motivation-step-stats {
+    gap: 12px;
+    padding: 12px 18px;
+  }
+}
+
+/* ================================================================
+   Fragebogen-Skill-Check, Teil 2 (22.09.2026): 3×3-Tiefe-Matrix statt
+   Ja/Nein-Karte, live mitwachsender Match-Ring, "done"-Zwischenstand mit
+   optionalem Zusatz-Skill-Link. Siehe FragebogenMethod/SkillDepth-Kommentare
+   in JourneyPage.tsx. Reuse bestehender Tokens/Keyframes (fadeInUp, popIn
+   aus theme.css; dydIconPop aus diesem File) statt neuer Optik — derselbe
+   Grundsatz wie beim Motivations-Schritt oben.
+   ================================================================ */
+.quiz-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.quiz-live-ring {
+  flex-shrink: 0;
+}
+.quiz-live-ring .ring-value {
+  font-size: 13px;
+}
+.quiz-progress-text {
+  flex: 1;
+  min-width: 0;
+}
+.quiz-progress-count {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.quiz-depth-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 20px;
+  padding: 24px 20px;
+  background: var(--surface, #fff);
+  box-shadow: var(--shadow-md);
+  text-align: center;
+  animation: fadeInUp 0.35s ease both;
+}
+.quiz-depth-card-kicker {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.58;
+  margin-bottom: 10px;
+  letter-spacing: 0.02em;
+}
+.quiz-depth-card-title {
+  font-family: "Baloo 2", "Inter", sans-serif;
+  font-size: clamp(20px, 4vw, 28px);
+  font-weight: 800;
+  line-height: 1.15;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+.quiz-depth-card-hint {
+  max-width: 460px;
+  margin: 0 auto 18px;
+}
+.quiz-depth-grid {
+  display: grid;
+  grid-template-columns: minmax(84px, auto) repeat(3, minmax(64px, 1fr));
+  gap: 6px;
+  max-width: 520px;
+  margin: 0 auto;
+  align-items: stretch;
+}
+.quiz-depth-col-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  text-align: center;
+  padding-bottom: 4px;
+  line-height: 1.2;
+}
+.quiz-depth-row-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: right;
+  padding-right: 6px;
+}
+.quiz-depth-cell {
+  border: 1.5px solid var(--border-soft);
+  border-radius: 10px;
+  background: rgba(127, 127, 127, 0.035);
+  min-height: 44px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--dyd-blue-dark);
+  transition: all 0.15s ease;
+}
+.quiz-depth-cell:hover {
+  border-color: var(--dyd-mint-2);
+  background: rgba(95, 220, 153, 0.08);
+}
+.quiz-depth-cell.selected {
+  border-color: var(--dyd-mint-2);
+  background: linear-gradient(135deg, rgba(143, 236, 180, 0.28), rgba(47, 143, 214, 0.14));
+  color: var(--dyd-blue-dark);
+  animation: dydIconPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  box-shadow: var(--shadow-sm);
+}
+.quiz-depth-selected-label {
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  animation: fadeInUp 0.25s ease both;
+}
+.quiz-depth-selected-label strong {
+  color: var(--text-primary);
+}
+.quiz-not-yet-btn {
+  margin: 18px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1.5px dashed var(--border);
+  border-radius: 12px;
+  padding: 10px 16px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  max-width: 320px;
+  width: 100%;
+  transition: all 0.15s ease;
+}
+.quiz-not-yet-btn:hover {
+  border-color: var(--dyd-blue);
+  color: var(--dyd-blue-dark);
+}
+.quiz-not-yet-btn.selected {
+  border-style: solid;
+  border-color: var(--dyd-blue);
+  color: var(--dyd-blue-dark);
+  background: rgba(47, 143, 214, 0.07);
+}
+.quiz-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 18px 12px 6px;
+  animation: fadeInUp 0.4s ease both;
+}
+.quiz-done-ring {
+  animation: popIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.quiz-done-headline {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-top: 16px;
+}
+.quiz-done-sub {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  margin-top: 8px;
+  max-width: 420px;
+}
+.quiz-edit-answers {
+  margin-top: 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--dyd-blue-dark);
+  text-decoration: underline;
+}
+.quiz-extra-section {
+  margin-top: 20px;
+  width: 100%;
+  max-width: 480px;
+}
+.quiz-extra-toggle {
+  border: 1.5px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 10px 16px;
+  background: rgba(127, 127, 127, 0.035);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--dyd-blue-dark);
+  cursor: pointer;
+  width: 100%;
+}
+.quiz-extra-toggle:hover {
+  border-color: var(--dyd-mint-2);
+}
+.quiz-extra-list {
+  text-align: left;
+  animation: fadeInUp 0.3s ease both;
+}
+.quiz-extra-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+.quiz-extra-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.quiz-extra-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1.5px solid var(--border-soft);
+  border-radius: 999px;
+  padding: 7px 13px 7px 10px;
+  background: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.quiz-extra-chip-check {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff;
+  flex-shrink: 0;
+}
+.quiz-extra-chip.checked {
+  border-color: var(--dyd-mint-2);
+  background: rgba(95, 220, 153, 0.09);
+}
+.quiz-extra-chip.checked .quiz-extra-chip-check {
+  background: var(--dyd-mint-2);
+  border-color: var(--dyd-mint-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .quiz-depth-card,
+  .quiz-depth-cell.selected,
+  .quiz-depth-selected-label,
+  .quiz-done,
+  .quiz-done-ring,
+  .quiz-extra-list {
+    animation: none;
+  }
+}
+@media (max-width: 480px) {
+  .quiz-depth-grid {
+    grid-template-columns: minmax(58px, auto) repeat(3, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .quiz-depth-col-label {
+    font-size: 9px;
+  }
+  .quiz-depth-row-label {
+    font-size: 10.5px;
+    padding-right: 3px;
+  }
+  .quiz-depth-cell {
+    min-height: 38px;
+    font-size: 14px;
+  }
+  .quiz-depth-card {
+    padding: 18px 12px;
+  }
+}
+
+/* ================================================================
+   Avatar/Guide (22.09.2026): bewusst abstrakte, animierte Marken-Form
+   (Farbverlauf-Orb) statt gezeichnetem Charakter — siehe ausführlichen
+   Kommentar an GuideAvatarBubble in JourneyPage.tsx (White-Label- und
+   Positionierungs-Gründe). --guide-accent ist eine optionale, pro Tenant
+   per Inline-Style gesetzte CSS-Variable (siehe accentColor-Prop) — ohne
+   sie greift der Fallback-Farbverlauf unten (dieselbe Mint→Blau-Familie
+   wie MatchRing/dydMatchRingGradient), ganz ohne eigenes :root-Overwrite,
+   also ohne jede andere Stelle der App zu beeinflussen.
+   ================================================================ */
+.guide-avatar-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+  animation: fadeInUp 0.4s ease both;
+}
+.guide-avatar-orb {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--guide-accent, linear-gradient(135deg, var(--dyd-mint), var(--dyd-blue)));
+  box-shadow: 0 6px 18px rgba(47, 143, 214, 0.28), var(--shadow-sm);
+  overflow: hidden;
+  animation: guideOrbBreathe 3.6s ease-in-out infinite;
+}
+.guide-avatar-orb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.65), transparent 55%);
+}
+.guide-avatar-orb-sheen {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.4) 12%,
+    rgba(255, 255, 255, 0) 26%
+  );
+  mix-blend-mode: screen;
+  animation: guideOrbSheen 5s linear infinite;
+}
+.guide-avatar-bubble {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
+  border-top-left-radius: 4px;
+  padding: 12px 34px 12px 14px;
+  background: var(--surface, #fff);
+  box-shadow: var(--shadow-sm);
+}
+.guide-avatar-bubble-name {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--dyd-blue-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 3px;
+}
+.guide-avatar-bubble-text {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+.guide-avatar-bubble-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.guide-avatar-bubble-close:hover {
+  background: rgba(127, 127, 127, 0.1);
+  color: var(--text-primary);
+}
+@keyframes guideOrbBreathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+@keyframes guideOrbSheen {
+  from {
+    transform: rotate(0deg);
+  }
   to {
     transform: rotate(360deg);
   }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guide-avatar-row,
+  .guide-avatar-orb,
+  .guide-avatar-orb-sheen {
+    animation: none;
+  }
+}
+@media (max-width: 480px) {
+  .guide-avatar-orb {
+    width: 38px;
+    height: 38px;
+  }
+  .guide-avatar-bubble {
+    padding: 10px 30px 10px 12px;
+  }
+  .guide-avatar-bubble-text {
+    font-size: 12.5px;
+  }
+}
+/* ==========================================================================
+   Journey v2 Teil 2/3 (25.09.2026): Kurz-Check, Rahmen, Ergebnis
+   ========================================================================== */
+.v2-evidence {
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(95, 220, 153, 0.14), rgba(95, 220, 153, 0.05));
+  border: 1px solid rgba(95, 220, 153, 0.35);
+}
+.v2-evidence-title {
+  font-weight: 800;
+  font-size: 13.5px;
+  color: var(--green-text);
+  margin-bottom: 8px;
+}
+.v2-evidence-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.v2-evidence-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 11px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid rgba(95, 220, 153, 0.45);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.v2-evidence-chip button {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: var(--border-soft);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.v2-evidence-chip button:hover {
+  background: var(--red-bg);
+  color: var(--red-text);
+}
+.v2-evidence-more {
+  border: none;
+  background: none;
+  color: var(--green-text);
+  font-weight: 700;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.v2-evidence-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.v2-check-progress {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin: 4px 0 12px;
+}
+.v2-check-dot {
+  width: 28px;
+  height: 6px;
+  border-radius: 999px;
+  border: none;
+  padding: 0;
+  background: var(--border);
+  cursor: pointer;
+  transition: background 0.2s, width 0.2s;
+}
+.v2-check-dot.done {
+  background: var(--dyd-mint-2);
+}
+.v2-check-dot.active {
+  width: 44px;
+  background: var(--dyd-blue);
+}
+.v2-check-card {
+  padding: 24px 22px 18px;
+  border-radius: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  text-align: center;
+  animation: v2CardIn 0.3s ease both;
+}
+@keyframes v2CardIn {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.v2-check-count {
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dyd-blue);
+}
+.v2-check-question {
+  margin: 8px auto 6px;
+  max-width: 460px;
+  font-family: "Baloo 2", sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text-primary);
+}
+.v2-check-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.v2-check-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+.v2-check-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 8px;
+  border-radius: 16px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  font: inherit;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.v2-check-option:hover {
+  border-color: var(--dyd-blue);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(47, 143, 214, 0.12);
+}
+.v2-check-option.selected {
+  border-color: var(--dyd-mint-2);
+  background: rgba(95, 220, 153, 0.12);
+}
+.v2-check-option.flash {
+  animation: v2Pop 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+}
+@keyframes v2Pop {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.v2-check-option-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+.v2-check-prev {
+  margin-top: 14px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.v2-check-prev:hover {
+  color: var(--dyd-blue);
+}
+.v2-success {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(95, 220, 153, 0.18), rgba(47, 143, 214, 0.08));
+  animation: v2CardIn 0.35s ease both;
+}
+.v2-success-icon {
+  font-size: 26px;
+}
+.v2-success strong {
+  display: block;
+  font-size: 14.5px;
+  color: var(--text-primary);
+}
+.v2-success span {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.v2-rahmen-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.v2-preparing {
+  padding: 48px 20px;
+  text-align: center;
+}
+.v2-preparing-orbit {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 18px;
+}
+.v2-preparing-orbit span {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  border-top-color: var(--dyd-mint-2);
+  animation: v2Spin 1.1s linear infinite;
+}
+.v2-preparing-orbit span:nth-child(2) {
+  inset: 12px;
+  border-top-color: var(--dyd-blue);
+  animation-duration: 1.5s;
+  animation-direction: reverse;
+}
+.v2-preparing-orbit span:nth-child(3) {
+  inset: 24px;
+  border-top-color: var(--dyd-violet);
+  animation-duration: 0.9s;
+}
+@keyframes v2Spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.v2-preparing-title {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.v2-preparing-steps {
+  list-style: none;
+  padding: 0;
+  margin: 14px auto 0;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  font-size: 13.5px;
+  color: var(--green-text);
+  font-weight: 700;
+}
+.v2-preparing-steps li.active {
+  color: var(--dyd-blue);
+  animation: v2Blink 1.2s ease-in-out infinite;
+}
+@keyframes v2Blink {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* ---- Ergebnis ---- */
+.v2-strengths {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--border-soft);
+}
+.v2-strengths-title {
+  font-weight: 800;
+  font-size: 13px;
+  margin-right: 4px;
+  color: var(--text-primary);
+}
+.v2-strength-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--green-bg);
+  color: var(--green-text);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.v2-strength-more {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.v2-adjust {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--dyd-blue);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.v2-adjust:hover {
+  text-decoration: underline;
+}
+.v2-course {
+  position: relative;
+  margin-bottom: 14px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  animation: v2CardIn 0.35s ease both;
+}
+.v2-course.is-top {
+  padding: 22px 22px 20px;
+  border: 2px solid transparent;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(135deg, var(--dyd-mint-2), var(--dyd-blue)) border-box;
+  box-shadow: 0 18px 40px rgba(47, 143, 214, 0.14);
+}
+.v2-course-badge {
+  display: inline-block;
+  margin-bottom: 10px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  color: var(--dyd-navy);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+.v2-course-headline {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dyd-blue);
+}
+.v2-course-name {
+  margin: 4px 0 2px;
+  font-family: "Baloo 2", sans-serif;
+  font-size: 22px;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+.v2-course:not(.is-top) .v2-course-name {
+  font-size: 18px;
+}
+.v2-course-provider {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.v2-ladder {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 14px 0 12px;
+}
+.v2-ladder-step {
+  flex: 1 1 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+}
+.v2-ladder-step.then {
+  background: rgba(95, 220, 153, 0.1);
+  border-color: rgba(95, 220, 153, 0.35);
+}
+.v2-ladder-label {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.v2-ladder-step strong {
+  font-size: 14.5px;
+  color: var(--text-primary);
+}
+.v2-ladder-niveau {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.v2-ladder-arrow {
+  align-self: center;
+  font-size: 18px;
+  color: var(--dyd-blue);
+  font-weight: 800;
+}
+.v2-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.v2-facts span {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--border-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.v2-because {
+  margin: 6px 0 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.v2-closes {
+  margin-bottom: 10px;
+}
+.v2-closes-line {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+.v2-closes-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.v2-closes-chips span {
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(95, 220, 153, 0.2), rgba(47, 143, 214, 0.14));
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.v2-fit {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.v2-funding {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--green-bg);
+  color: var(--green-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+.v2-outlook {
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.v2-course-cta {
+  width: 100%;
+  justify-content: center;
+}
+.v2-course-more {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--dyd-blue);
+  font: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+.v2-alt-title {
+  margin: 20px 0 10px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.v2-lead {
+  margin-top: 12px;
+  padding: 16px;
+  border-radius: 16px;
+  background: #f7faff;
+  border: 1px solid var(--blue-border);
+  animation: v2CardIn 0.3s ease both;
+}
+.v2-lead-title {
+  font-weight: 800;
+  font-size: 14.5px;
+  margin-bottom: 10px;
+  color: var(--text-primary);
+}
+.v2-lead-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.v2-lead-grid .input-wrap .big-input,
+.v2-lead-grid > .big-input {
+  width: 100%;
+}
+.v2-lead-full {
+  grid-column: 1 / -1;
+}
+.v2-consent {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.v2-lead-submit {
+  width: 100%;
+  justify-content: center;
+  margin-top: 10px;
+}
+.v2-lead-alt {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 16px;
+  margin-top: 10px;
+}
+.v2-lead-alt button {
+  border: none;
+  background: none;
+  padding: 2px 0;
+  color: var(--dyd-blue);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.v2-lead-alt button:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+.v2-lead-trust {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 14px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+@media (max-width: 560px) {
+  .v2-check-question {
+    font-size: 19px;
+  }
+  .v2-check-options {
+    gap: 6px;
+  }
+  .v2-check-option {
+    padding: 12px 4px;
+    font-size: 13px;
+  }
+  .v2-rahmen-grid,
+  .v2-lead-grid {
+    grid-template-columns: 1fr;
+  }
+  .v2-ladder-arrow {
+    transform: rotate(90deg);
+    width: 100%;
+    text-align: center;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2-check-card,
+  .v2-course,
+  .v2-lead,
+  .v2-success,
+  .v2-check-option.flash,
+  .v2-preparing-orbit span,
+  .v2-preparing-steps li.active {
+    animation: none;
+  }
+}
+
+/* ---- Beratungs-Bausteine (25.09.2026, journeyAdvice.ts) ---- */
+.v2-way {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: -4px 0 16px;
+  padding: 9px 14px;
+  border-radius: 12px;
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+.v2-way strong {
+  color: var(--text-primary);
+}
+.v2-way button {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--dyd-blue);
+  font: inherit;
+  font-weight: 700;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.v2-hurdles {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px dashed var(--border);
+  background: #fbfcfe;
+}
+.v2-hurdles-title {
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+.v2-hurdles-title span {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+.v2-hurdles-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.v2-hurdles-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.v2-basis {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: #fbfcfe;
+  border: 1px solid var(--border-soft);
+}
+.v2-basis-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+.v2-transparency {
+  margin: -6px 0 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.v2-priority {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(124, 111, 224, 0.08);
+  border: 1px solid rgba(124, 111, 224, 0.22);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.v2-prereq {
+  margin-bottom: 10px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: var(--border-soft);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.v2-prereq.ok {
+  background: var(--green-bg);
+  color: var(--green-text);
+  font-weight: 700;
+}
+.v2-prereq.warn {
+  background: var(--amber-bg);
+  color: var(--amber-text);
+  font-weight: 700;
+}
+.v2-block-title {
+  font-weight: 800;
+  font-size: 13.5px;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+}
+.v2-hurdle-notes {
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #fbfcfe;
+  border: 1px solid var(--border);
+}
+.v2-hurdle-notes ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.v2-funding-plan {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--green-bg);
+  border: 1px solid rgba(95, 220, 153, 0.4);
+}
+.v2-funding-plan .v2-block-title {
+  color: var(--green-text);
+}
+.v2-funding-plan ol {
+  margin: 0 0 6px;
+  padding-left: 20px;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.v2-funding-plan a {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--green-text);
+}
+
+/* ---- Persönlicher Plan nach der Anfrage ---- */
+.v2-plan {
+  margin: 18px auto 14px;
+  max-width: 560px;
+  text-align: left;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+.v2-plan-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 18px;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  color: var(--dyd-navy);
+  font-weight: 800;
+  font-size: 13.5px;
+}
+.v2-plan-row {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 12px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 13.5px;
+  color: var(--text-primary);
+}
+.v2-plan-row ol {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+.v2-plan-label {
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding-top: 2px;
+}
+.v2-plan-sub {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+.v2-plan-foot {
+  padding: 10px 18px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.v2-plan-print {
+  margin: 0 auto;
+}
+@media (max-width: 560px) {
+  .v2-plan-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .v2-plan,
+  .v2-plan * {
+    visibility: visible;
+  }
+  .v2-plan {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    box-shadow: none;
+  }
+  .v2-plan-head {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* ---- Ausweg "Nur Branche wählen" im Berufs-Schritt (25.09.2026) ---- */
+.bereich-escape {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(47, 143, 214, 0.1), rgba(95, 220, 153, 0.1));
+  border: 1px solid var(--blue-border);
+}
+.bereich-escape-icon {
+  font-size: 24px;
+}
+.bereich-escape-text {
+  flex: 1 1 220px;
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.bereich-escape-text strong {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.bereich-escape-btn {
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: none;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-blue));
+  color: var(--dyd-navy);
+  font: inherit;
+  font-weight: 800;
+  font-size: 13.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 6px 16px rgba(47, 143, 214, 0.2);
+}
+.bereich-escape-btn:hover {
+  transform: translateY(-1px);
+}
+@media (max-width: 560px) {
+  .bereich-escape-btn {
+    width: 100%;
+  }
+}
+
+/* ---- Ergebnis: "Deine Möglichkeiten" beim Weg über die Branche ---- */
+.v2-options {
+  margin-bottom: 14px;
+  padding: 16px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(47, 143, 214, 0.08), rgba(95, 220, 153, 0.08));
+  border: 1px solid var(--blue-border);
+}
+.v2-options-title {
+  font-family: "Baloo 2", sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.v2-options-sub {
+  margin: 2px 0 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.v2-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+.v2-option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+.v2-option:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: var(--dyd-blue);
+  box-shadow: 0 8px 18px rgba(47, 143, 214, 0.12);
+}
+.v2-option:disabled {
+  cursor: default;
+}
+.v2-option-name {
+  font-weight: 800;
+  font-size: 14.5px;
+  color: var(--text-primary);
+}
+.v2-option-meta {
+  font-size: 12px;
+  color: var(--green-text);
+  font-weight: 700;
+}
+.v2-option-course {
+  font-size: 12px;
+  color: var(--text-secondary);
 }

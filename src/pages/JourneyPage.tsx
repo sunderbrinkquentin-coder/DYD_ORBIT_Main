@@ -73,6 +73,7 @@ import {
 } from "../data/journeyFlow";
 import { buildCoursePitchV2, NIVEAU_LABELS, type CoursePitch, type PitchCourse, type Situation } from "../data/coursePitch";
 import { skillQuestionFor } from "../data/skillQuestions";
+import { rolesForSchwerpunkte, SCHWERPUNKT_EXPERIENCE_MIN, SCHWERPUNKTE, schwerpunkteFor, schwerpunktLabel } from "../data/schwerpunkte";
 import {
   adviceNoteForLead,
   fundingPlan,
@@ -2012,6 +2013,13 @@ async function runDemoAnalysis() {
   // "Nur Branche wählen" aus dem Berufs-Schritt: vorausgewaehlter Bereich
   // fuer Bildschirm 3 (Richtung).
   const [v2PreselectedBereich, setV2PreselectedBereich] = useState<string | null>(null);
+  // Schwerpunkte (Unterbereiche) aus Bildschirm 3, z. B. "IT-Projektmanagement"
+  // statt ganz "IT & Technik". Leer = "Noch offen – alles zeigen".
+  const [v2Schwerpunkte, setV2Schwerpunkte] = useState<string[]>([]);
+  const v2SchwerpunktRoleIds = useMemo(
+    () => new Set(SCHWERPUNKTE.filter((sp) => v2Schwerpunkte.includes(sp.key)).flatMap((sp) => sp.role_ids)),
+    [v2Schwerpunkte]
+  );
   // Beratungs-Bausteine (25.09.2026, journeyAdvice.ts): was der Person am
   // wichtigsten ist und was schwierig werden koennte — beides optional.
   const [v2Priority, setV2Priority] = useState<V2Priority | null>(null);
@@ -2244,13 +2252,14 @@ async function runDemoAnalysis() {
    *  ein (narrowDirection) und rechnet ab hier mit der daraus gebauten
    *  Richtungs-Rolle — genau wie selectBereich() mit der Bereichs-Rolle,
    *  nur konkret statt ueber den ganzen Bereich gemittelt. */
-  function v2ApplyDirection(bereichKeys: string[]) {
+  function v2ApplyDirection(bereichKeys: string[], schwerpunktKeys: string[] = []) {
     demoDataActiveRef.current = false;
+    setV2Schwerpunkte(schwerpunktKeys);
     const narrowed = narrowDirection({
       bereichKeys,
       activityIds,
       goal: careerGoal,
-      roles: rolesInPortfolio,
+      roles: rolesForSchwerpunkte(rolesInPortfolio, bereichKeys, schwerpunktKeys),
       qualification: v2Qualification,
       offeredRoleIds,
     });
@@ -2325,7 +2334,10 @@ async function runDemoAnalysis() {
   // Branche gewaehlt hat, sieht die Branche — die konkreten Moeglichkeiten
   // kommen erst im Ergebnis (Rueckmeldung 25.09.: sonst wirkt es, als haette
   // das System schon einen Beruf festgelegt).
-  const v2WayLabel = v2KnowsTarget ? targetRoleName : targetBereichLabel ?? null;
+  const v2SchwerpunktText = v2Schwerpunkte.map((k) => schwerpunktLabel(k)).filter(Boolean).join(" / ");
+  const v2WayLabel = v2KnowsTarget
+    ? targetRoleName
+    : [targetBereichLabel, v2SchwerpunktText || null].filter(Boolean).join(" · ") || null;
   /** Rahmen-Fragen nur, wenn der Katalog in der Richtung eine echte Wahl
    *  bietet (alle Kurse online -> Frage nach dem Ort entfaellt). */
   const v2RahmenVisibility = useMemo(() => {
@@ -3764,8 +3776,12 @@ async function runDemoAnalysis() {
       // UNTER der eingegrenzten Richtung fuehren, werden nicht aufgefuellt.
       const targetNiveau = v2Direction[0]?.role.anforderungsniveau ?? 0;
       const niveauById = new Map(ROLES_CATALOG.map((r) => [r.role_id, r.anforderungsniveau ?? 0]));
-      for (const course of extras) {
-        const pitch = buildCoursePitchV2(course as unknown as PitchCourse, ctx);
+      // Gewaehlter Schwerpunkt zuerst: Kurse, die zu einem Beruf dieses
+      // Schwerpunkts fuehren, vor allen anderen des Bereichs.
+      const pitched = extras.map((course) => ({ course, pitch: buildCoursePitchV2(course as unknown as PitchCourse, ctx) }));
+      const spRank = (reachId: string | undefined) => (v2SchwerpunktRoleIds.size === 0 ? 0 : reachId && v2SchwerpunktRoleIds.has(reachId) ? 0 : reachId ? 2 : 1);
+      pitched.sort((a, b) => spRank(a.pitch.ladder.reach?.role_id) - spRank(b.pitch.ladder.reach?.role_id));
+      for (const { course, pitch } of pitched) {
         const reachNiveau = pitch.ladder.reach ? niveauById.get(pitch.ladder.reach.role_id) ?? 0 : 0;
         if (pitch.ladder.reach && targetNiveau > 0 && reachNiveau < targetNiveau - 1) continue;
         out.push({ course, pitch, fromDirection: true });
@@ -3774,16 +3790,18 @@ async function runDemoAnalysis() {
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isV2, courseResult, allCourses, careerGoal, v2Situation, employmentType, desiredStart, v2Direction, v2Plan, v2Answers, v2Role, activityIds, targetBereichLabel, rolesInPortfolio, bereichRole]);
+  }, [isV2, courseResult, allCourses, careerGoal, v2Situation, employmentType, desiredStart, v2Direction, v2Plan, v2Answers, v2Role, activityIds, targetBereichLabel, rolesInPortfolio, bereichRole, v2SchwerpunktRoleIds]);
   /** Ergebnis, Weg ueber die Branche: realistische Berufe (Richtung) plus
    *  die Berufe, zu denen die empfohlenen Kurse fuehren — als Moeglichkeiten. */
   const v2Options = useMemo(() => {
     if (!isV2 || v2KnowsTarget) return [] as V2Option[];
     const out = new Map<string, V2Option>();
     const niveau = (r: CatalogRole) => (r.anforderungsniveau ? NIVEAU_LABELS[r.anforderungsniveau] : null);
+    // Mit Schwerpunkt: nur Berufe aus diesem Schwerpunkt als Moeglichkeit zeigen.
+    const inFocus = (roleId: string) => v2SchwerpunktRoleIds.size === 0 || v2SchwerpunktRoleIds.has(roleId);
     for (const card of v2ResultCards) {
       const reach = card.pitch.ladder.reach;
-      if (reach && !out.has(reach.role_id)) {
+      if (reach && !out.has(reach.role_id) && inFocus(reach.role_id)) {
         out.set(reach.role_id, { role_id: reach.role_id, role_name: reach.role_name, niveauLabel: reach.niveauLabel, experience: null, courseId: card.course.course_id, courseName: card.course.course_name, later: false });
       }
     }
@@ -3794,13 +3812,13 @@ async function runDemoAnalysis() {
     }
     for (const card of v2ResultCards) {
       const then = card.pitch.ladder.then;
-      if (then && !out.has(then.role_id)) {
+      if (then && !out.has(then.role_id) && inFocus(then.role_id)) {
         out.set(then.role_id, { role_id: then.role_id, role_name: then.role_name, niveauLabel: then.niveauLabel, experience: null, courseId: card.course.course_id, courseName: card.course.course_name, later: true });
       }
     }
     return [...out.values()].slice(0, 4);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isV2, v2KnowsTarget, v2ResultCards, v2Direction]);
+  }, [isV2, v2KnowsTarget, v2ResultCards, v2Direction, v2SchwerpunktRoleIds]);
   return (
     <>
       {depthBusy && (
@@ -3942,6 +3960,7 @@ async function runDemoAnalysis() {
                     activityIds={activityIds}
                     bereicheOptions={bereicheInPortfolio}
                     rolesInPortfolio={rolesInPortfolio}
+                    offeredRoleIds={offeredRoleIds}
                     onConfirm={v2ApplyDirection}
                     onBack={() => setCurrent(stepIndex("v2herkunft"))}
                   />
@@ -4053,7 +4072,7 @@ async function runDemoAnalysis() {
                     situation={v2Situation}
                     qualificationLevel={qualificationLevel}
                     options={v2Options}
-                    bereichLabel={targetBereichLabel ?? null}
+                    bereichLabel={v2SchwerpunktText || targetBereichLabel || null}
                     onAdjust={() => setCurrent(stepIndex("v2check"))}
                     onBack={() => setCurrent(stepIndex("v2rahmen"))}
                   />
@@ -4654,6 +4673,7 @@ function V2RichtungStep({
   activityIds,
   bereicheOptions,
   rolesInPortfolio,
+  offeredRoleIds,
   onConfirm,
   onBack,
 }: {
@@ -4663,10 +4683,36 @@ function V2RichtungStep({
   activityIds: string[];
   bereicheOptions: BereichOption[];
   rolesInPortfolio: CatalogRole[];
-  onConfirm: (bereichKeys: string[]) => void;
+  offeredRoleIds: ReadonlySet<string>;
+  onConfirm: (bereichKeys: string[], schwerpunktKeys: string[]) => void;
   onBack: () => void;
 }) {
   const [selected, setSelected] = useState<string[]>(() => initialSelected.filter((k) => bereicheOptions.some((b) => b.key === k)));
+  // Zweite Stufe: Schwerpunkt im Bereich (z. B. IT -> Projektmanagement).
+  const [phase, setPhase] = useState<"bereich" | "schwerpunkt">("bereich");
+  const [focus, setFocus] = useState<string[]>([]);
+  const focusGroups = useMemo(
+    () =>
+      selected
+        .map((key) => ({
+          bereich: bereicheOptions.find((b) => b.key === key),
+          options: schwerpunkteFor(key, rolesInPortfolio, { activityIds, offeredRoleIds }),
+        }))
+        .filter((g) => g.bereich && g.options.length >= 2),
+    [selected, bereicheOptions, rolesInPortfolio, activityIds, offeredRoleIds]
+  );
+  function confirmBereich() {
+    if (focusGroups.length === 0) {
+      onConfirm(selected, []);
+      return;
+    }
+    setFocus((prev) => prev.filter((k) => focusGroups.some((g) => g.options.some((o) => o.key === k))));
+    setPhase("schwerpunkt");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  function toggleFocus(key: string) {
+    setFocus((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : prev.length < 2 ? [...prev, key] : [prev[1], key]));
+  }
   const fit = useMemo(() => bereicheFromActivities(activityIds, rolesInPortfolio), [activityIds, rolesInPortfolio]);
   const withExperience = bereicheOptions
     .filter((b) => fit.has(b.key))
@@ -4674,6 +4720,68 @@ function V2RichtungStep({
   const others = bereicheOptions.filter((b) => !fit.has(b.key));
   function toggle(key: string) {
     setSelected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : prev.length < 2 ? [...prev, key] : [prev[1], key]));
+  }
+  if (phase === "schwerpunkt") {
+    const single = focusGroups.length === 1 ? focusGroups[0].bereich!.label : null;
+    return (
+      <div className="v2-focus">
+        <JourneyStepHeading
+          step="03"
+          kicker="DEIN SCHWERPUNKT"
+          title={single ? `Was reizt dich an ${single}?` : "Was reizt dich an deinen Bereichen?"}
+          description="Wähle ein oder zwei Schwerpunkte – dann fragen wir gezielt nur, was dafür wirklich zählt."
+        />
+        {focusGroups.map((g) => (
+          <div key={g.bereich!.key} className="v2-focus-group">
+            {!single && (
+              <div className="field-label v2-focus-group-title">
+                {BEREICH_ICONS[g.bereich!.key] ?? "🧭"} {g.bereich!.label}
+              </div>
+            )}
+            <div className="v2-focus-grid">
+              {g.options.map((o) => {
+                const isSel = focus.includes(o.key);
+                return (
+                  <button
+                    key={o.key}
+                    type="button"
+                    className={`v2-focus-card ${isSel ? "selected" : ""}`}
+                    aria-pressed={isSel}
+                    onClick={() => toggleFocus(o.key)}
+                  >
+                    {isSel && (
+                      <span className="role-card-check" aria-hidden="true">
+                        ✓
+                      </span>
+                    )}
+                    <span className="v2-focus-icon" aria-hidden="true">
+                      {o.icon}
+                    </span>
+                    <span className="v2-focus-label">{o.label}</span>
+                    <span className="v2-focus-hint">{o.hint}</span>
+                    {(o.experience >= SCHWERPUNKT_EXPERIENCE_MIN || o.hasOffer) && (
+                      <span className="v2-focus-tags">
+                        {o.experience >= SCHWERPUNKT_EXPERIENCE_MIN && <span className="v2-focus-tag exp">✓ Erfahrung vorhanden</span>}
+                        {o.hasOffer && <span className="v2-focus-tag offer">Passende Kurse</span>}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        <button type="button" className="v2-focus-open" onClick={() => onConfirm(selected, [])}>
+          🤷 Noch offen – zeig mir alle Möglichkeiten
+        </button>
+        <ActionsRow
+          onBack={() => setPhase("bereich")}
+          forwardLabel={focus.length > 0 ? "Passt – weiter →" : "Schwerpunkt wählen"}
+          forwardDisabled={focus.length === 0}
+          onForward={() => onConfirm(selected, focus)}
+        />
+      </div>
+    );
   }
   const title = goal === "neuorientierung" ? "In welchen Bereich möchtest du wechseln?" : "In welchem Bereich willst du weiterkommen?";
   function card(b: BereichOption) {
@@ -4724,7 +4832,7 @@ function V2RichtungStep({
         onBack={onBack}
         forwardLabel={selected.length > 0 ? "Passt – weiter →" : "Bereich wählen"}
         forwardDisabled={selected.length === 0}
-        onForward={() => onConfirm(selected)}
+        onForward={confirmBereich}
       />
     </div>
   );

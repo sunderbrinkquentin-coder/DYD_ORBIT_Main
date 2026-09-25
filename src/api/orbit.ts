@@ -1272,7 +1272,137 @@ export function fetchCourseUrlExtract(
     body: JSON.stringify({ mode: "extract", ...payload }),
   });
 }
+// ---------- Katalog-Assistent: Website verbinden & neue Kurse suchen ----------
+//
+// Eigene Edge Function "catalog-assistant" (supabase/functions/catalog-assistant).
+// Die gespeicherte Website gehoert zum Mandanten (API-Key) und liegt
+// serverseitig in catalog_sources — einmal anlegen, jederzeit aenderbar.
+// Gefundene Kurse werden NIE automatisch gespeichert: "Uebernehmen" oeffnet
+// sie im bestehenden URL-Import (fetchCourseUrlExtract) zur Pruefung.
 
+export function catalogAssistantBaseUrl(apiBase: string): string {
+  return apiBase.replace(/\/functions\/v1\/api\/?$/, "/functions/v1/catalog-assistant");
+}
+
+export interface CatalogSourceInfo {
+  id: string;
+  start_url: string;
+  name: string;
+  allowed_domains: string[];
+  updated_at: string;
+}
+
+export interface CatalogProposalSummary {
+  id: string;
+  kind: "new_course" | "possible_duplicate";
+  status: string;
+  run_id: string | null;
+  url: string;
+  title: string;
+  price_eur: number | null;
+  price_on_request: boolean;
+  next_start: string | null;
+  duration_weeks: number | null;
+  location_mode: string | null;
+  duplicate_of: { course_id: string; course_name: string; similarity: number } | null;
+  created_at: string;
+}
+
+export interface CatalogCrawlStats {
+  discovered: number;
+  checked: number;
+  course_pages: number;
+  new_courses: number;
+  possible_duplicates: number;
+  already_known: number;
+  skipped_known: number;
+  errors: number;
+  transient_errors: number;
+  skipped_by_robots: number;
+}
+
+export type CatalogRunStatus = "queued" | "running" | "complete" | "partial" | "failed" | "empty_source";
+
+export interface CatalogCrawlOutcome {
+  status: Exclude<CatalogRunStatus, "queued" | "running">;
+  new_courses: CatalogProposalSummary[];
+  possible_duplicates: CatalogProposalSummary[];
+  earlier_open: CatalogProposalSummary[];
+  stats: CatalogCrawlStats;
+  truncated: boolean;
+  message: string | null;
+  finished_at: string;
+}
+
+export interface CatalogCrawlProgress {
+  run_id: string;
+  status: CatalogRunStatus;
+  checked: number;
+  total: number;
+  found_so_far: number;
+  resumed?: boolean;
+  outcome?: CatalogCrawlOutcome;
+}
+
+export interface CatalogOverview {
+  source: CatalogSourceInfo | null;
+  active_run: CatalogCrawlProgress | null;
+  last_run: { id: string; status: CatalogRunStatus; finished_at: string | null; stats: CatalogCrawlStats | null } | null;
+  open: CatalogProposalSummary[];
+}
+
+/**
+ * Wie requestJson, zeigt bei 400/409 aber die Meldung des Servers: die
+ * Texte von "catalog-assistant" sind eigens fuer Nutzer formuliert (z. B.
+ * "Die Adresse ... ist nicht erreichbar"). Alles andere bleibt allgemein.
+ */
+async function catalogRequest<T>(base: string, apiKey: string, path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${base.replace(/\/$/, "")}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", "X-API-Key": apiKey, ...(init?.headers ?? {}) },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    console.error(`Katalog-Assistent ${path} fehlgeschlagen (HTTP ${res.status})`, text);
+    if (res.status === 400 || res.status === 409) {
+      try {
+        const detail = (JSON.parse(text) as { detail?: unknown }).detail;
+        if (typeof detail === "string" && detail.length > 0 && detail.length < 300) throw new Error(detail);
+      } catch (e) {
+        if (e instanceof Error && !(e instanceof SyntaxError)) throw e;
+      }
+    }
+    if (res.status === 404 && path === "") {
+      throw new Error('Die Kurssuche ist noch nicht eingerichtet (Edge Function "catalog-assistant" fehlt).');
+    }
+    throw new Error(genericRequestError(res.status));
+  }
+  return res.json() as Promise<T>;
+}
+
+export function fetchCatalogOverview(base: string, apiKey: string): Promise<CatalogOverview> {
+  return catalogRequest<CatalogOverview>(base, apiKey, "");
+}
+
+export function saveCatalogSource(base: string, apiKey: string, startUrl: string): Promise<{ source: CatalogSourceInfo }> {
+  return catalogRequest(base, apiKey, "/source", { method: "PUT", body: JSON.stringify({ start_url: startUrl }) });
+}
+
+export function startCatalogCrawl(base: string, apiKey: string): Promise<CatalogCrawlProgress> {
+  return catalogRequest(base, apiKey, "/crawl", { method: "POST", body: "{}" });
+}
+
+export function stepCatalogCrawl(base: string, apiKey: string, runId: string): Promise<CatalogCrawlProgress> {
+  return catalogRequest(base, apiKey, `/crawl/${encodeURIComponent(runId)}/step`, { method: "POST", body: "{}" });
+}
+
+export function ignoreCatalogProposal(base: string, apiKey: string, id: string, reason?: string): Promise<{ ok: true }> {
+  return catalogRequest(base, apiKey, `/proposals/${encodeURIComponent(id)}/ignore`, { method: "POST", body: JSON.stringify({ reason: reason ?? null }) });
+}
+
+export function acceptCatalogProposal(base: string, apiKey: string, id: string, courseId: string): Promise<{ ok: true }> {
+  return catalogRequest(base, apiKey, `/proposals/${encodeURIComponent(id)}/accept`, { method: "POST", body: JSON.stringify({ course_id: courseId }) });
+}
 // ---------- Default-Werte ----------
 
 export const DEFAULT_MIN_SCORE = 60.0;

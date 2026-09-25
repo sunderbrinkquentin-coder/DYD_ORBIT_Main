@@ -1,0 +1,322 @@
+/**
+ * Kurs-Zuordnung: Skills und Zielrollen fuer einen Kurs vorschlagen.
+ *
+ * Eine gemeinsame, deterministische Logik fuer alle Wege, auf denen Kurse in
+ * den Katalog kommen (manuelles Formular, URL-Import, CSV-Import und spaeter
+ * der Katalog-Assistent). Alles laeuft lokal gegen denselben Katalog wie die
+ * Journey (ROLES_CATALOG/SKILLS_CATALOG via matchSkills) - vorher liefen die
+ * Zielrollen-Vorschlaege ueber die Backend-Gap-Analyse und nur ueber die
+ * ersten 15 Rollen, waehrend die Journey mit 126 lokalen Rollen arbeitet.
+ *
+ * Grundsaetze:
+ *  - Nur Vorschlaege mit Begruendung; nichts wird automatisch gesetzt.
+ *  - Skills nur aus dem, was der Kurs VERMITTELT (Titel, Lerninhalte,
+ *    Beschreibung). Was nur unter Voraussetzungen/Zielgruppe steht, ist kein
+ *    Kurs-Skill ("Excel-Grundkenntnisse vorausgesetzt").
+ *  - Unscharfe Treffer (Tippfehler-Toleranz) nur in kurzen Feldern (Titel,
+ *    einzelne Lernziele), nicht in langen Beschreibungen - dort erzeugen sie
+ *    ueberwiegend Rauschen.
+ *  - Zielrollen: (1) Kurstitel entspricht der typischen Weiterbildung oder
+ *    der Berufsbezeichnung einer Rolle, (2) Anteil der Kern-Skills der Rolle,
+ *    die der Kurs abdeckt, und Anteil der Kurs-Skills, die zur Rolle gehoeren.
+ */
+
+import { ROLES_CATALOG, type CatalogRole } from "./rolesCatalog";
+import { matchSkills } from "./skillMatcher";
+
+export type Confidence = "hoch" | "mittel" | "niedrig";
+export type SkillSource = "titel" | "lerninhalte" | "beschreibung";
+
+export interface CourseText {
+  title: string;
+  description?: string | null;
+  /** Lerninhalte/Module/Lernziele - je Eintrag ein Punkt oder ein Freitext. */
+  learningGoals?: string[] | null;
+  /** Voraussetzungen/Zielgruppe: dient NUR zum Ausschluss, nie als Skill-Quelle. */
+  prerequisites?: string | null;
+  /** Bereits gewaehlte Bereiche - bevorzugt Rollen desselben Bereichs leicht. */
+  bereichKeys?: string[] | null;
+}
+
+export interface SkillSuggestion {
+  skill_id: string;
+  name: string;
+  confidence: Confidence;
+  sources: SkillSource[];
+  /** Woertliche Fundstelle (gekuerzt) fuer die Anzeige als Beleg. */
+  evidence: string;
+  score: number;
+}
+
+export interface ExcludedSkill {
+  skill_id: string;
+  name: string;
+  reason: string;
+}
+
+export interface RoleSuggestion {
+  role_id: string;
+  role_name: string;
+  bereich_label: string;
+  confidence: Confidence;
+  /** Interner Rangwert 0..1 (nicht als Prozent anzeigen). */
+  rank: number;
+  /** Kurze, verstaendliche Begruendung fuer die Anzeige. */
+  reason: string;
+  title_match: boolean;
+  matched_skills: string[];
+  role_skill_count: number;
+}
+
+export interface CourseClassification {
+  skills: SkillSuggestion[];
+  excluded: ExcludedSkill[];
+  roles: RoleSuggestion[];
+}
+
+// ---------------------------------------------------------------------------
+// Text-Normalisierung
+// ---------------------------------------------------------------------------
+
+export function normalizeDe(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss");
+}
+
+/**
+ * Macht Berufs-/Abschlussbezeichnungen vergleichbar:
+ * "Geprüfte/r Industriefachwirt/in (IHK)" -> "industriefachwirt",
+ * "Personalfachkaufmann/-frau (IHK)" -> "personalfachkaufmann",
+ * "Industriefachwirtin IHK" -> "industriefachwirt".
+ */
+export function titleKey(s: string): string {
+  let t = normalizeDe(s);
+  t = t.replace(/\((ihk|hwk|dkg|dgq|dvs\/iws|m\/w\/d|w\/m\/d)\)/g, " ");
+  t = t.replace(/\b(ihk|hwk)\b/g, " ");
+  t = t.replace(/\b(staatlich\s+)?gepruefte?r?\b(\/r)?/g, " ");
+  t = t.replace(/\bzertifizierte?r?\b(\/r)?/g, " ");
+  t = t.replace(/\/-?(in|innen|frau|r|e)\b/g, "");
+  t = t.replace(/kauffrau/g, "kaufmann").replace(/fachfrau/g, "fachmann");
+  t = t.replace(/\/(koechin|pflegefachmann)\b/g, "");
+  t = t.replace(/\(.*?\)/g, " ");
+  t = t.replace(/[^a-z0-9]+/g, " ");
+  const words = t
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => (w.length > 7 && /(wirt|ist|ant|ent|eur|ler|ner|ter|ker|ger|rer|ser|ier|ter|or)in$/.test(w) ? w.slice(0, -2) : w))
+    .filter((w) => !["kurs", "lehrgang", "weiterbildung", "vorbereitung", "auf", "die", "zum", "zur", "der", "und", "berufsbegleitend", "online", "vollzeit", "teilzeit", "pruefung", "pruefungsvorbereitung", "zertifikat"].includes(w));
+  return words.join(" ").trim();
+}
+
+function roleTitleKeys(role: CatalogRole): { key: string; kind: "weiterbildung" | "beruf"; label: string }[] {
+  const out: { key: string; kind: "weiterbildung" | "beruf"; label: string }[] = [];
+  const tw = (role as CatalogRole & { typische_weiterbildung?: string }).typische_weiterbildung;
+  if (tw) {
+    for (const part of tw.split(/\s+\/\s+/)) {
+      const key = titleKey(part);
+      if (key.length >= 6) out.push({ key, kind: "weiterbildung", label: part.trim() });
+    }
+  }
+  const rk = titleKey(role.role_name);
+  if (rk.length >= 6) out.push({ key: rk, kind: "beruf", label: role.role_name });
+  return out;
+}
+
+/** Enthaelt `haystack` die Wortfolge `needle` (auf Wortgrenzen)? */
+function containsPhrase(haystack: string, needle: string): boolean {
+  if (!needle) return false;
+  return ` ${haystack} `.includes(` ${needle} `);
+}
+
+// ---------------------------------------------------------------------------
+// Skills
+// ---------------------------------------------------------------------------
+
+function snippet(text: string, term: string): string {
+  const idx = text.toLowerCase().indexOf(term.toLowerCase());
+  if (idx < 0) return text.slice(0, 120).trim();
+  const start = Math.max(0, text.lastIndexOf(" ", Math.max(0, idx - 40)));
+  const end = Math.min(text.length, idx + term.length + 60);
+  return `${start > 0 ? "…" : ""}${text.slice(start, end).trim()}${end < text.length ? "…" : ""}`;
+}
+
+/**
+ * Sehr allgemeine Katalog-Begriffe, die in Kurstexten fast immer in anderer
+ * Bedeutung vorkommen ("Ausbildung zum ...", "Lohnabrechnung", "Data
+ * Analytics"). Sie werden nur als unsichere Vorschlaege gefuehrt.
+ */
+const GENERIC_SKILL_IDS = new Set(["ausbildung", "abrechnung", "analytics", "betreuung", "wartung", "testing", "monitoring", "reporting", "routing", "verhandlung"]);
+
+interface RawHit {
+  skill_id: string;
+  name: string;
+  score: number;
+  matched_on: string;
+  source: SkillSource;
+  text: string;
+}
+
+function hitsIn(text: string, source: SkillSource, allowFuzzy: boolean): RawHit[] {
+  const clean = (text ?? "").trim();
+  if (clean.length < 2) return [];
+  return matchSkills(clean, { maxResults: 60, minScore: allowFuzzy ? 85 : 100 }).map((m) => ({
+    skill_id: m.skill_id,
+    name: m.name,
+    score: m.score,
+    matched_on: m.matched_on,
+    source,
+    text: clean,
+  }));
+}
+
+export function suggestSkills(input: CourseText): { skills: SkillSuggestion[]; excluded: ExcludedSkill[] } {
+  const hits: RawHit[] = [];
+  hits.push(...hitsIn(input.title, "titel", true));
+  for (const goal of input.learningGoals ?? []) {
+    // Einzelne Lernziele sind kurz genug fuer eine Tippfehler-Toleranz.
+    hits.push(...hitsIn(goal, "lerninhalte", goal.length <= 160));
+  }
+  hits.push(...hitsIn(input.description ?? "", "beschreibung", false));
+
+  // Mehrere Katalog-Skills auf DERSELBEN Fundstelle (z.B. "Personalführung"
+  // und "Personalführung (Grundlagen)"): nur den behalten, dessen Name der
+  // Fundstelle entspricht - sonst erscheint derselbe Inhalt doppelt.
+  const sameSpot = new Map<string, RawHit[]>();
+  for (const h of hits) {
+    const k = `${h.source}|${h.text}|${normalizeDe(h.matched_on)}`;
+    sameSpot.set(k, [...(sameSpot.get(k) ?? []), h]);
+  }
+  const deduped: RawHit[] = [];
+  for (const group of sameSpot.values()) {
+    if (group.length === 1) {
+      deduped.push(group[0]);
+      continue;
+    }
+    const exactName = group.find((h) => normalizeDe(h.name) === normalizeDe(h.matched_on));
+    deduped.push(exactName ?? [...group].sort((a, b) => a.name.length - b.name.length)[0]);
+  }
+
+  const bySkill = new Map<string, RawHit[]>();
+  for (const h of deduped) {
+    const list = bySkill.get(h.skill_id) ?? [];
+    list.push(h);
+    bySkill.set(h.skill_id, list);
+  }
+
+  const prereqIds = new Set(
+    input.prerequisites ? matchSkills(input.prerequisites, { maxResults: 60, minScore: 100 }).map((m) => m.skill_id) : [],
+  );
+
+  const skills: SkillSuggestion[] = [];
+  const excluded: ExcludedSkill[] = [];
+  for (const [skillId, list] of bySkill) {
+    const sources = [...new Set(list.map((h) => h.source))];
+    const best = [...list].sort((a, b) => b.score - a.score)[0];
+    const exact = list.some((h) => h.score >= 100);
+    if (prereqIds.has(skillId) && !sources.includes("titel") && !sources.includes("lerninhalte")) {
+      excluded.push({ skill_id: skillId, name: best.name, reason: "Steht nur bei Voraussetzungen/Zielgruppe - wird vorausgesetzt, nicht vermittelt." });
+      continue;
+    }
+    let confidence: Confidence;
+    if (GENERIC_SKILL_IDS.has(skillId)) confidence = "niedrig";
+    else if (exact && (sources.includes("titel") || sources.length >= 2)) confidence = "hoch";
+    else if (exact) confidence = "mittel";
+    else confidence = "niedrig";
+    const evidenceHit = list.find((h) => h.source === "lerninhalte") ?? list.find((h) => h.source === "titel") ?? best;
+    skills.push({
+      skill_id: skillId,
+      name: best.name,
+      confidence,
+      sources,
+      evidence: snippet(evidenceHit.text, evidenceHit.matched_on),
+      score: best.score,
+    });
+  }
+  const order: Record<Confidence, number> = { hoch: 0, mittel: 1, niedrig: 2 };
+  skills.sort((a, b) => order[a.confidence] - order[b.confidence] || b.sources.length - a.sources.length || a.name.localeCompare(b.name, "de"));
+  return { skills, excluded };
+}
+
+// ---------------------------------------------------------------------------
+// Zielrollen
+// ---------------------------------------------------------------------------
+
+export interface SuggestRolesOptions {
+  /** Max. Anzahl Vorschlaege (Default 5). */
+  limit?: number;
+  catalog?: CatalogRole[];
+}
+
+export function suggestRoles(input: CourseText, skillIds: Iterable<string>, opts: SuggestRolesOptions = {}): RoleSuggestion[] {
+  const catalog = opts.catalog ?? ROLES_CATALOG;
+  const limit = opts.limit ?? 5;
+  const titleNorm = titleKey(input.title);
+  const courseSkills = new Set(skillIds);
+  const bereiche = new Set(input.bereichKeys ?? []);
+  const out: RoleSuggestion[] = [];
+
+  for (const role of catalog) {
+    if (role.role_id.startsWith("bereich:")) continue;
+    const titleHit = roleTitleKeys(role).find((k) => containsPhrase(titleNorm, k.key));
+    const roleSkillIds = role.skills.map((s) => s.skill_id);
+    const matched = role.skills.filter((s) => courseSkills.has(s.skill_id));
+    const coverage = matched.reduce((sum, s) => sum + s.weight, 0) / 100;
+    const precision = courseSkills.size ? matched.length / courseSkills.size : 0;
+
+    let rank = 0.6 * coverage + 0.4 * precision;
+    if (titleHit) rank += titleHit.kind === "weiterbildung" ? 1 : 0.8;
+    if (bereiche.size && bereiche.has(role.bereich_key)) rank += 0.05;
+
+    const skillBased = matched.length >= 3 || (matched.length >= 2 && coverage >= 0.15);
+    if (!titleHit && !skillBased) continue;
+
+    const confidence: Confidence = titleHit ? "hoch" : coverage >= 0.3 && matched.length >= 3 ? "mittel" : "niedrig";
+    const names = matched.map((s) => s.name);
+    const skillPart = matched.length
+      ? `deckt ${matched.length} von ${roleSkillIds.length} Kern-Skills ab (${names.slice(0, 4).join(", ")}${names.length > 4 ? " …" : ""})`
+      : "";
+    const reason = titleHit
+      ? `Kurstitel entspricht ${titleHit.kind === "weiterbildung" ? "der typischen Weiterbildung" : "der Berufsbezeichnung"} „${titleHit.label}“${skillPart ? `; ${skillPart}` : ""}`
+      : skillPart.charAt(0).toUpperCase() + skillPart.slice(1);
+
+    out.push({
+      role_id: role.role_id,
+      role_name: role.role_name,
+      bereich_label: role.bereich_label,
+      confidence,
+      rank,
+      reason,
+      title_match: Boolean(titleHit),
+      matched_skills: names,
+      role_skill_count: roleSkillIds.length,
+    });
+  }
+  out.sort((a, b) => b.rank - a.rank || a.role_name.localeCompare(b.role_name, "de"));
+  // Gibt es Titeltreffer, stehen nur diese plus starke Skill-Treffer oben -
+  // schwache Skill-Treffer wuerden dann nur ablenken.
+  const hasStrong = out.some((r) => r.confidence !== "niedrig");
+  return (hasStrong ? out.filter((r) => r.confidence !== "niedrig") : out).slice(0, limit);
+}
+
+export function classifyCourse(input: CourseText, opts: SuggestRolesOptions = {}): CourseClassification {
+  const { skills, excluded } = suggestSkills(input);
+  const roles = suggestRoles(
+    input,
+    skills.filter((s) => s.confidence !== "niedrig").map((s) => s.skill_id),
+    opts,
+  );
+  return { skills, excluded, roles };
+}
+
+/** Zerlegt einen Beschreibungs-/Seitentext in Lernziel-Punkte (Aufzaehlungen, Zeilen). */
+export function splitLearningGoals(text: string | null | undefined): string[] {
+  if (!text) return [];
+  return text
+    .split(/\r?\n|•|·|;|(?:^|\s)[-–]\s/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 3 && s.length <= 300);
+}

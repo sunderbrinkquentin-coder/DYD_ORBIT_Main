@@ -1995,6 +1995,9 @@ async function runDemoAnalysis() {
   const [v2EvidenceRemoved, setV2EvidenceRemoved] = useState<Set<string>>(new Set());
   const [v2Situation, setV2Situation] = useState<Situation | null>(null);
   const [v2Preparing, setV2Preparing] = useState(false);
+  // "Nur Branche wählen" aus dem Berufs-Schritt: vorausgewaehlter Bereich
+  // fuer Bildschirm 3 (Richtung).
+  const [v2PreselectedBereich, setV2PreselectedBereich] = useState<string | null>(null);
   // Beratungs-Bausteine (25.09.2026, journeyAdvice.ts): was der Person am
   // wichtigsten ist und was schwierig werden koennte — beides optional.
   const [v2Priority, setV2Priority] = useState<V2Priority | null>(null);
@@ -2190,6 +2193,22 @@ async function runDemoAnalysis() {
     demoDataActiveRef.current = false;
     setV2KnowsTarget(true);
     setCurrent(V2_STEPS_KNOWN.findIndex((st) => st.key === "zielrolle"));
+  }
+  /** 25.09.2026: Im Berufs-Schritt "Nur Branche wählen" — zurueck auf den
+   *  Bereichs-Weg (V2_STEPS_UNSURE), Branche fuer "Richtung" vorgemerkt.
+   *  Weiter geht es mit "Erfahrung"; der Index wird direkt in der neuen
+   *  Folge bestimmt, weil setV2KnowsTarget erst beim naechsten Render wirkt. */
+  function v2ChooseBereichInstead(bereichKey: string | null) {
+    demoDataActiveRef.current = false;
+    setV2PreselectedBereich(bereichKey);
+    setV2KnowsTarget(false);
+    setCurrent(V2_STEPS_UNSURE.findIndex((st) => st.key === "v2herkunft"));
+  }
+  /** v1: gleicher Ausweg im Zielrollen-Schritt -> Bereichs-Pfad. */
+  function v1ChooseBereichInstead() {
+    demoDataActiveRef.current = false;
+    setKnowsRole(false);
+    setCurrent(WITH_BEREICH_STEPS.findIndex((st) => st.key === "bereich"));
   }
   /** Bildschirm 2: Abschluss gewaehlt — zusaetzlich auf das bestehende
    *  Voraussetzungs-Feld abbilden (checkPrerequisites kennt keine/
@@ -3873,6 +3892,8 @@ async function runDemoAnalysis() {
                 )}
                 {stepKey === "v2richtung" && (
                   <V2RichtungStep
+                    key={v2PreselectedBereich ?? "none"}
+                    initialSelected={v2PreselectedBereich ? [v2PreselectedBereich] : []}
                     goal={careerGoal}
                     activityIds={activityIds}
                     bereicheOptions={bereicheInPortfolio}
@@ -4051,6 +4072,7 @@ async function runDemoAnalysis() {
                     onSelect={selectRole}
                     onForward={() => setCurrent(stepIndex(isV2 ? "v2herkunft" : "skills"))}
                     onBack={() => setCurrent(stepIndex(isV2 ? "v2ziel" : knowsRole === false ? "bereich" : "praeferenzen"))}
+                    onChooseBereich={isV2 ? v2ChooseBereichInstead : knowsRole === true ? () => v1ChooseBereichInstead() : undefined}
                   />
                 )}
                 {stepKey === "skills" && (
@@ -4459,7 +4481,7 @@ function V2GoalStep({
         step="01"
         kicker="DEIN ZIEL"
         title="Was soll sich für dich beruflich verändern?"
-        description="Ein Tipp genügt. In wenigen Minuten bekommst du deine persönliche Weiterbildungs-Empfehlung – kostenlos und unverbindlich."
+        description="Ein Tipp genügt – einen konkreten Beruf musst du nicht kennen, die Branche reicht. In wenigen Minuten bekommst du deine persönliche Weiterbildungs-Empfehlung, kostenlos und unverbindlich."
       />
       <div className="role-grid">
         {GOAL_OPTIONS.map((g) => (
@@ -4580,6 +4602,7 @@ function V2HerkunftStep({
  *  Worten der Person. Keine Rollentitel, keine Skill-Chips (die Eingrenzung
  *  auf konkrete Berufe passiert unsichtbar in v2ApplyDirection). */
 function V2RichtungStep({
+  initialSelected = [],
   goal,
   activityIds,
   bereicheOptions,
@@ -4587,6 +4610,8 @@ function V2RichtungStep({
   onConfirm,
   onBack,
 }: {
+  /** Vorauswahl, z. B. aus "Nur Branche wählen" im Berufs-Schritt. */
+  initialSelected?: string[];
   goal: string | null;
   activityIds: string[];
   bereicheOptions: BereichOption[];
@@ -4594,7 +4619,7 @@ function V2RichtungStep({
   onConfirm: (bereichKeys: string[]) => void;
   onBack: () => void;
 }) {
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>(() => initialSelected.filter((k) => bereicheOptions.some((b) => b.key === k)));
   const fit = useMemo(() => bereicheFromActivities(activityIds, rolesInPortfolio), [activityIds, rolesInPortfolio]);
   const withExperience = bereicheOptions
     .filter((b) => fit.has(b.key))
@@ -5861,6 +5886,7 @@ function ZielrolleStep({
   onForward,
   onBack,
   catalogRoles,
+  onChooseBereich,
 }: {
   roles: TargetRole[];
   loading: boolean;
@@ -5874,6 +5900,10 @@ function ZielrolleStep({
    *  Niveau, typische Weiterbildung) zu `roles` — optional, ohne sie faellt
    *  die Ansicht auf die bisherige flache Kartenliste zurueck. */
   catalogRoles?: CatalogRole[];
+  /** 25.09.2026: Ausweg "Ich weiss nur die Branche" — statt eines konkreten
+   *  Berufs mit einem ganzen Bereich weitermachen (null = Bereich erst im
+   *  naechsten Schritt waehlen). Ohne diese Prop bleibt die Ansicht wie bisher. */
+  onChooseBereich?: (bereichKey: string | null) => void;
 }) {
   const catalogById = useMemo(() => new Map((catalogRoles ?? []).map((r) => [r.role_id, r] as const)), [catalogRoles]);
   const weiterbildungById = useMemo(() => {
@@ -5997,6 +6027,20 @@ function ZielrolleStep({
         title="Welche Rolle möchtest du als Nächstes erreichen?"
         description="Wähle eine konkrete Zielrolle oder suche nach dem Job, der dich interessiert."
       />
+      {onChooseBereich && (
+        <div className="bereich-escape">
+          <span className="bereich-escape-icon" aria-hidden="true">
+            🏢
+          </span>
+          <div className="bereich-escape-text">
+            <strong>Noch keinen konkreten Beruf im Kopf?</strong>
+            <span>Wähle einfach deine Branche – den passenden Beruf finden wir gemeinsam.</span>
+          </div>
+          <button type="button" className="bereich-escape-btn" onClick={() => onChooseBereich(bereichFilter ?? (bereichOrder.length === 1 ? bereichOrder[0].key : null))}>
+            {bereichFilter ? `Mit „${bereichOrder.find((b) => b.key === bereichFilter)?.label ?? "diesem Bereich"}“ weiter →` : "Nur Branche wählen →"}
+          </button>
+        </div>
+      )}
       <input
         id="roleSearchInput"
         className="big-input"

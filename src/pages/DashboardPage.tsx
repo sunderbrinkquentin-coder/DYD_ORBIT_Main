@@ -17,6 +17,8 @@ import {
   type TargetRoleSkillInput,
 } from "../api/core";
 import {
+  acceptCatalogProposal,
+  catalogAssistantBaseUrl,
   courseCopyAssistBaseUrl,
   courseUrlImportBaseUrl,
   createLead,
@@ -24,7 +26,7 @@ import {
   depthAnalysisBaseUrl,
   fetchCourses,
   fetchCourseCopyAssist,
-  fetchCourseUrlDiscover,
+  fetchCatalogOverview,
   fetchCourseUrlExtract,
   fetchDepthAnalysis,
   bereichLabelsOf,
@@ -37,6 +39,8 @@ import {
   // NICHT importiert: nextUpcomingSession/isSessionUpcoming — werden nur in
   // orbit.ts selbst bzw. in JourneyPage.tsx gebraucht, nicht hier im
   // Dashboard (noUnusedLocals/-Parameters, siehe tsconfig.json).
+  ignoreCatalogProposal,
+  saveCatalogSource,
   setCourseFeatured,
   setLeadAssignedTo,
   setLeadBooked,
@@ -45,7 +49,12 @@ import {
   setLeadConsultationScheduled,
   setLeadLinkedCourses,
   skillLevelDetectBaseUrl,
+  startCatalogCrawl,
+  stepCatalogCrawl,
   upsertCourse,
+  type CatalogCrawlOutcome,
+  type CatalogOverview,
+  type CatalogProposalSummary,
   type CourseCategory,
   type CourseSession,
   type CourseSkillEntry,
@@ -63,7 +72,7 @@ import { guessExperienceLevel } from "../lib/skillLevel";
 import { matchSkills } from "../data/skillMatcher";
 import { listBereiche } from "../data/gapAnalysis";
 import { ROLES_CATALOG } from "../data/rolesCatalog";
-import { classifyCourse, splitLearningGoals, type Confidence as SuggestionConfidence } from "../data/courseClassifier";
+import { classifyCourse, splitLearningGoals, suggestBereiche, type Confidence as SuggestionConfidence } from "../data/courseClassifier";
 import { BereichBadges, CourseBadgeRow } from "../data/courseBadges";
 import { AnimatedNumber } from "../components/AnimatedNumber";
 import { DashboardTour } from "../components/DashboardTour";
@@ -526,26 +535,11 @@ const BEREICH_OPTIONS = listBereiche();
  *  oben), damit nichts unbemerkt "erraten" wird. Bereiche mit mind. 50% des
  *  Spitzenwerts werden mit vorgeschlagen (deckt "allgemeine Weiterbildung,
  *  die in mehrere Bereiche passt" ab), maximal 3. */
-function suggestBereicheForText(text: string): string[] {
-  if (text.trim().length < MIN_DESCRIPTION_FOR_SKILL_DETECT) return [];
-  const matches = matchSkills(text, { maxResults: 30, minScore: 60 });
-  const matchedSkillIds = new Set(matches.map((m) => m.skill_id));
-  if (matchedSkillIds.size === 0) return [];
-  const scoreByBereich = new Map<string, number>();
-  for (const role of ROLES_CATALOG) {
-    for (const s of role.skills) {
-      if (matchedSkillIds.has(s.skill_id)) {
-        scoreByBereich.set(role.bereich_key, (scoreByBereich.get(role.bereich_key) ?? 0) + s.weight);
-      }
-    }
-  }
-  const sorted = [...scoreByBereich.entries()].sort((a, b) => b[1] - a[1]);
-  if (sorted.length === 0) return [];
-  const top = sorted[0][1];
-  return sorted
-    .filter(([, score]) => score >= top * 0.5)
-    .slice(0, 3)
-    .map(([key]) => key);
+function suggestBereicheForText(title: string, description = ""): string[] {
+  // Seit 25.09.2026 ueber courseClassifier (siehe suggestBereiche) statt
+  // Unscharf-Suche ueber den gesamten Text - gleiche Logik wie im Formular.
+  if (`${title} ${description}`.trim().length < MIN_DESCRIPTION_FOR_SKILL_DETECT) return [];
+  return suggestBereiche(classifyCourse({ title, description, learningGoals: splitLearningGoals(description) }));
 }
 const DEFAULT_COURSE_FORM: CourseFormState = {
   courseId: "",
@@ -1519,14 +1513,32 @@ export function DashboardPage({
   // Entwuerfe werden NIE direkt gespeichert, sondern befuellen das
   // bestehende manuelle Formular oben (courseForm) zur Pruefung — kein
   // eigener, zweiter Speicher-Pfad noetig, siehe applyCourseUrlDraftToForm.
-  const [urlImportDomain, setUrlImportDomain] = useState("");
   const [urlImportSingleUrl, setUrlImportSingleUrl] = useState("");
-  const [urlImportDiscoverBusy, setUrlImportDiscoverBusy] = useState(false);
+  // Fehlermeldungen rund um den URL-Import (nicht verbunden, leere URL).
+  // Der Name stammt noch vom frueheren "Domain durchsuchen", das durch die
+  // gespeicherte Website-Suche (catalog-assistant, siehe unten) ersetzt ist.
   const [urlImportDiscoverError, setUrlImportDiscoverError] = useState<string | null>(null);
-  const [urlImportCandidates, setUrlImportCandidates] = useState<string[]>([]);
-  const [urlImportSelected, setUrlImportSelected] = useState<Set<string>>(new Set());
-  const [urlImportSitemapUrl, setUrlImportSitemapUrl] = useState<string | null>(null);
-  const [urlImportTruncated, setUrlImportTruncated] = useState(false);
+  const urlImportDetailsRef = useRef<HTMLDetailsElement>(null);
+  const urlImportSingleInputRef = useRef<HTMLInputElement>(null);
+  // ---------- Website-Katalog: gespeicherte Website + "Neue Kurse suchen"
+  // (25.09.). Die Adresse liegt serverseitig je Mandant (catalog_sources),
+  // wird einmal angelegt und ist jederzeit aenderbar. Die Suche laeuft in
+  // kurzen Schritten (stepCatalogCrawl), das Ergebnis erscheint IMMER als
+  // Popup — mit den neuen Kursen oder mit dem Hinweis auf manuell/per Link.
+  const [catalogOverview, setCatalogOverview] = useState<CatalogOverview | null>(null);
+  const [catalogLoadError, setCatalogLoadError] = useState<string | null>(null);
+  const [catalogUrlInput, setCatalogUrlInput] = useState("");
+  const [catalogEditingUrl, setCatalogEditingUrl] = useState(false);
+  const [catalogSaving, setCatalogSaving] = useState(false);
+  const [catalogSaveError, setCatalogSaveError] = useState<string | null>(null);
+  const [catalogCrawl, setCatalogCrawl] = useState<{ runId: string; checked: number; total: number; found: number } | null>(null);
+  const [catalogCrawlError, setCatalogCrawlError] = useState<string | null>(null);
+  const [catalogResult, setCatalogResult] = useState<(CatalogCrawlOutcome & { review: boolean }) | null>(null);
+  const [catalogBusyIds, setCatalogBusyIds] = useState<Set<string>>(new Set());
+  // URL der Kursseite -> Vorschlags-ID: nach dem Speichern eines so
+  // geoeffneten Kurses wird der Vorschlag als "uebernommen" markiert.
+  const catalogProposalByUrlRef = useRef<Map<string, string>>(new Map());
+  const catalogCrawlAliveRef = useRef(true);
   // Warteschlange fuer den "ein Kurs nach dem anderen zur Pruefung"-Ablauf
   // (siehe startUrlImportQueue/advanceUrlImportQueue): urlImportQueue sind
   // die noch NICHT begonnenen URLs, urlImportCurrentUrl die gerade ins
@@ -1608,7 +1620,6 @@ export function DashboardPage({
       tourStepSelector === '[data-tour="kurse-url-import"]' &&
       !urlExampleAppliedRef.current &&
       !urlImportSingleUrl.trim() &&
-      !urlImportDomain.trim() &&
       !urlImportCurrentUrl &&
       urlImportQueueTotal === 0
     ) {
@@ -2210,6 +2221,9 @@ export function DashboardPage({
         return exists ? prev.map((c) => (c.course_id === saved.course_id ? saved : c)) : [...prev, saved];
       });
       const wasEditing = Boolean(editingCourseId);
+      // Aus der Website-Suche geoeffnet? Dann den Vorschlag als übernommen
+      // markieren (verknuepft Kursseite und Katalogkurs, siehe catalog-assistant).
+      if (!wasEditing) markCatalogProposalAccepted(urlImportCurrentUrl, saved.course_id);
       // War dieser Kurs Teil einer URL-Import-Warteschlange (nicht: eine
       // bestehende bereits gespeicherte URL-Import-Karteikarte editieren)?
       // Nur dann nach dem Speichern automatisch zum naechsten Kurs
@@ -2653,10 +2667,23 @@ export function DashboardPage({
     // veränderbar") — sobald er einmal manuell togglet (oder ein Kurs mit
     // echten Bereichen geladen wird, siehe startEditCourse), uebernimmt er
     // die Kontrolle und hier wird nichts mehr ueberschrieben.
-    const suggested = suggestBereicheForText(manualDetectText());
+    // Seit 25.09.2026 ueber courseClassifier: Bereiche der sicher passenden
+    // Zielrollen, danach Gewicht der belegten Skills (siehe suggestBereiche).
+    if (manualDetectText().length < MIN_DESCRIPTION_FOR_SKILL_DETECT) {
+      setCourseForm((f) => ({ ...f, bereichKeys: [] }));
+      return;
+    }
+    const suggested = suggestBereiche(
+      classifyCourse({
+        title: courseForm.courseName,
+        description: courseForm.description,
+        learningGoals: [...importLearningGoals, ...splitLearningGoals(courseForm.description)],
+        prerequisites: [courseForm.targetGroup, importPrerequisites].filter(Boolean).join(". "),
+      }),
+    );
     setCourseForm((f) => ({ ...f, bereichKeys: suggested }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseForm.courseName, courseForm.description, tourOpen, bereichKeysTouched]);
+  }, [courseForm.courseName, courseForm.description, importLearningGoals, importPrerequisites, tourOpen, bereichKeysTouched]);
   /** Fügt einen Bereich zur Mehrfachauswahl hinzu bzw. entfernt ihn wieder —
    *  gleiches Muster wie toggleCourseTargetRole unten. Markiert die Auswahl
    *  als vom Nutzer angefasst (siehe bereichKeysTouched oben), damit die
@@ -2827,14 +2854,6 @@ export function DashboardPage({
       setDescSuggestBusy(false);
     }
   }
-  // ---------- Kurs-Import per URL/Domain ----------
-  //
-  // Obergrenze fuer die automatische Vorauswahl nach "Kurs-Seiten finden" —
-  // bewusst niedrig gehalten, damit ein Klick auf "Ausgewaehlte importieren"
-  // nicht versehentlich dutzende teure LLM-Aufrufe auf einmal lostritt; der
-  // Bildungstraeger kann trotzdem beliebig viele der gefundenen URLs manuell
-  // dazu-haken.
-  const URL_IMPORT_AUTO_SELECT_LIMIT = 15;
 
   // Dieselbe Slug-Logik wie bei role_id in handleCreateRole (siehe dort) -
   // fuer Konsistenz unveraendert uebernommen, statt eine zweite,
@@ -2923,49 +2942,6 @@ export function DashboardPage({
     window.setTimeout(() => courseFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   }
 
-  async function handleDiscoverCourseUrls() {
-    const domain = urlImportDomain.trim();
-    if (!domain) {
-      setUrlImportDiscoverError("Bitte zuerst eine Domain eingeben.");
-      return;
-    }
-    if (!live) {
-      setUrlImportDiscoverError(
-        'Nicht verbunden — bitte zuerst oben im Verbindungs-Panel „Verbinden & laden" klicken.'
-      );
-      return;
-    }
-    setUrlImportDiscoverBusy(true);
-    setUrlImportDiscoverError(null);
-    setUrlImportCandidates([]);
-    setUrlImportSelected(new Set());
-    try {
-      const res = await fetchCourseUrlDiscover(courseUrlImportBaseUrl(baseUrl), apiKey, { domain });
-      setUrlImportCandidates(res.candidate_urls);
-      setUrlImportSitemapUrl(res.sitemap_url);
-      setUrlImportTruncated(res.truncated);
-      setUrlImportSelected(new Set(res.candidate_urls.slice(0, URL_IMPORT_AUTO_SELECT_LIMIT)));
-      if (res.candidate_urls.length === 0) {
-        setUrlImportDiscoverError(
-          "Keine Kurs-typischen URLs in der Sitemap gefunden — bitte stattdessen eine einzelne Kurs-Seiten-URL unten einfügen."
-        );
-      }
-    } catch (err) {
-      setUrlImportDiscoverError(err instanceof Error ? err.message : "Domain konnte nicht durchsucht werden.");
-    } finally {
-      setUrlImportDiscoverBusy(false);
-    }
-  }
-
-  function toggleUrlImportCandidate(url: string) {
-    setUrlImportSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(url)) next.delete(url);
-      else next.add(url);
-      return next;
-    });
-  }
-
   async function runUrlImportExtraction(url: string) {
     setUrlImportExtractBusy(true);
     setUrlImportExtractError(null);
@@ -3037,6 +3013,217 @@ export function DashboardPage({
     setUrlImportCurrentUrl(null);
     setUrlImportExtractError(null);
   }
+
+  // ---------- Website-Katalog: gespeicherte Website + "Neue Kurse suchen" ----------
+  // Backend: Edge Function "catalog-assistant" (siehe orbit.ts). Die Suche
+  // selbst liest nur Seiten und legt Vorschlaege an; uebernommen wird ein
+  // Kurs ausschliesslich ueber den URL-Import oben (startUrlImportQueue) und
+  // "Kurs speichern" — kein zweiter Import- oder Speicherweg.
+  async function loadCatalogOverview(): Promise<CatalogOverview | null> {
+    if (!live || !apiKey) return null;
+    try {
+      const ov = await fetchCatalogOverview(catalogAssistantBaseUrl(baseUrl), apiKey);
+      setCatalogOverview(ov);
+      setCatalogLoadError(null);
+      if (ov.source) setCatalogUrlInput((cur) => cur || ov.source!.start_url);
+      return ov;
+    } catch (err) {
+      setCatalogLoadError(err instanceof Error ? err.message : "Die gespeicherte Website konnte nicht geladen werden.");
+      return null;
+    }
+  }
+
+  useEffect(() => {
+    catalogCrawlAliveRef.current = true;
+    return () => {
+      catalogCrawlAliveRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!live) {
+      setCatalogOverview(null);
+      return;
+    }
+    void (async () => {
+      const ov = await loadCatalogOverview();
+      // Eine noch laufende Suche (z. B. nach Neuladen der Seite) fortsetzen
+      if (ov?.active_run) void runCatalogCrawlLoop(ov.active_run.run_id, ov.active_run.checked, ov.active_run.total, ov.active_run.found_so_far);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live]);
+
+  async function handleSaveCatalogSource(thenCrawl: boolean) {
+    const url = catalogUrlInput.trim();
+    if (!url) {
+      setCatalogSaveError("Bitte die Adresse Ihrer Website oder Kursübersicht eingeben.");
+      return;
+    }
+    if (!live) {
+      setCatalogSaveError('Nicht verbunden — bitte zuerst oben im Verbindungs-Panel „Verbinden & laden" klicken.');
+      return;
+    }
+    setCatalogSaving(true);
+    setCatalogSaveError(null);
+    try {
+      const { source } = await saveCatalogSource(catalogAssistantBaseUrl(baseUrl), apiKey, url);
+      setCatalogOverview((prev) => ({ source, active_run: prev?.active_run ?? null, last_run: prev?.last_run ?? null, open: prev?.open ?? [] }));
+      setCatalogUrlInput(source.start_url);
+      setCatalogEditingUrl(false);
+      if (thenCrawl) void handleStartCatalogCrawl();
+    } catch (err) {
+      setCatalogSaveError(err instanceof Error ? err.message : "Die Adresse konnte nicht gespeichert werden.");
+    } finally {
+      setCatalogSaving(false);
+    }
+  }
+
+  async function handleStartCatalogCrawl() {
+    if (catalogCrawl) return;
+    if (!live) {
+      setCatalogCrawlError('Nicht verbunden — bitte zuerst oben im Verbindungs-Panel „Verbinden & laden" klicken.');
+      return;
+    }
+    setCatalogCrawlError(null);
+    // Sofort als "läuft" anzeigen: der Start liest bereits robots.txt,
+    // Sitemap und Startseite und kann einige Sekunden dauern.
+    setCatalogCrawl({ runId: "", checked: 0, total: 0, found: 0 });
+    try {
+      const p = await startCatalogCrawl(catalogAssistantBaseUrl(baseUrl), apiKey);
+      if (p.outcome) {
+        finishCatalogCrawl(p.outcome);
+        return;
+      }
+      await runCatalogCrawlLoop(p.run_id, p.checked, p.total, p.found_so_far);
+    } catch (err) {
+      setCatalogCrawl(null);
+      setCatalogCrawlError(err instanceof Error ? err.message : "Die Suche konnte nicht gestartet werden.");
+    }
+  }
+
+  /** Ruft Schritt fuer Schritt auf, bis der Server ein Ergebnis liefert. */
+  async function runCatalogCrawlLoop(runId: string, checked: number, total: number, found: number) {
+    setCatalogCrawl({ runId, checked, total, found });
+    let failures = 0;
+    while (catalogCrawlAliveRef.current) {
+      try {
+        const p = await stepCatalogCrawl(catalogAssistantBaseUrl(baseUrl), apiKey, runId);
+        failures = 0;
+        if (p.outcome) {
+          finishCatalogCrawl(p.outcome);
+          return;
+        }
+        setCatalogCrawl({ runId, checked: p.checked, total: p.total, found: p.found_so_far });
+      } catch (err) {
+        failures++;
+        if (failures >= 3) {
+          setCatalogCrawl(null);
+          setCatalogCrawlError(
+            `${err instanceof Error ? err.message : "Verbindung unterbrochen."} Die Suche wurde angehalten — ein erneuter Klick auf „Jetzt neue Kurse suchen" setzt sie fort.`
+          );
+          return;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 2000 * failures));
+      }
+    }
+  }
+
+  function finishCatalogCrawl(outcome: CatalogCrawlOutcome) {
+    setCatalogCrawl(null);
+    setCatalogResult({ ...outcome, review: false });
+    void loadCatalogOverview();
+  }
+
+  /** Oeffnet die noch offenen Vorschlaege ohne neue Suche. */
+  function showOpenCatalogProposals() {
+    const open = catalogOverview?.open ?? [];
+    setCatalogResult({
+      status: "complete",
+      new_courses: [],
+      possible_duplicates: [],
+      earlier_open: open,
+      stats: { discovered: 0, checked: 0, course_pages: 0, new_courses: 0, possible_duplicates: 0, already_known: 0, skipped_known: 0, errors: 0, transient_errors: 0, skipped_by_robots: 0 },
+      truncated: false,
+      message: null,
+      finished_at: new Date().toISOString(),
+      review: true,
+    });
+  }
+
+  /** "Übernehmen": Kurs(e) nacheinander im URL-Import öffnen (prüfen, dann speichern). */
+  function handleAdoptCatalogCourses(list: CatalogProposalSummary[]) {
+    if (list.length === 0) return;
+    for (const p of list) catalogProposalByUrlRef.current.set(p.url, p.id);
+    setCatalogResult(null);
+    if (urlImportDetailsRef.current) urlImportDetailsRef.current.open = true;
+    startUrlImportQueue(list.map((p) => p.url));
+  }
+
+  function dropCatalogProposal(id: string) {
+    const drop = (l: CatalogProposalSummary[]) => l.filter((x) => x.id !== id);
+    setCatalogResult((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, new_courses: drop(prev.new_courses), possible_duplicates: drop(prev.possible_duplicates), earlier_open: drop(prev.earlier_open) };
+      // Nur-Ansicht der offenen Vorschlaege schliesst sich, wenn nichts mehr offen ist
+      return prev.review && next.earlier_open.length === 0 ? null : next;
+    });
+    setCatalogOverview((prev) => (prev ? { ...prev, open: drop(prev.open) } : prev));
+  }
+
+  async function handleIgnoreCatalogProposals(list: CatalogProposalSummary[]) {
+    for (const p of list) {
+      setCatalogBusyIds((prev) => new Set(prev).add(p.id));
+      try {
+        await ignoreCatalogProposal(catalogAssistantBaseUrl(baseUrl), apiKey, p.id);
+        dropCatalogProposal(p.id);
+      } catch (err) {
+        setCatalogCrawlError(err instanceof Error ? err.message : "Vorschlag konnte nicht ignoriert werden.");
+        break;
+      } finally {
+        setCatalogBusyIds((prev) => {
+          const next = new Set(prev);
+          next.delete(p.id);
+          return next;
+        });
+      }
+    }
+  }
+
+  /** Nach "Kurs speichern" eines aus der Suche geoeffneten Kurses: Vorschlag als übernommen markieren. */
+  function markCatalogProposalAccepted(sourceUrl: string | null, courseId: string) {
+    if (!sourceUrl) return;
+    const id = catalogProposalByUrlRef.current.get(sourceUrl);
+    if (!id) return;
+    catalogProposalByUrlRef.current.delete(sourceUrl);
+    acceptCatalogProposal(catalogAssistantBaseUrl(baseUrl), apiKey, id, courseId)
+      .then(() => dropCatalogProposal(id))
+      .catch((err) => console.error("Vorschlag konnte nicht als übernommen markiert werden", err));
+  }
+
+  function openManualCourseFormFromCatalog() {
+    setCatalogResult(null);
+    resetCourseForm();
+    setCourseFormOpen(true);
+    window.setTimeout(() => courseFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
+
+  function openLinkImportFromCatalog() {
+    setCatalogResult(null);
+    if (urlImportDetailsRef.current) urlImportDetailsRef.current.open = true;
+    window.setTimeout(() => {
+      urlImportDetailsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      urlImportSingleInputRef.current?.focus({ preventScroll: true });
+    }, 50);
+  }
+
+  useEffect(() => {
+    if (!catalogResult) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") setCatalogResult(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [catalogResult]);
 
   // ---------- URL-Import: Warteschlange "später fortsetzen" ----------
   // Pro API-Key ein eigener localStorage-Eintrag (mehrere Bildungstraeger
@@ -3500,12 +3687,12 @@ export function DashboardPage({
           // course-url-import Edge Function.
           bereich_key:
             existingByCourseId.get(row.courseId)?.bereich_key ??
-            suggestBereicheForText(`${row.courseName} ${row.description ?? ""}`)[0] ??
+            suggestBereicheForText(row.courseName, row.description ?? "")[0] ??
             null,
           bereich_keys:
             existingByCourseId.get(row.courseId)?.bereich_keys ??
             (() => {
-              const suggested = suggestBereicheForText(`${row.courseName} ${row.description ?? ""}`);
+              const suggested = suggestBereicheForText(row.courseName, row.description ?? "");
               return suggested.length ? suggested : null;
             })(),
         });
@@ -6406,19 +6593,19 @@ export function DashboardPage({
                   )}
                 </div>
               </details>
-              <details className="app-card collapsible-card" data-tour="kurse-url-import">
+              <details className="app-card collapsible-card" data-tour="kurse-url-import" ref={urlImportDetailsRef}>
                 <summary>
-                  <span>🔗 Kurse per URL importieren</span>
+                  <span>🔗 Kurse von der Website übernehmen</span>
                   <span className="collapsible-hint">
-                    Domain durchsuchen oder einzelne Kurs-Seite einfügen — eine KI liest Preis, Förderung &amp;
-                    Co. heraus, du prüfst vor dem Speichern
+                    Website einmal verbinden und per Klick neue Kurse finden — oder eine einzelne Kurs-Seite
+                    einfügen. Eine KI liest Preis, Förderung &amp; Co. heraus, du prüfst vor dem Speichern
                   </span>
                 </summary>
                 <div className="app-card-body">
                   <div className="hint">
-                    Ergänzt Formular und CSV-Import um einen dritten Weg: entweder deine Domain eingeben (wir
-                    suchen automatisch in eurer sitemap.xml nach Kurs-Seiten) oder direkt eine einzelne
-                    Kurs-Seiten-URL einfügen. Für jede ausgewählte Seite wird ein Entwurf ins Formular oben
+                    Ergänzt Formular und CSV-Import um einen dritten Weg: entweder eure Website einmal verbinden
+                    (wir suchen dann per Klick nach Kurs-Seiten, die noch nicht im Katalog stehen) oder direkt eine
+                    einzelne Kurs-Seiten-URL einfügen. Für jeden übernommenen Kurs wird ein Entwurf ins Formular oben
                     übernommen — <strong>nichts wird automatisch gespeichert</strong>, du prüfst und ergänzt jeden
                     Kurs, bevor du auf „Kurs speichern" klickst. Felder mit einem wörtlichen Beleg auf der Seite
                     sind mit „✓ von Seite" markiert, alle anderen wie eine leere Eingabe zu behandeln.
@@ -6444,89 +6631,144 @@ export function DashboardPage({
 
                   {!urlImportCurrentUrl && urlImportQueueTotal === 0 && (
                     <>
-                      <div className="row2">
-                        <div className="lf-field" style={{ flex: "1 1 260px" }}>
-                          <label>Domain des Bildungsträgers</label>
-                          <input
-                            placeholder="www.dein-bildungstraeger.de"
-                            value={urlImportDomain}
-                            onChange={(e) => setUrlImportDomain(e.target.value)}
-                            disabled={urlImportDiscoverBusy}
-                          />
+                      <div className="catalog-source-block">
+                        <div className="catalog-source-head">
+                          <span className="catalog-source-title">🌐 Ihre Website</span>
+                          {catalogOverview?.open && catalogOverview.open.length > 0 && !catalogCrawl && (
+                            <button type="button" className="btn-ghost btn-small" onClick={showOpenCatalogProposals}>
+                              {catalogOverview.open.length === 1
+                                ? "1 offenen Vorschlag ansehen"
+                                : `${catalogOverview.open.length} offene Vorschläge ansehen`}
+                            </button>
+                          )}
                         </div>
-                        <div className="lf-field" style={{ flex: "0 0 auto", alignSelf: "flex-end" }}>
-                          <button
-                            type="button"
-                            className={`btn-ai ${urlImportDiscoverBusy ? "busy" : ""}`}
-                            onClick={handleDiscoverCourseUrls}
-                            disabled={urlImportDiscoverBusy || !urlImportDomain.trim()}
-                          >
-                            <span className="btn-ai-icon">🔎</span>
-                            {urlImportDiscoverBusy ? "Suche…" : "Kurs-Seiten finden"}
-                          </button>
-                        </div>
-                      </div>
-                      {urlImportDiscoverError && <div className="hint warn">{urlImportDiscoverError}</div>}
-
-                      {urlImportCandidates.length > 0 && (
-                        <div className="url-import-candidates">
-                          <div className="hint">
-                            {urlImportCandidates.length} Kurs-typische URL{urlImportCandidates.length === 1 ? "" : "s"}{" "}
-                            gefunden (aus {urlImportSitemapUrl}){urlImportTruncated ? " — evtl. nicht alle, Sitemap war größer" : ""}.{" "}
-                            {urlImportSelected.size} ausgewählt.
-                          </div>
-                          <div className="url-import-select-actions">
+                        {catalogLoadError && <div className="hint warn">{catalogLoadError}</div>}
+                        {catalogOverview?.source && !catalogEditingUrl ? (
+                          <>
+                            <div className="catalog-source-row">
+                              <div className="catalog-source-url">
+                                <span className="catalog-source-label">Verbunden:</span>{" "}
+                                <a href={catalogOverview.source.start_url} target="_blank" rel="noopener noreferrer">
+                                  {catalogOverview.source.start_url}
+                                </a>
+                              </div>
+                              <button
+                                type="button"
+                                className="btn-ghost btn-small"
+                                onClick={() => {
+                                  setCatalogUrlInput(catalogOverview.source?.start_url ?? "");
+                                  setCatalogSaveError(null);
+                                  setCatalogEditingUrl(true);
+                                }}
+                                disabled={Boolean(catalogCrawl)}
+                              >
+                                Ändern
+                              </button>
+                            </div>
                             <button
                               type="button"
-                              className="btn-ghost btn-small"
-                              onClick={() => setUrlImportSelected(new Set(urlImportCandidates))}
-                              disabled={urlImportSelected.size === urlImportCandidates.length}
+                              className={`btn-ai ${catalogCrawl ? "busy" : ""}`}
+                              onClick={() => void handleStartCatalogCrawl()}
+                              disabled={Boolean(catalogCrawl)}
                             >
-                              Alle auswählen ({urlImportCandidates.length})
+                              <span className="btn-ai-icon">🔎</span>
+                              {catalogCrawl ? "Suche läuft…" : "Jetzt neue Kurse suchen"}
                             </button>
-                            <button
-                              type="button"
-                              className="btn-ghost btn-small"
-                              onClick={() => setUrlImportSelected(new Set())}
-                              disabled={urlImportSelected.size === 0}
-                            >
-                              Alle abwählen
-                            </button>
-                          </div>
-                          <ul className="url-import-candidate-list">
-                            {urlImportCandidates.map((url) => (
-                              <li key={url}>
-                                <label className="lf-checkbox-field">
-                                  <input
-                                    type="checkbox"
-                                    checked={urlImportSelected.has(url)}
-                                    onChange={() => toggleUrlImportCandidate(url)}
+                            {catalogCrawl && (
+                              <div className="catalog-crawl-progress" aria-live="polite">
+                                <div className="catalog-crawl-bar">
+                                  <span
+                                    style={{
+                                      width: `${
+                                        catalogCrawl.total > 0
+                                          ? Math.max(4, Math.round((catalogCrawl.checked / catalogCrawl.total) * 100))
+                                          : 4
+                                      }%`,
+                                    }}
                                   />
-                                  <span className="url-import-candidate-url">{url}</span>
-                                </label>
-                              </li>
-                            ))}
-                          </ul>
-                          <button
-                            type="button"
-                            className="btn-primary"
-                            onClick={() => startUrlImportQueue(Array.from(urlImportSelected))}
-                            disabled={urlImportSelected.size === 0}
-                          >
-                            {urlImportSelected.size === 0
-                              ? "Ausgewählte importieren"
-                              : `${urlImportSelected.size} ausgewählte${urlImportSelected.size === 1 ? "n" : ""} Kurs${urlImportSelected.size === 1 ? "" : "e"} importieren →`}
-                          </button>
-                        </div>
-                      )}
+                                </div>
+                                <div className="hint">
+                                  {catalogCrawl.total === 0
+                                    ? "Website wird gelesen (robots.txt, Sitemap, Kursübersicht)…"
+                                    : `${catalogCrawl.checked} von ${catalogCrawl.total} Seiten geprüft${
+                                        catalogCrawl.found > 0 ? ` · ${catalogCrawl.found} neue Kurse bisher` : ""
+                                      }`}
+                                  <br />
+                                  Die erste Suche kann einige Minuten dauern. Danach werden nur noch neue Seiten geprüft.
+                                </div>
+                              </div>
+                            )}
+                            {!catalogCrawl && catalogOverview.last_run?.finished_at && (
+                              <div className="hint catalog-last-run">
+                                Letzte Suche:{" "}
+                                {new Date(catalogOverview.last_run.finished_at).toLocaleString("de-DE", {
+                                  dateStyle: "short",
+                                  timeStyle: "short",
+                                })}
+                                {catalogOverview.last_run.stats ? ` · ${catalogOverview.last_run.stats.checked} Seiten geprüft` : ""}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <div className="hint">
+                              Einmal die Adresse Ihrer Website oder Kursübersicht hinterlegen — danach genügt ein Klick, um
+                              neue Kurse zu finden. Wir lesen nur öffentliche Seiten, beachten robots.txt und speichern
+                              nichts automatisch.
+                            </div>
+                            <div className="row2">
+                              <div className="lf-field" style={{ flex: "1 1 260px" }}>
+                                <label>Website oder Kursübersicht</label>
+                                <input
+                                  placeholder="https://www.ihre-akademie.de/weiterbildungen"
+                                  value={catalogUrlInput}
+                                  onChange={(e) => setCatalogUrlInput(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") void handleSaveCatalogSource(!catalogOverview?.source);
+                                  }}
+                                  disabled={catalogSaving}
+                                />
+                              </div>
+                              <div className="lf-field catalog-source-save" style={{ flex: "0 0 auto", alignSelf: "flex-end" }}>
+                                <button
+                                  type="button"
+                                  className={`btn-ai ${catalogSaving ? "busy" : ""}`}
+                                  onClick={() => void handleSaveCatalogSource(!catalogOverview?.source)}
+                                  disabled={catalogSaving || !catalogUrlInput.trim()}
+                                >
+                                  <span className="btn-ai-icon">🔎</span>
+                                  {catalogSaving ? "Speichere…" : catalogOverview?.source ? "Speichern" : "Speichern & Kurse suchen"}
+                                </button>
+                                {catalogOverview?.source && (
+                                  <button
+                                    type="button"
+                                    className="btn-ghost btn-small"
+                                    onClick={() => {
+                                      setCatalogEditingUrl(false);
+                                      setCatalogSaveError(null);
+                                    }}
+                                    disabled={catalogSaving}
+                                  >
+                                    Abbrechen
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                        {catalogSaveError && <div className="hint warn">{catalogSaveError}</div>}
+                        {catalogCrawlError && <div className="hint warn">{catalogCrawlError}</div>}
+                      </div>
 
                       <div className="hint" style={{ marginTop: 14 }}>
                         Oder direkt eine einzelne Kurs-Seiten-URL einfügen:
                       </div>
+                      {urlImportDiscoverError && <div className="hint warn">{urlImportDiscoverError}</div>}
                       <div className="row2">
                         <div className="lf-field" style={{ flex: "1 1 260px" }}>
                           <label>Kurs-Seiten-URL</label>
                           <input
+                            ref={urlImportSingleInputRef}
                             placeholder="https://www.dein-bildungstraeger.de/kurs/beispiel-kurs/"
                             value={urlImportSingleUrl}
                             onChange={(e) => setUrlImportSingleUrl(e.target.value)}
@@ -7510,6 +7752,227 @@ export function DashboardPage({
                     {deleteBusyId === l.lead_id ? "Wird gelöscht…" : "🗑️ Lead endgültig löschen"}
                   </button>
                 </div>
+              </div>
+            </div>
+          );
+        })()}
+      {catalogResult &&
+        (() => {
+          // Ergebnis-Popup der Website-Suche (erscheint IMMER nach einer Suche):
+          // neue Kurse zum Übernehmen — oder der Hinweis, dass Kurse auch
+          // manuell bzw. per direktem Link hinzugefügt werden können.
+          const r = catalogResult;
+          const failed = r.status === "failed";
+          const hasNew = r.new_courses.length > 0;
+          const tone = r.review || hasNew ? "success" : failed ? "warn" : "info";
+          const icon = r.review ? "📋" : failed ? "⚠️" : hasNew ? "✨" : "🔍";
+          const title = r.review
+            ? r.earlier_open.length === 1
+              ? "1 offener Kursvorschlag"
+              : `${r.earlier_open.length} offene Kursvorschläge`
+            : failed
+              ? "Suche nicht möglich"
+              : hasNew
+                ? r.new_courses.length === 1
+                  ? "1 neuer Kurs gefunden"
+                  : `${r.new_courses.length} neue Kurse gefunden`
+                : "Keine neuen Kurse gefunden";
+          const subtitle = r.review
+            ? "Diese Kurse wurden bei früheren Suchen gefunden und noch nicht übernommen."
+            : failed
+              ? r.message ?? "Die Website konnte gerade nicht gelesen werden."
+              : hasNew
+                ? "Diese Kurse stehen auf Ihrer Website, aber noch nicht in Ihrem Katalog."
+                : "Ihr Katalog ist auf dem Stand Ihrer Website.";
+          const known = r.stats.already_known + r.stats.skipped_known;
+          const locationLabel: Record<string, string> = { remote: "💻 Online", vor_ort: "📍 Vor Ort", hybrid: "🔀 Hybrid" };
+          const renderItem = (p: CatalogProposalSummary) => {
+            const busy = catalogBusyIds.has(p.id);
+            let host = "";
+            try {
+              host = new URL(p.url).pathname.replace(/\/$/, "") || "/";
+            } catch {
+              host = p.url;
+            }
+            return (
+              <li key={p.id} className={`catalog-proposal ${busy ? "is-busy" : ""}`}>
+                <div className="catalog-proposal-main">
+                  <div className="catalog-proposal-title">{p.title || p.url}</div>
+                  <a href={p.url} target="_blank" rel="noopener noreferrer" className="catalog-proposal-link" title={p.url}>
+                    {host} ↗
+                  </a>
+                  <div className="catalog-proposal-chips">
+                    {p.price_eur !== null ? (
+                      <span className="catalog-chip is-price">
+                        {p.price_eur.toLocaleString("de-DE", { maximumFractionDigits: 2 })} €
+                      </span>
+                    ) : p.price_on_request ? (
+                      <span className="catalog-chip">Preis auf Anfrage</span>
+                    ) : null}
+                    {p.next_start && (
+                      <span className="catalog-chip">📅 {new Date(`${p.next_start}T00:00:00`).toLocaleDateString("de-DE")}</span>
+                    )}
+                    {p.duration_weeks !== null && <span className="catalog-chip">⏱ {p.duration_weeks} Wochen</span>}
+                    {p.location_mode && locationLabel[p.location_mode] && (
+                      <span className="catalog-chip">{locationLabel[p.location_mode]}</span>
+                    )}
+                  </div>
+                  {p.duplicate_of && (
+                    <div className="catalog-proposal-dup">Ähnlich zu Ihrem Kurs „{p.duplicate_of.course_name}“</div>
+                  )}
+                </div>
+                <div className="catalog-proposal-actions">
+                  <button type="button" className="catalog-btn-adopt" onClick={() => handleAdoptCatalogCourses([p])} disabled={busy}>
+                    Übernehmen
+                  </button>
+                  <button
+                    type="button"
+                    className="catalog-btn-ignore"
+                    onClick={() => void handleIgnoreCatalogProposals([p])}
+                    disabled={busy}
+                    title="Diesen Kurs nicht mehr vorschlagen"
+                  >
+                    {busy ? "…" : "Ignorieren"}
+                  </button>
+                </div>
+              </li>
+            );
+          };
+          return (
+            <div className="lead-modal-overlay catalog-result-overlay" onClick={() => setCatalogResult(null)}>
+              <div
+                className={`catalog-result-modal tone-${tone}`}
+                onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="catalog-result-title"
+              >
+                <button className="catalog-result-close" onClick={() => setCatalogResult(null)} aria-label="Schließen">
+                  ×
+                </button>
+                <header className="catalog-result-hero">
+                  <div className="catalog-result-icon" aria-hidden="true">
+                    {icon}
+                  </div>
+                  <div>
+                    <h3 id="catalog-result-title">{title}</h3>
+                    <p>{subtitle}</p>
+                  </div>
+                </header>
+
+                {!r.review && !failed && r.stats.checked + known > 0 && (
+                  <div className="catalog-result-stats">
+                    <div>
+                      <strong>{r.stats.checked}</strong>
+                      <span>Seiten geprüft</span>
+                    </div>
+                    <div>
+                      <strong>{r.new_courses.length}</strong>
+                      <span>neu</span>
+                    </div>
+                    <div>
+                      <strong>{known}</strong>
+                      <span>bereits bekannt</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="catalog-result-body">
+                  {hasNew && (
+                    <>
+                      <ul className="catalog-proposal-list">{r.new_courses.map(renderItem)}</ul>
+                      <p className="catalog-result-note">
+                        „Übernehmen" öffnet den Kurs im Formular — Sie prüfen und ergänzen alles, bevor gespeichert wird.
+                      </p>
+                    </>
+                  )}
+
+                  {!hasNew && !r.review && (
+                    <div className="catalog-result-empty">
+                      <p>
+                        {failed
+                          ? "Sie können Ihre Kurse trotzdem jederzeit selbst hinzufügen:"
+                          : "Kurse, die (noch) nicht auf Ihrer Website stehen oder dort nicht automatisch erkannt werden, können Sie jederzeit selbst hinzufügen:"}
+                      </p>
+                      <div className="catalog-option-grid">
+                        <button type="button" className="catalog-option" onClick={openManualCourseFormFromCatalog}>
+                          <span className="catalog-option-icon" aria-hidden="true">✍️</span>
+                          <span className="catalog-option-title">Kurs manuell anlegen</span>
+                          <span className="catalog-option-text">Alle Angaben selbst im Formular eintragen.</span>
+                        </button>
+                        <button type="button" className="catalog-option" onClick={openLinkImportFromCatalog}>
+                          <span className="catalog-option-icon" aria-hidden="true">🔗</span>
+                          <span className="catalog-option-title">Per direktem Link hinzufügen</span>
+                          <span className="catalog-option-text">Link zur Kursseite einfügen — die KI liest Preis, Termine &amp; Co. aus.</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {!failed && r.message && <div className="catalog-result-hint">ℹ️ {r.message}</div>}
+
+                  {r.possible_duplicates.length > 0 && (
+                    <details className="catalog-result-section" open={!hasNew}>
+                      <summary>
+                        <span>Vielleicht schon im Katalog</span>
+                        <span className="catalog-count">{r.possible_duplicates.length}</span>
+                      </summary>
+                      <p className="catalog-result-note">
+                        Ähnlich benannt wie ein bestehender Kurs. Übernehmen, falls es doch ein eigener Kurs ist — sonst
+                        ignorieren.
+                      </p>
+                      <ul className="catalog-proposal-list">{r.possible_duplicates.map(renderItem)}</ul>
+                      {r.possible_duplicates.length > 1 && (
+                        <button
+                          type="button"
+                          className="catalog-btn-ignore"
+                          onClick={() => void handleIgnoreCatalogProposals(r.possible_duplicates)}
+                        >
+                          Alle {r.possible_duplicates.length} ignorieren
+                        </button>
+                      )}
+                    </details>
+                  )}
+
+                  {r.earlier_open.length > 0 && (
+                    <details className="catalog-result-section" open={r.review || !hasNew}>
+                      <summary>
+                        <span>{r.review ? "Noch nicht übernommen" : "Offen aus früheren Suchen"}</span>
+                        <span className="catalog-count">{r.earlier_open.length}</span>
+                      </summary>
+                      <ul className="catalog-proposal-list">{r.earlier_open.map(renderItem)}</ul>
+                    </details>
+                  )}
+                </div>
+
+                <footer className="catalog-result-footer">
+                  {hasNew || r.review ? (
+                    <>
+                      <span className="catalog-result-footer-links">
+                        Fehlt ein Kurs?{" "}
+                        <button type="button" className="catalog-link" onClick={openManualCourseFormFromCatalog}>
+                          Manuell anlegen
+                        </button>{" "}
+                        ·{" "}
+                        <button type="button" className="catalog-link" onClick={openLinkImportFromCatalog}>
+                          Per Link
+                        </button>
+                      </span>
+                      {(() => {
+                        const list = hasNew ? r.new_courses : r.earlier_open;
+                        return list.length > 1 ? (
+                          <button type="button" className="btn-primary" onClick={() => handleAdoptCatalogCourses(list)}>
+                            Alle {list.length} nacheinander übernehmen →
+                          </button>
+                        ) : null;
+                      })()}
+                    </>
+                  ) : (
+                    <button type="button" className="catalog-btn-ignore" onClick={() => setCatalogResult(null)}>
+                      Schließen
+                    </button>
+                  )}
+                </footer>
               </div>
             </div>
           );

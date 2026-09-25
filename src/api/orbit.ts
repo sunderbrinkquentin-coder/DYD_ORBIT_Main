@@ -1205,6 +1205,14 @@ export interface CourseUrlExtractDraft {
    *  macht - siehe ausfuehrlichen Kommentar im Backend (course-url-import-
    *  index.ts). Rein informativ, wird nirgends automatisch verrechnet. */
   duration_hint: string | null;
+  /** Version 4 der Function (25.09.2026): Inhalte/Module/Lernziele, jeweils
+   *  woertlich von der Seite und serverseitig gegen den Seitentext geprueft.
+   *  Optional - aeltere Deployments liefern das Feld nicht. */
+  learning_goals?: string[];
+  /** Version 4: woertliche Zugangsvoraussetzungen/Vorkenntnisse. Dient im
+   *  Dashboard nur dazu, vorausgesetzte Kenntnisse NICHT als Kurs-Skills
+   *  vorzuschlagen. */
+  prerequisites_text?: string | null;
 }
 
 export interface CourseUrlExtractResponse {
@@ -1226,6 +1234,9 @@ export interface CourseUrlExtractResponse {
    * wie eine manuelle Eingabe, nie blind uebernommen.
    */
   verified_fields: string[];
+  /** Version 4: Aufzaehlungspunkte des Seiten-Hauptinhalts, OHNE KI gelesen
+   *  (Ergaenzung zu course.learning_goals). Optional. */
+  content_topics?: string[];
 }
 
 /** Leitet die URL der separaten "course-url-import"-Function aus der

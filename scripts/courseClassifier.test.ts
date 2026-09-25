@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyCourse, suggestSkills, titleKey } from "../../src/data/courseClassifier";
+import { classifyCourse, suggestBereiche, suggestSkills, titleKey } from "../../src/data/courseClassifier";
 import { matchSkills, searchTermsFor } from "../../src/data/skillMatcher";
 import { SKILLS_CATALOG } from "../../src/data/rolesCatalog";
 
@@ -119,4 +119,159 @@ test("Geschwindigkeit: Einordnung eines typischen Kurses dauert unter 500 ms", (
   const t = performance.now();
   classifyCourse({ title: "Geprüfte/r Industriefachwirt/in (IHK)", description: long, learningGoals: long.split("\n") });
   assert.ok(performance.now() - t < 500, `${Math.round(performance.now() - t)} ms`);
+});
+
+// Echter Fall vom 25.09.2026: https://www.ihk-akademie-mittelfranken.de/weiterbildungen/details/ki-manager-ihk-1809
+// Vorher: falsche Zielrollen/Bereiche, u. a. "Pflegerische Versorgung von Kindern"
+// (Alias "Wickeln" steckte in "entwickeln"), und der Katalog kannte keine KI-Skills.
+test("Realer Fall: KI-Manager/-in (IHK), IHK Akademie Mittelfranken", () => {
+  const r = classifyCourse({
+    title: "KI-Manager/-in (IHK)",
+    description:
+      "Der Lehrgang vermittelt Fach- und Führungskräften die strategische Bedeutung der KI für die zukünftige Entwicklung des Unternehmens. Absolventen identifizieren Anwendungsfelder, entwickeln KI-Roadmaps und wirken als Multiplikatoren.",
+    learningGoals: [
+      "KI als transformative Technologie",
+      "Wie funktioniert KI? Maschinelles Lernen und neuronale Netze",
+      "Innovationspotenzial im Unternehmen – Einsätze in Marketing, Logistik, Finanzen, Produktion",
+      "Generative KI im Unternehmen – Praktische Anwendung von KI-Tools",
+      "Einführungsplanung – Voraussetzungen für nachhaltige KI-Integration",
+      "Anwendungsfälle finden und bewerten",
+      "Implementierung und Betrieb – Projektmanagement und Prozessmodelle",
+    ],
+    prerequisites: "Keine KI-Vorkenntnisse erforderlich",
+  });
+  assert.equal(r.roles[0].role_id, "it-tech-ki-manager-ihk");
+  assert.equal(r.roles[0].confidence, "hoch");
+  const names = r.skills.map((s) => s.name);
+  for (const expected of ["KI-Strategie und Roadmap", "Generative KI anwenden", "KI-Anwendungsfälle identifizieren und bewerten", "KI-Einführung und -Implementierung", "Machine Learning"]) {
+    assert.ok(names.includes(expected), `${expected} fehlt: ${names.join(", ")}`);
+  }
+  assert.ok(!names.includes("Pflegerische Versorgung von Kindern"), "Wickeln in entwickeln");
+  assert.equal(suggestBereiche(r)[0], "it-tech");
+});
+
+// ---------------------------------------------------------------------------
+// Breite Abdeckung (25.09.2026): 82 typische Weiterbildungstitel aus allen
+// Bereichen, nur der Titel (schwierigster Fall). Vorher bekamen 50 davon
+// keine Zielrolle; Ziel: hoechstens 8 ohne Rolle (Sprachkurse u. ae. haben
+// bewusst keine Berufsrolle).
+// ---------------------------------------------------------------------------
+const BROAD_TITLES = `Geprüfte/r Betriebswirt/in (IHK)
+Technische/r Fachwirt/in (IHK)
+Fachwirt/in im Gesundheits- und Sozialwesen (IHK)
+Immobilienfachwirt/in (IHK)
+Versicherungsfachmann/-frau (IHK) §34d
+Immobilienmakler Sachkunde §34c
+Finanzanlagenfachmann/-frau (IHK) §34f
+Geprüfte/r Personalfachkaufmann/-frau (IHK)
+Datenschutzbeauftragte/r (TÜV)
+Fachkraft für Arbeitssicherheit
+Sicherheitsbeauftragte/r
+Qualitätsmanagementbeauftragte/r ISO 9001
+Interne/r Auditor/in ISO 9001
+Energieberater/in (HWK)
+Solarteur/in Photovoltaik
+Elektrofachkraft für festgelegte Tätigkeiten
+Wärmepumpen-Installation für SHK-Fachkräfte
+Lean Management / Six Sigma Green Belt
+SAP S/4HANA Finanzbuchhaltung (FI)
+SAP Materialwirtschaft MM
+Microsoft Office 365 Grundlagen (Word, Excel, Outlook)
+AWS Certified Cloud Practitioner
+Microsoft Azure Fundamentals AZ-900
+Cyber Security Analyst
+Linux Administrator (LPIC-1)
+Java Programmierung Grundlagen
+Python für Einsteiger
+Webentwicklung mit HTML, CSS und JavaScript
+UX/UI Design Weiterbildung
+Online Marketing Manager (IHK)
+Content Marketing und Copywriting
+Vertriebsmanager/in B2B
+Kundenservice und Beschwerdemanagement
+Führungskräftetraining für neue Teamleiter
+Systemischer Coach (zertifiziert)
+Trainer/in in der Erwachsenenbildung
+Praxisanleiter/in in der Pflege (300 Std.)
+Pflegedienstleitung (PDL) 460 Std.
+Wundexperte ICW
+Hygienebeauftragte/r in der Pflege
+Betreuungskraft nach §43b und §53b SGB XI
+Erzieher/in Weiterbildung Kita-Leitung
+Deutsch B2 Berufssprachkurs
+Business English B2
+Buchhaltung mit DATEV
+Lohn- und Gehaltsabrechnung mit DATEV
+Steuerfachwirt/in Vorbereitung
+Einkauf und Beschaffung Grundlagen
+Logistikmeister/in (IHK)
+Berufskraftfahrer Weiterbildung Module 95
+Staplerfahrer Ausbildung
+Kranführer Schulung
+CNC-Fachkraft Drehen und Fräsen
+SPS-Programmierung Siemens TIA Portal
+Schweißen WIG
+Industriemeister/in Metall (IHK)
+Maschinen- und Anlagenführer Teilqualifizierung
+Fachkraft für Lagerlogistik Umschulung
+Kaufmann/-frau im E-Commerce Umschulung
+Industriekaufmann/-frau Umschulung
+Bürokaufmann Umschulung
+Verkäufer/in Teilqualifizierung
+Gastronomie Service Grundlagen
+Koch/Köchin Umschulung
+Hotelfachmann Umschulung
+Barista Kurs
+Erste-Hilfe-Ausbilder
+Rettungssanitäter/in
+Medizinische/r Fachangestellte/r Umschulung
+Zahnmedizinische Verwaltungsassistentin (ZMV)
+Pharmareferent/in
+Sozialpädagogische Fachkraft Integration
+Schulbegleitung Qualifizierung
+Projektmanagement IPMA Level D
+Scrum Master (PSM I)
+Business Analyst (IREB CPRE)
+Data Scientist mit Python
+Controlling und Kennzahlen
+Gebäudereiniger Meister (HWK)
+Hausmeister Weiterbildung
+Maler und Lackierer Umschulung
+Tischler Meister`.split("\n");
+
+test("Breite Abdeckung: mindestens 74 von 82 typischen Weiterbildungen bekommen eine Zielrolle", () => {
+  const without = BROAD_TITLES.filter((t) => classifyCourse({ title: t }).roles.length === 0);
+  assert.ok(without.length <= 8, `ohne Rolle (${without.length}): ${without.join(" | ")}`);
+});
+
+const SPOT_CHECKS: [string, string][] = [
+  ["Geprüfte/r Betriebswirt/in (IHK)", "Kaufmännische/r Leiter/in"],
+  ["Sicherheitsbeauftragte/r", "Fachkraft für Arbeitssicherheit"],
+  ["Kaufmann/-frau im E-Commerce Umschulung", "Kaufmann/-frau im E-Commerce"],
+  ["Medizinische/r Fachangestellte/r Umschulung", "Medizinische/r Fachangestellte/r"],
+  ["Fachkraft für Lagerlogistik Umschulung", "Fachkraft für Lagerlogistik"],
+  ["Erzieher/in Weiterbildung Kita-Leitung", "Kita-Leiter/in"],
+  ["Praxisanleiter/in in der Pflege (300 Std.)", "Praxisanleiter/in (Pflege)"],
+  ["Gebäudereiniger Meister (HWK)", "Objektleiter/in Gebäudereinigung"],
+  ["Staplerfahrer Ausbildung", "Gabelstaplerfahrer/in"],
+  ["Datenschutzbeauftragte/r (TÜV)", "Datenschutzbeauftragte/r"],
+  ["Immobilienmakler Sachkunde §34c", "Immobilienmakler/in"],
+  ["Versicherungsfachmann/-frau (IHK) §34d", "Versicherungsvermittler/in"],
+  ["Scrum Master (PSM I)", "Scrum Master / Agile Coach"],
+  ["Cyber Security Analyst", "IT-Sicherheitsspezialist/in"],
+  ["Bürokaufmann Umschulung", "Kaufmann/-frau für Büromanagement"],
+];
+for (const [title, role] of SPOT_CHECKS) {
+  test(`Stichprobe: ${title} -> ${role}`, () => {
+    const r = classifyCourse({ title });
+    assert.equal(r.roles[0]?.role_name, role, r.roles.map((x) => x.role_name).join(", "));
+  });
+}
+
+test("Kurs-Woerter im Titel erzeugen keine Zufallsskills (Schulung/Schalung, Siemens/SIEM)", () => {
+  for (const title of ["Kranführer Schulung", "Koch/Köchin Umschulung", "SPS-Programmierung Siemens TIA Portal"]) {
+    const names = suggestSkills({ title }).skills.map((s) => s.name);
+    assert.ok(!names.includes("Beton- und Schalungsbau"), `${title}: ${names.join(", ")}`);
+    assert.ok(!names.includes("SIEM und Log-Analyse"), `${title}: ${names.join(", ")}`);
+  }
 });

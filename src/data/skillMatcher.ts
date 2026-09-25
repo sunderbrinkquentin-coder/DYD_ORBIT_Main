@@ -236,6 +236,54 @@ function maxAllowedFuzzyDistance(termLen: number): number {
   return 3;
 }
 
+/**
+ * FIX 4 (25.09.2026) — Suchbegriffe eines Skills: bisher wurden NUR die
+ * Aliase durchsucht, sobald ein Skill ueberhaupt Aliase hatte. Bei 517 von
+ * 956 Katalog-Skills stand der eigentliche Name nicht unter den Aliasen -
+ * "Unternehmensführung" (Alias nur "Managementgrundlagen") oder
+ * "Anforderungsanalyse" (Alias nur "Requirements Engineering") wurden deshalb
+ * nie gefunden, selbst wenn sie woertlich im Text standen. Jetzt: Name, Name
+ * ohne Klammerzusatz ("Abgasuntersuchung (AU)" -> "Abgasuntersuchung") und
+ * alle Aliase, ohne Dubletten.
+ */
+export function searchTermsFor(skill: CatalogSkill): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (t: string) => {
+    const clean = t.trim();
+    const key = normalize(clean);
+    if (clean.length === 0 || seen.has(key)) return;
+    seen.add(key);
+    out.push(clean);
+  };
+  add(skill.name);
+  const withoutParens = skill.name.replace(/\s*\([^)]*\)\s*/g, " ").trim();
+  if (withoutParens.length >= 4) add(withoutParens);
+  for (const a of skill.aliases) add(a);
+  return out;
+}
+
+/**
+ * Schubfachprinzip fuer die unscharfe Suche: Liegt ein Begriff mit hoechstens
+ * k Aenderungen (Levenshtein) irgendwo im Text, dann kommt mindestens eines
+ * seiner k+1 zusammenhaengenden Teilstuecke UNVERAENDERT im Text vor. Findet
+ * sich keines, kann partialRatio() keinen zulaessigen Treffer liefern - die
+ * teure Fensterberechnung wird uebersprungen. Das Ergebnis bleibt identisch.
+ */
+function fuzzyCandidate(termLower: string, textLower: string): boolean {
+  const k = maxAllowedFuzzyDistance(termLower.length);
+  if (k === 0) return false; // Distanz 0 = exakter Treffer, der oben schon geprueft wurde
+  const pieces = k + 1;
+  const size = Math.floor(termLower.length / pieces);
+  if (size < 2) return true;
+  for (let i = 0; i < pieces; i++) {
+    const start = i * size;
+    const end = i === pieces - 1 ? termLower.length : start + size;
+    if (textLower.includes(termLower.slice(start, end))) return true;
+  }
+  return false;
+}
+
 export interface MatchSkillsOptions {
   maxResults?: number;
   minScore?: number;
@@ -264,7 +312,7 @@ export function matchSkills(text: string, opts: MatchSkillsOptions = {}): SkillM
     const excludeIfFollowedBy = (skill as CatalogSkill & { excludeIfFollowedBy?: string[] }).excludeIfFollowedBy;
     const excludeIfPrecededBy = (skill as CatalogSkill & { excludeIfPrecededBy?: string[] }).excludeIfPrecededBy;
 
-    for (const term of skill.aliases.length > 0 ? skill.aliases : [skill.name]) {
+    for (const term of searchTermsFor(skill)) {
       const termLower = normalize(term);
       let score: number;
 
@@ -274,6 +322,12 @@ export function matchSkills(text: string, opts: MatchSkillsOptions = {}): SkillM
       } else if (termLower.length <= SHORT_TERM_MAX_LEN) {
         // Wie im Python-Original: kein Fuzzy-Fallback fuer sehr kurze Begriffe,
         // da das gegen langen Freitext fast immer Zufallstreffer waeren.
+        score = 0;
+      } else if (minScore >= 100 || !fuzzyCandidate(termLower, textLower)) {
+        // Verlustfreie Abkuerzungen (25.09.2026, Geschwindigkeit): (1) wer nur
+        // exakte Treffer will, braucht keine Fuzzy-Suche; (2) fuzzyCandidate()
+        // schliesst Begriffe aus, die mit der erlaubten Editierdistanz gar
+        // nicht im Text vorkommen KOENNEN (Schubfachprinzip, siehe dort).
         score = 0;
       } else {
         const fuzzy = partialRatio(termLower, textLower);
@@ -303,6 +357,7 @@ export function matchSkills(text: string, opts: MatchSkillsOptions = {}): SkillM
         bestScore = score;
         bestTerm = term;
       }
+      if (bestScore >= 100) break;
     }
 
     if (bestScore >= minScore) {

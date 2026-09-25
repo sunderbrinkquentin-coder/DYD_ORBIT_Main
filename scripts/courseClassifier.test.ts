@@ -71,3 +71,52 @@ test("Dieselbe Fundstelle erzeugt keine doppelten Skills", () => {
   const pf = skills.filter((s) => s.name.startsWith("Personalführung"));
   assert.ok(pf.length <= 1, pf.map((s) => s.name).join(", "));
 });
+
+// ---------------------------------------------------------------------------
+// Realistische Kursbeispiele aus typischen Bereichen (Titel + kurze Inhalte,
+// wie sie der URL-Import liefert). Erwartet wird die passende Zielrolle an
+// erster Stelle - mit Begruendung, ohne Prozentangaben.
+// ---------------------------------------------------------------------------
+const REAL_CASES: { title: string; description: string; learningGoals?: string[]; prerequisites?: string; expectedRole: string; titleMatch: boolean }[] = [
+  { title: "Geprüfte/r Bilanzbuchhalter/in (IHK)", description: "Jahresabschluss nach HGB und IFRS, Steuerbilanz, Konsolidierung.", expectedRole: "Bilanzbuchhalter/in", titleMatch: true },
+  { title: "Umschulung Fachinformatiker/in für Systemintegration", description: "Netzwerke, Linux, Windows Server, IT-Sicherheit.", expectedRole: "IT-Supporter/in (1st-/2nd-Level-Support)", titleMatch: true },
+  { title: "Social-Media-Manager/in (IHK)", description: "Content-Planung, Community Management, Kampagnen.", expectedRole: "Social-Media-Manager/in", titleMatch: true },
+  { title: "Sachkundeprüfung nach § 34a GewO", description: "Rechtsgrundlagen, Umgang mit Menschen, Unfallverhütung.", expectedRole: "Sicherheitsmitarbeiter/in", titleMatch: true },
+  { title: "Qualifizierung zusätzliche Betreuungskraft nach § 53b SGB XI", description: "Betreuung von Menschen mit Demenz.", expectedRole: "Alltagsbegleiter/in (Betreuungskraft)", titleMatch: true },
+  { title: "Wirtschaftsfachwirt IHK", description: "Volks- und Betriebswirtschaft, Unternehmensführung, Controlling.", expectedRole: "Kaufmännische/r Teamleiter/in", titleMatch: true },
+  { title: "Staplerschein", description: "Ausbildung zum Gabelstaplerfahrer nach DGUV Grundsatz 308-001 inkl. Prüfung.", expectedRole: "Gabelstaplerfahrer/in", titleMatch: true },
+  { title: "Schweißkurs MAG nach DIN EN ISO 9606", description: "Praktische Schweißausbildung MAG.", expectedRole: "Schweißer/in", titleMatch: false },
+  { title: "Agiles Projektmanagement mit Scrum", description: "Scrum, Kanban, Projektplanung, Stakeholdermanagement, Risikomanagement.", expectedRole: "Projektmanager/in", titleMatch: false },
+  {
+    title: "Geprüfte/r Industriefachwirt/in (IHK) – berufsbegleitend",
+    description: "Vorbereitung auf die IHK-Prüfung.",
+    learningGoals: ["Volks- und Betriebswirtschaft", "Rechnungswesen", "Unternehmensführung", "Produktionsplanung", "Materialwirtschaft"],
+    prerequisites: "Abgeschlossene kaufmännische Ausbildung",
+    expectedRole: "Produktionsplaner/in",
+    titleMatch: true,
+  },
+];
+
+for (const c of REAL_CASES) {
+  test(`Realer Fall: ${c.title}`, () => {
+    const r = classifyCourse({ title: c.title, description: c.description, learningGoals: c.learningGoals, prerequisites: c.prerequisites });
+    assert.ok(r.roles.length > 0, "mindestens ein Rollenvorschlag");
+    assert.equal(r.roles[0].role_name, c.expectedRole, r.roles.map((x) => x.role_name).join(", "));
+    assert.equal(r.roles[0].title_match, c.titleMatch);
+    assert.ok(r.roles[0].reason.length > 10 && !/%/.test(r.roles[0].reason));
+    for (const s of r.skills) assert.ok(s.evidence.length > 0, `Beleg fehlt bei ${s.name}`);
+  });
+}
+
+test("Gleichnamige Katalog-Skills erscheinen nur einmal", () => {
+  const { skills } = suggestSkills({ title: "Kaufmann/-frau für Büromanagement – Teilqualifizierung", description: "Büroorganisation, Terminplanung, Korrespondenz." });
+  const names = skills.map((s) => s.name);
+  assert.equal(names.length, new Set(names).size, names.join(", "));
+});
+
+test("Geschwindigkeit: Einordnung eines typischen Kurses dauert unter 500 ms", () => {
+  const long = Array.from({ length: 30 }, (_, i) => `Modul ${i + 1}: Rechnungswesen, Controlling, Personalführung und Projektmanagement in der Praxis.`).join("\n");
+  const t = performance.now();
+  classifyCourse({ title: "Geprüfte/r Industriefachwirt/in (IHK)", description: long, learningGoals: long.split("\n") });
+  assert.ok(performance.now() - t < 500, `${Math.round(performance.now() - t)} ms`);
+});

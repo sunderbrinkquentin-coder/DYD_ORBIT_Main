@@ -60,11 +60,31 @@ import { BereichBadges, CourseBadgeRow, daysUntilCourseStart } from "../data/cou
 import { ACTIVITY_FIELDS, deriveSkillsFromActivities, getActivity, suggestedProficiency } from "../data/activitiesCatalog";
 import {
   buildDirectionRole,
+  EVIDENCE_DEPTH,
   narrowDirection,
+  planQuickCheck,
+  quickAnswerToDepth,
   rolesForCourse,
+  type ActivityEvidence,
   type DirectionCandidate,
   type QualificationLevel as V2QualificationLevel,
+  type QuickAnswer,
+  type QuickCheckItem,
 } from "../data/journeyFlow";
+import { buildCoursePitchV2, type CoursePitch, type PitchCourse, type Situation } from "../data/coursePitch";
+import { skillQuestionFor } from "../data/skillQuestions";
+import {
+  adviceNoteForLead,
+  fundingPlan,
+  hurdleNotes,
+  personalPlanSteps,
+  prerequisiteLine,
+  priorityLine,
+  V2_HURDLE_OPTIONS,
+  V2_PRIORITY_OPTIONS,
+  type V2Hurdle,
+  type V2Priority,
+} from "../data/journeyAdvice";
 import { AnimatedNumber } from "../components/AnimatedNumber";
 import { JourneyTour, type JourneyStepKey } from "../components/JourneyTour";
 import "../styles/journey.css";
@@ -81,7 +101,11 @@ type StepKey =
   // Journey v2 "Der kurze Weg" (24.09.2026, siehe V2_STEPS_* unten).
   | "v2ziel"
   | "v2herkunft"
-  | "v2richtung";
+  | "v2richtung"
+  // Journey v2 Teil 2/3 (25.09.2026): Kurz-Check, Rahmen, Ergebnis.
+  | "v2check"
+  | "v2rahmen"
+  | "v2ergebnis";
 
 interface StepConfig {
   key: StepKey;
@@ -237,28 +261,46 @@ const WITH_BEREICH_STEPS: StepConfig[] = [
 
 /**
  * Journey v2 "Der kurze Weg" (24.09.2026, Konzept: Projekt-Doc
- * journey-v2-konzept-2026-09-24.md). Umbau in drei Teilen, damit die Journey
- * nach jedem Teil lauffaehig bleibt:
- *  - Teil 1 (dieser Stand): Bildschirme 1–3 (Ziel, Herkunft, Richtung) sind
- *    neu; danach laeuft uebergangsweise der bisherige Skills-/Match-/Kurs-
- *    Ablauf weiter (Fragebogen mit Taetigkeits-Vorschlaegen).
- *  - Teil 2: Kurz-Check + Rahmen ersetzen skills/motivation/gap.
- *  - Teil 3: Ergebnis mit Karriereleiter + Pitch (coursePitch.ts) ersetzt kurs.
- * Aktiv nur mit journeyVersion="v2" (Prop) oder ?journey=v2 in der URL —
- * bis Teil 3 fertig ist, bleibt v1 der Standard.
+ * journey-v2-konzept-2026-09-24.md). Sechs Bildschirme:
+ *  1 Ziel · 2 Erfahrung (Taetigkeiten + Abschluss) · 3 Richtung ·
+ *  4 Kurz-Check (max. 5 Alltagsfragen) · 5 Rahmen (max. 4 Fragen) ·
+ *  6 Ergebnis (1 Top-Kurs + 2 Alternativen mit Karriereleiter und Pitch,
+ *  kurze Anfrage direkt an der Karte).
+ * Teil 1 (24.09.) = Bildschirme 1–3, Teil 2+3 (25.09.) = Bildschirme 4–6.
+ * Aktiv mit journeyVersion="v2" (Prop) oder ?journey=v2 in der URL — v1
+ * bleibt Standard, bis v2 live getestet ist.
  */
 const V2_STEPS_UNSURE: StepConfig[] = [
   { key: "v2ziel", label: "Ziel", subtitle: "Was möchtest du erreichen?" },
   { key: "v2herkunft", label: "Erfahrung", subtitle: "Was hast du bisher gemacht?" },
   { key: "v2richtung", label: "Richtung", subtitle: "Wohin soll es gehen?" },
-  ...CORE_STEPS.filter((s) => s.key !== "zielrolle"),
+  { key: "v2check", label: "Kurz-Check", subtitle: "Ein paar schnelle Fragen." },
+  { key: "v2rahmen", label: "Rahmen", subtitle: "Was muss passen?" },
+  { key: "v2ergebnis", label: "Empfehlung", subtitle: "Dein nächster Schritt." },
 ];
 /** Abkuerzung "Ich weiß schon, was ich werden will": Berufssuche statt Richtung. */
 const V2_STEPS_KNOWN: StepConfig[] = [
   { key: "v2ziel", label: "Ziel", subtitle: "Was möchtest du erreichen?" },
   { key: "zielrolle", label: "Beruf", subtitle: "Welcher Beruf ist dein Ziel?" },
   { key: "v2herkunft", label: "Erfahrung", subtitle: "Was hast du bisher gemacht?" },
-  ...CORE_STEPS.filter((s) => s.key !== "zielrolle"),
+  { key: "v2check", label: "Kurz-Check", subtitle: "Ein paar schnelle Fragen." },
+  { key: "v2rahmen", label: "Rahmen", subtitle: "Was muss passen?" },
+  { key: "v2ergebnis", label: "Empfehlung", subtitle: "Dein nächster Schritt." },
+];
+/** Bildschirm 4: Ueberschrift knuepft am Ziel aus Bildschirm 1 an. */
+const V2_CHECK_TITLE_PREFIX: Record<string, string> = {
+  weiterkommen: "Damit du weiterkommst: ",
+  fuehrung: "Für deinen Weg in die Führung: ",
+  neuorientierung: "Für deinen Wechsel: ",
+  knowhow: "Um dein Wissen zu vertiefen: ",
+  chancen: "Für bessere Chancen: ",
+};
+/** Bildschirm 5: Situation — steuert die Foerder-Zeile im Pitch. */
+const V2_SITUATION_OPTIONS: { key: Situation; label: string }[] = [
+  { key: "beschaeftigt", label: "Ich bin beschäftigt" },
+  { key: "arbeitsuchend", label: "Ich suche Arbeit" },
+  { key: "transfer", label: "Transfergesellschaft" },
+  { key: "ausbildung", label: "Ausbildung / Studium" },
 ];
 
 /** "Dein höchster Abschluss" (Bildschirm 2) — steuert, welches Niveau als
@@ -1946,6 +1988,17 @@ async function runDemoAnalysis() {
   // Karriereleiter und Pitch (coursePitch.ts) gebraucht.
   const [v2Qualification, setV2Qualification] = useState<V2QualificationLevel | null>(null);
   const [v2Direction, setV2Direction] = useState<DirectionCandidate[]>([]);
+  // Teil 2/3 (25.09.2026): Kurz-Check-Antworten, korrigierte Taetigkeits-
+  // Belege ("stimmt nicht"), Situation aus "Dein Rahmen" und der kurze
+  // Vorbereitungs-Moment vor dem Ergebnis.
+  const [v2Answers, setV2Answers] = useState<Map<string, QuickAnswer>>(new Map());
+  const [v2EvidenceRemoved, setV2EvidenceRemoved] = useState<Set<string>>(new Set());
+  const [v2Situation, setV2Situation] = useState<Situation | null>(null);
+  const [v2Preparing, setV2Preparing] = useState(false);
+  // Beratungs-Bausteine (25.09.2026, journeyAdvice.ts): was der Person am
+  // wichtigsten ist und was schwierig werden koennte — beides optional.
+  const [v2Priority, setV2Priority] = useState<V2Priority | null>(null);
+  const [v2Hurdles, setV2Hurdles] = useState<Set<V2Hurdle>>(new Set());
   // Wird erst in Teil 3 (Ergebnis: Karriereleiter + Pitch) gelesen.
   void v2Direction;
   // Einkategorisierung-Optionen, gefiltert auf das, was im Kurskatalog des
@@ -2150,16 +2203,9 @@ async function runDemoAnalysis() {
    *  CV-Pfad. */
   function v2ContinueFromHerkunft(cv: boolean) {
     demoDataActiveRef.current = false;
-    if (cv) setMethod("cv");
-    if (v2KnowsTarget) {
-      if (!cv) {
-        setActivityPickerOpen(false);
-        setMethod("fragebogen");
-      }
-      setCurrent(stepIndex("skills"));
-    } else {
-      setCurrent(stepIndex("v2richtung"));
-    }
+    setActivityPickerOpen(false);
+    setMethod(cv ? "cv" : null);
+    setCurrent(stepIndex(v2KnowsTarget ? "v2check" : "v2richtung"));
   }
   /** Bildschirm 3: Richtung festgelegt. Grenzt auf 1–3 realistische Berufe
    *  ein (narrowDirection) und rechnet ab hier mit der daraus gebauten
@@ -2179,6 +2225,8 @@ async function runDemoAnalysis() {
     const role = buildDirectionRole(bereichKeys, narrowed, careerGoal);
     setBereichRole(role);
     const keepCv = method === "cv";
+    setV2Answers(new Map());
+    setV2EvidenceRemoved(new Set());
     if (role.role_id !== targetRoleId) {
       setTargetRoleId(role.role_id);
       setTargetRoleName(role.role_name);
@@ -2191,11 +2239,214 @@ async function runDemoAnalysis() {
       setAdditionalCourseIds(new Set());
       setTestId(null);
     }
-    // Uebergang Teil 1: direkt in den Fragebogen (mit Taetigkeits-
-    // Vorschlaegen), ohne erneute Methoden-Auswahl — ausser beim CV-Pfad.
+    // Teil 2: weiter zum Kurz-Check (beim CV-Pfad dort der Upload).
     setActivityPickerOpen(false);
-    setMethod(keepCv ? "cv" : "fragebogen");
-    setCurrent(stepIndex("skills"));
+    setMethod(keepCv ? "cv" : null);
+    setCurrent(stepIndex("v2check"));
+  }
+
+  // ---------------- Journey v2 – Handler (Teil 2/3, 25.09.2026) ----------------
+  /** Rolle, gegen die der Kurz-Check laeuft: Richtungs-Rolle (unsicherer
+   *  Pfad) bzw. gewaehlter Beruf (Abkuerzung). null = Rolle nur im
+   *  Backend-Katalog bekannt -> Kurz-Check faellt auf den bisherigen
+   *  Fragebogen zurueck (siehe v2check-Rendering). */
+  const v2Role: CatalogRole | null = useMemo(
+    () => (targetRoleId ? effectiveRoles.find((r) => r.role_id === targetRoleId) ?? null : null),
+    [targetRoleId, effectiveRoles]
+  );
+  const v2Plan = useMemo(() => {
+    if (!v2Role) return { questions: [] as QuickCheckItem[], evidence: [] as ActivityEvidence[] };
+    const plan = planQuickCheck(v2Role, activityIds, 5, skillQuestionFor);
+    // "Stimmt nicht" bei einem Taetigkeits-Beleg: der Skill wird dann ganz
+    // normal im Kurz-Check gefragt (vorn angestellt), statt still zu zaehlen.
+    const removed = plan.evidence.filter((e) => v2EvidenceRemoved.has(e.skill_id));
+    const extra: QuickCheckItem[] = removed.map((e) => {
+      const q = skillQuestionFor(e.skill_id);
+      return {
+        skill_id: e.skill_id,
+        name: e.name,
+        weight: e.weight,
+        question: q?.question ?? `Hast du schon mit „${e.name}“ gearbeitet?`,
+        hint: q?.hint ?? "Denk an Job, Ausbildung, Praktikum oder Ehrenamt.",
+        partialFromActivity: null,
+      };
+    });
+    return {
+      questions: [...extra, ...plan.questions.filter((q) => !v2EvidenceRemoved.has(q.skill_id))],
+      evidence: plan.evidence.filter((e) => !v2EvidenceRemoved.has(e.skill_id)),
+    };
+  }, [v2Role, activityIds, v2EvidenceRemoved]);
+  // Fallback: Rolle ohne lokales Skill-Profil -> bisheriger Fragebogen.
+  useEffect(() => {
+    if (isV2 && stepKey === "v2check" && !v2Role && method === null) setMethod("fragebogen");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isV2, stepKey, v2Role, method]);
+
+  /** Taetigkeiten in den Worten der Person (fuer "Deine Basis" und die Lead-Notiz). */
+  const v2ActivityLabels = useMemo(
+    () => activityIds.map((id) => getActivity(id)?.label).filter((l): l is string => Boolean(l)),
+    [activityIds]
+  );
+  /** Der Weg, fuer den der Kurz-Check laeuft — sichtbar gemacht (Relevanz). */
+  const v2WayLabel = v2KnowsTarget ? targetRoleName : v2Direction[0]?.role.role_name ?? null;
+  /** Rahmen-Fragen nur, wenn der Katalog in der Richtung eine echte Wahl
+   *  bietet (alle Kurse online -> Frage nach dem Ort entfaellt). */
+  const v2RahmenVisibility = useMemo(() => {
+    const dirBereiche = new Set(
+      [...v2Direction.map((d) => d.role.bereich_key), bereichRole?.bereich_key].filter((k): k is string => Boolean(k))
+    );
+    const scope = allCourses.filter(
+      (c) =>
+        dirBereiche.size === 0 ||
+        [...(c.bereich_keys ?? []), ...(c.bereich_key ? [c.bereich_key] : [])].some((k) => dirBereiche.has(k))
+    );
+    const locations = new Set(scope.map((c) => c.location_mode).filter(Boolean));
+    const times = new Set(
+      scope.flatMap((c) => (c.employment_mode === "beides" ? ["vollzeit", "teilzeit"] : c.employment_mode ? [c.employment_mode] : []))
+    );
+    return { showLocation: locations.size !== 1 || locations.has("hybrid"), showTime: times.size !== 1 };
+  }, [allCourses, v2Direction, bereichRole]);
+  function v2ToggleHurdle(h: V2Hurdle) {
+    setV2Hurdles((prev) => {
+      const next = new Set(prev);
+      if (next.has(h)) next.delete(h);
+      else next.add(h);
+      return next;
+    });
+  }
+
+  function v2Answer(skillId: string, answer: QuickAnswer) {
+    setV2Answers((prev) => {
+      const next = new Map(prev);
+      next.set(skillId, answer);
+      return next;
+    });
+  }
+  function v2ToggleEvidence(skillId: string) {
+    setV2EvidenceRemoved((prev) => {
+      const next = new Set(prev);
+      if (next.has(skillId)) next.delete(skillId);
+      else next.add(skillId);
+      return next;
+    });
+  }
+
+  /** Kurz-Check -> Skill-Profil. Belegt = Taetigkeiten (konservativ
+   *  "letzte Jahre") + Ja/Ein bisschen. Luecken = "Noch nicht" (Kern) und
+   *  die uebrigen, nicht gefragten Skills der Rolle (ergaenzend) — letztere
+   *  fliessen nur in die Kurs-Sortierung ein, nicht in den Match-Wert (der
+   *  zaehlt wie im Fragebogen nur, was tatsaechlich beantwortet/belegt ist). */
+  function v2BuildGapResult(): GapAnalysisResponse | null {
+    if (!v2Role || !targetRoleId) return null;
+    const bySkill = new Map(v2Role.skills.map((sk) => [sk.skill_id, sk]));
+    const covered: RoleSkillStatus[] = [];
+    const gapKern: RoleSkillStatus[] = [];
+    const gapRest: RoleSkillStatus[] = [];
+    const depthMap = new Map<string, SkillDepth>();
+    let total = 0;
+    let got = 0;
+    const handled = new Set<string>();
+    for (const e of v2Plan.evidence) {
+      const sk = bySkill.get(e.skill_id);
+      if (!sk) continue;
+      const depth: SkillDepth = { proficiency: EVIDENCE_DEPTH.proficiency, recency: EVIDENCE_DEPTH.recency };
+      const score = quizSkillScore(depth);
+      depthMap.set(sk.skill_id, depth);
+      total += sk.weight;
+      got += sk.weight * (score / 100);
+      covered.push({ esco_uri: sk.skill_id, preferred_label: sk.name, weight: sk.weight, covered: true, matched_score: score });
+      handled.add(sk.skill_id);
+    }
+    for (const q of v2Plan.questions) {
+      const sk = bySkill.get(q.skill_id);
+      if (!sk || handled.has(sk.skill_id)) continue;
+      handled.add(sk.skill_id);
+      const a = v2Answers.get(sk.skill_id) ?? "nein";
+      const d = quickAnswerToDepth(a);
+      total += sk.weight;
+      if (d) {
+        const depth: SkillDepth = { proficiency: d.proficiency, recency: d.recency };
+        const score = quizSkillScore(depth);
+        depthMap.set(sk.skill_id, depth);
+        got += sk.weight * (score / 100);
+        covered.push({ esco_uri: sk.skill_id, preferred_label: sk.name, weight: sk.weight, covered: true, matched_score: score });
+        // "Ein bisschen" bleibt zusaetzlich ein Vertiefungs-Thema fuer die Kurse.
+        if (a === "etwas") gapKern.push({ esco_uri: sk.skill_id, preferred_label: sk.name, weight: sk.weight * 0.5, covered: false, matched_score: null });
+      } else {
+        gapKern.push({ esco_uri: sk.skill_id, preferred_label: sk.name, weight: sk.weight, covered: false, matched_score: null });
+      }
+    }
+    for (const sk of v2Role.skills) {
+      if (handled.has(sk.skill_id)) continue;
+      gapRest.push({ esco_uri: sk.skill_id, preferred_label: sk.name, weight: sk.weight * 0.5, covered: false, matched_score: null });
+    }
+    gapKern.sort((a, b) => b.weight - a.weight);
+    gapRest.sort((a, b) => b.weight - a.weight);
+    setCheckedSkills(new Set(covered.map((c) => c.esco_uri)));
+    setSkillDepthByUri(depthMap);
+    return {
+      tenant_id: "",
+      target_role_id: targetRoleId,
+      target_role_name: targetRoleName ?? v2Role.role_name,
+      match_percentage: total > 0 ? Math.round((got / total) * 1000) / 10 : 0,
+      covered_skills: covered,
+      gap_skills: [...gapKern, ...gapRest],
+    };
+  }
+
+  /** Bildschirm 4 -> 5. */
+  function v2SubmitCheck() {
+    const result = v2BuildGapResult();
+    if (!result) return;
+    demoDataActiveRef.current = false;
+    const known = result.covered_skills.map((sk) => sk.preferred_label);
+    const open = result.gap_skills.slice(0, 5).map((sk) => sk.preferred_label);
+    setText(
+      [
+        known.length ? `Ich bringe bereits folgende Fähigkeiten mit: ${known.join(", ")}.` : "",
+        open.length ? `Ich möchte vor allem lernen: ${open.join(", ")}.` : "",
+      ]
+        .filter(Boolean)
+        .join(" ") || `Ich möchte mich im Bereich „${result.target_role_name}“ weiterentwickeln.`
+    );
+    setGapResult(result);
+    setDepthByUri(new Map());
+    setDepthOverallAssessment(null);
+    setSelfLevelByUri(new Map());
+    setManualSkillUris(new Set());
+    manualSkillUrisRef.current = new Set();
+    setTestId(null);
+    setCurrent(stepIndex("v2rahmen"));
+    createTest(baseUrl, apiKey, {
+      target_role_id: result.target_role_id,
+      target_role_name: result.target_role_name,
+      match_percentage: result.match_percentage,
+      gap_skill_count: result.gap_skills.length,
+      gap_skill_labels: result.gap_skills.map((sk) => sk.preferred_label),
+    })
+      .then((t) => setTestId(t.test_id))
+      .catch((err) => console.error("[JourneyPage] createTest (v2):", err));
+  }
+
+  /** Bildschirm 5: Situation. Arbeitsuchend/Transfer -> Foerderung ist
+   *  relevant (Bildungsgutschein), fliesst so auch ins Kurs-Ranking ein. */
+  function v2SelectSituation(sit: Situation | null) {
+    setV2Situation(sit);
+    if (sit === "arbeitsuchend" || sit === "transfer") setFundingPreference("gefoerdert");
+    else if (fundingPreference === "gefoerdert") setFundingPreference(null);
+  }
+
+  /** Bildschirm 5 -> 6: kurzer, ehrlicher Vorbereitungs-Moment (mind.
+   *  1,2 s, damit er wahrgenommen wird), dann Ranking + Ergebnis. */
+  async function v2ShowResult() {
+    if (!gapResult) return;
+    setV2Preparing(true);
+    const minWait = new Promise((r) => window.setTimeout(r, 1200));
+    try {
+      await Promise.all([goToKurs(gapResult), minWait]);
+    } finally {
+      setV2Preparing(false);
+    }
   }
   /** Präferenzen-Schritt (Version 24): Beschäftigungsart/Arbeitsort/
    * Startzeitpunkt sind reine State-Updates (siehe PraeferenzenStep-Props),
@@ -2587,7 +2838,7 @@ async function runDemoAnalysis() {
       setText(textToUse);
       // Erst die Motivations-Zwischenseite (siehe CORE_STEPS-Kommentar),
       // nicht direkt "gap" — die Person klickt dort selbst weiter.
-      setCurrent(stepIndex("motivation"));
+      setCurrent(stepIndex(isV2 ? "v2rahmen" : "motivation"));
       setTestId(null);
       setDepthByUri(new Map());
       setDepthOverallAssessment(null);
@@ -2744,7 +2995,7 @@ async function runDemoAnalysis() {
     setGapResult(result);
     // Erst die Motivations-Zwischenseite (siehe CORE_STEPS-Kommentar), dann
     // erst der Gap-Schritt — Person klickt sich jeweils selbst weiter.
-    setCurrent(stepIndex("motivation"));
+    setCurrent(stepIndex(isV2 ? "v2rahmen" : "motivation"));
     setTestId(null);
     // Nutzer landet jetzt wie im Lebenslauf-Pfad zuerst auf der
     // Motivations-Zwischenseite und danach auf dem Gap-Schritt, klickt sich
@@ -2986,7 +3237,7 @@ async function runDemoAnalysis() {
         recommended_courses: personalizedCourses,
       });
 
-      setCurrent(stepIndex("kurs"));
+      setCurrent(stepIndex(isV2 ? "v2ergebnis" : "kurs"));
       setSelectedCourseId(personalizedCourses[0]?.course_id ?? null);
       setAdditionalCourseIds(new Set());
 
@@ -3171,10 +3422,27 @@ async function runDemoAnalysis() {
       // untergeht, wird es dem Freitext-Anliegen vorangestellt (Version 38,
       // 17.09.), statt dem Bildungsträger stillschweigend eine evtl. falsche
       // Zielrolle anzuzeigen.
-      const resolvedTargetRole = resolveLeadTargetRoleId(targetRoleId, targetRoleName, effectiveRoles, roles);
+      // Journey v2: statt der synthetischen Richtungs-Rolle ("Logistik &
+      // Verkehr") den konkret eingegrenzten Beruf an den Bildungstraeger
+      // melden — der ist im Backend-Katalog eher bekannt und fuer die
+      // Beratung aussagekraeftiger.
+      // Vorrang: der Beruf, zu dem der angefragte Kurs fuehrt (Karriereleiter),
+      // sonst der beste Beruf der Richtung.
+      const v2Reach = isV2 ? v2ResultCards.find((c) => c.course.course_id === selectedCourseId)?.pitch.ladder.reach ?? null : null;
+      const leadRole = v2Reach
+        ? { id: v2Reach.role_id, name: v2Reach.role_name }
+        : isV2 && !v2KnowsTarget && v2Direction[0]
+          ? { id: v2Direction[0].role.role_id, name: v2Direction[0].role.role_name }
+          : { id: targetRoleId, name: targetRoleName };
+      const resolvedTargetRole = resolveLeadTargetRoleId(leadRole.id, leadRole.name, effectiveRoles, roles);
       const combinedMessage = [
-        !resolvedTargetRole.nameConfirmed && targetRoleName
-          ? `[Automatischer Hinweis: Zielrolle „${targetRoleName}“ konnte im System nicht eindeutig zugeordnet werden — bitte manuell prüfen.]`
+        !resolvedTargetRole.nameConfirmed && leadRole.name
+          ? `[Automatischer Hinweis: Zielrolle „${leadRole.name}“ konnte im System nicht eindeutig zugeordnet werden — bitte manuell prüfen.]`
+          : null,
+        // Journey v2: Notiz fuer die Beratung (Situation, Prioritaet,
+        // Huerden, Erfahrung in den Worten der Person).
+        isV2
+          ? adviceNoteForLead({ priority: v2Priority, hurdles: v2Hurdles, situation: v2Situation, activityLabels: v2ActivityLabels })
           : null,
         leadMessage.trim() || null,
       ]
@@ -3413,6 +3681,63 @@ async function runDemoAnalysis() {
         .filter((n): n is string => Boolean(n)),
     [additionalCourseIds, selectedCourseId, allCourseById]
   );
+  // Journey v2, Bildschirm 6: Top-Kurs + 2 Alternativen mit Pitch.
+  const v2ResultCards = useMemo(() => {
+    if (!isV2 || !courseResult) return [] as { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean }[];
+    const byId = new Map(allCourses.map((c) => [c.course_id, c]));
+    const ctx = {
+      goal: careerGoal,
+      situation: v2Situation,
+      employmentPref: (employmentType === "vollzeit" || employmentType === "teilzeit" || employmentType === "egal" ? employmentType : null) as
+        | "vollzeit"
+        | "teilzeit"
+        | "egal"
+        | null,
+      startPref: (desiredStart === "asap" || desiredStart === "4-wochen" || desiredStart === "1-3-monate" || desiredStart === "offen"
+        ? desiredStart
+        : null) as "asap" | "4-wochen" | "1-3-monate" | "offen" | null,
+      direction: v2Direction,
+      evidence: v2Plan.evidence,
+      answers: v2Answers,
+      directionSkills: (v2Role?.skills ?? []).map((sk) => ({ skill_id: sk.skill_id, name: sk.name, weight: sk.weight })),
+      activityIds,
+      bereichLabel: targetBereichLabel ?? null,
+      roles: rolesInPortfolio.length > 0 ? rolesInPortfolio : ROLES_CATALOG,
+    };
+    const out: { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean }[] = [];
+    for (const rec of courseResult.recommended_courses ?? []) {
+      const course = byId.get(rec.course_id);
+      if (!course || out.some((o) => o.course.course_id === course.course_id)) continue;
+      out.push({ course, pitch: buildCoursePitchV2(course as unknown as PitchCourse, ctx), fromDirection: false });
+      if (out.length >= 3) break;
+    }
+    // Alternativen auffuellen (Konzept: 1 Top-Kurs + 2 Alternativen): nur
+    // echte Kurse aus derselben Richtung (Bereich der eingegrenzten Berufe),
+    // ehrlich als "Ebenfalls in deiner Richtung" gekennzeichnet — keine
+    // behauptete Luecken-Abdeckung.
+    if (out.length > 0 && out.length < 3) {
+      const dirBereiche = new Set(
+        [...v2Direction.map((d) => d.role.bereich_key), bereichRole?.bereich_key].filter((k): k is string => Boolean(k))
+      );
+      const extras = allCourses
+        .filter((c) => !out.some((o) => o.course.course_id === c.course_id))
+        .filter((c) => [...(c.bereich_keys ?? []), ...(c.bereich_key ? [c.bereich_key] : [])].some((k) => dirBereiche.has(k)))
+        .sort((a, b) => courseRichnessScore(b) - courseRichnessScore(a));
+      // Kein Rueckschritt: Kurse, die zu einem Beruf mehr als eine Stufe
+      // UNTER der eingegrenzten Richtung fuehren, werden nicht aufgefuellt.
+      const targetNiveau = v2Direction[0]?.role.anforderungsniveau ?? 0;
+      const niveauById = new Map(ROLES_CATALOG.map((r) => [r.role_id, r.anforderungsniveau ?? 0]));
+      for (const course of extras) {
+        const pitch = buildCoursePitchV2(course as unknown as PitchCourse, ctx);
+        const reachNiveau = pitch.ladder.reach ? niveauById.get(pitch.ladder.reach.role_id) ?? 0 : 0;
+        if (pitch.ladder.reach && targetNiveau > 0 && reachNiveau < targetNiveau - 1) continue;
+        out.push({ course, pitch, fromDirection: true });
+        if (out.length >= 3) break;
+      }
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isV2, courseResult, allCourses, careerGoal, v2Situation, employmentType, desiredStart, v2Direction, v2Plan, v2Answers, v2Role, activityIds, targetBereichLabel, rolesInPortfolio, bereichRole]);
   return (
     <>
       {depthBusy && (
@@ -3494,7 +3819,17 @@ async function runDemoAnalysis() {
             </>
           )}
           <div className="widget-body" ref={widgetBodyRef}>
-            {done ? (
+            {done && isV2 ? (
+              <V2PlanScreen
+                leadName={leadName}
+                goalLabel={GOAL_OPTIONS.find((g) => g.key === careerGoal)?.label ?? null}
+                card={v2ResultCards.find((c) => c.course.course_id === selectedCourseId) ?? v2ResultCards[0] ?? null}
+                situation={v2Situation}
+                hurdles={v2Hurdles}
+                consultation={wantsConsultation}
+                strengths={[...v2Plan.evidence.map((e) => e.name), ...v2Plan.questions.filter((q) => v2Answers.get(q.skill_id) === "ja").map((q) => q.name)]}
+              />
+            ) : done ? (
               <FinalScreen
                 leadName={leadName}
                 targetRoleName={targetRoleName}
@@ -3544,6 +3879,115 @@ async function runDemoAnalysis() {
                     rolesInPortfolio={rolesInPortfolio}
                     onConfirm={v2ApplyDirection}
                     onBack={() => setCurrent(stepIndex("v2herkunft"))}
+                  />
+                )}
+                {stepKey === "v2check" &&
+                  (v2Role && method !== "cv" ? (
+                    <V2CheckStep
+                      goal={careerGoal}
+                      wayLabel={v2WayLabel}
+                      onChangeWay={() => setCurrent(stepIndex(v2KnowsTarget ? "zielrolle" : "v2richtung"))}
+                      questions={v2Plan.questions}
+                      evidence={v2Plan.evidence}
+                      removedEvidence={v2EvidenceRemoved}
+                      onToggleEvidence={v2ToggleEvidence}
+                      answers={v2Answers}
+                      onAnswer={v2Answer}
+                      onForward={v2SubmitCheck}
+                      onBack={() => setCurrent(stepIndex(v2KnowsTarget ? "v2herkunft" : "v2richtung"))}
+                    />
+                  ) : (
+                    <SkillsMethodStep
+                      method={method}
+                      setMethod={setMethod}
+                      targetRoleName={targetRoleName}
+                      text={text}
+                      setText={setText}
+                      onSubmitText={submitTextMethod}
+                      uploadBusy={uploadBusy}
+                      uploadStatus={uploadStatus}
+                      fileInputRef={fileInputRef}
+                      onFileChange={handleFileChange}
+                      roleSkills={roleSkills}
+                      questionSkills={questionSkills}
+                      loadingRoleSkills={loadingRoleSkills}
+                      roleSkillsError={roleSkillsError}
+                      checkedSkills={checkedSkills}
+                      toggleSkill={toggleSkill}
+                      skillDepthByUri={skillDepthByUri}
+                      learningGoalSkillIds={roleSuggestSkillIds}
+                      onAnswerSkill={answerQuizSkill}
+                      onSubmitQuiz={submitQuizMethod}
+                      skillsBusy={skillsBusy}
+                      skillsError={skillsError}
+                      onBack={() => {
+                        if (method === "cv" && v2Role) setMethod(null);
+                        else setCurrent(stepIndex(v2KnowsTarget ? "v2herkunft" : "v2richtung"));
+                      }}
+                      onCvConsentGiven={() => setCvProcessingConsentAt(new Date().toISOString())}
+                      privacyPolicyUrl={privacyPolicyUrl}
+                      showAvatar={showAvatar}
+                      avatarName={avatarName}
+                      avatarAccentColor={avatarAccentColor}
+                      activityIds={activityIds}
+                      setActivityIds={setActivityIds}
+                      activityPickerOpen={activityPickerOpen}
+                      setActivityPickerOpen={setActivityPickerOpen}
+                      activitySuggestionByUri={activitySuggestionByUri}
+                    />
+                  ))}
+                {stepKey === "v2rahmen" && (
+                  <V2RahmenStep
+                    showTime={v2RahmenVisibility.showTime}
+                    showLocation={v2RahmenVisibility.showLocation}
+                    priority={v2Priority}
+                    onSelectPriority={setV2Priority}
+                    hurdles={v2Hurdles}
+                    onToggleHurdle={v2ToggleHurdle}
+                    situation={v2Situation}
+                    onSelectSituation={v2SelectSituation}
+                    employmentType={employmentType}
+                    onSelectEmploymentType={setEmploymentType}
+                    desiredStart={desiredStart}
+                    onSelectStart={setDesiredStart}
+                    workLocation={workLocation}
+                    onSelectWorkLocation={setWorkLocation}
+                    preparing={v2Preparing || gapBusy}
+                    error={gapError}
+                    evidenceCount={v2Plan.evidence.length + Array.from(v2Answers.values()).filter((a) => a !== "nein").length}
+                    onForward={() => void v2ShowResult()}
+                    onBack={() => setCurrent(stepIndex("v2check"))}
+                  />
+                )}
+                {stepKey === "v2ergebnis" && (
+                  <V2ErgebnisStep
+                    cards={v2ResultCards}
+                    evidence={v2Plan.evidence}
+                    confirmedSkills={v2Plan.questions.filter((q) => v2Answers.get(q.skill_id) === "ja").map((q) => q.name)}
+                    selectedCourseId={selectedCourseId}
+                    onSelectCourse={setSelectedCourseId}
+                    leadName={leadName}
+                    setLeadName={setLeadName}
+                    leadEmail={leadEmail}
+                    setLeadEmail={setLeadEmail}
+                    leadPhone={leadPhone}
+                    setLeadPhone={setLeadPhone}
+                    consent={consent}
+                    setConsent={setConsent}
+                    busy={leadBusy}
+                    error={leadError}
+                    onSubmit={(intent) => {
+                      setWantsConsultation(intent === "consultation");
+                      void submitLead(intent);
+                    }}
+                    privacyPolicyUrl={privacyPolicyUrl}
+                    activityLabels={v2ActivityLabels}
+                    priority={v2Priority}
+                    hurdles={v2Hurdles}
+                    situation={v2Situation}
+                    qualificationLevel={qualificationLevel}
+                    onAdjust={() => setCurrent(stepIndex("v2check"))}
+                    onBack={() => setCurrent(stepIndex("v2rahmen"))}
                   />
                 )}
                 {stepKey === "ziel" && (
@@ -4112,7 +4556,7 @@ function V2HerkunftStep({
           aria-live="polite"
           style={{ marginTop: "12px", padding: "11px 13px", borderRadius: "12px", background: "rgba(95,220,153,.10)", fontSize: "13px", fontWeight: 700 }}
         >
-          ✓ Stark! Daraus erkennen wir schon {strengths} Stärke{strengths === 1 ? "" : "n"} – die fragen wir gleich nicht mehr ab.
+          ✓ Stark! Daraus erkennen wir schon {strengths} Stärke{strengths === 1 ? "" : "n"} – das fließt direkt in deine Empfehlung ein.
         </div>
       )}
 
@@ -4213,6 +4657,782 @@ function V2RichtungStep({
     </div>
   );
 }
+/** Bildschirm 4 "Kurz-Check" (Journey v2 Teil 2): hoechstens 5 Fragen in
+ *  Alltagssprache, eine Frage pro Karte, Antwort per Tipp (Ja / Ein
+ *  bisschen / Noch nicht) mit kurzem Bestaetigungs-Moment und Auto-Weiter.
+ *  Oben stehen ehrlich die Staerken, die schon aus den Taetigkeiten belegt
+ *  sind ("Stimmt nicht" -> wird stattdessen gefragt). */
+function V2CheckStep({
+  goal,
+  wayLabel,
+  onChangeWay,
+  questions,
+  evidence,
+  removedEvidence,
+  onToggleEvidence,
+  answers,
+  onAnswer,
+  onForward,
+  onBack,
+}: {
+  goal: string | null;
+  wayLabel: string | null;
+  onChangeWay: () => void;
+  questions: QuickCheckItem[];
+  evidence: ActivityEvidence[];
+  removedEvidence: ReadonlySet<string>;
+  onToggleEvidence: (skillId: string) => void;
+  answers: ReadonlyMap<string, QuickAnswer>;
+  onAnswer: (skillId: string, a: QuickAnswer) => void;
+  onForward: () => void;
+  onBack: () => void;
+}) {
+  const firstOpen = questions.findIndex((q) => !answers.has(q.skill_id));
+  const [index, setIndex] = useState(firstOpen === -1 ? Math.max(0, questions.length - 1) : firstOpen);
+  const [flash, setFlash] = useState<QuickAnswer | null>(null);
+  const allAnswered = questions.every((q) => answers.has(q.skill_id));
+  const q = questions[Math.min(index, questions.length - 1)];
+  const [showEvidence, setShowEvidence] = useState(false);
+  const shownEvidence = showEvidence ? evidence : evidence.slice(0, 4);
+
+  function answer(a: QuickAnswer) {
+    if (!q) return;
+    onAnswer(q.skill_id, a);
+    setFlash(a);
+    window.setTimeout(() => {
+      setFlash(null);
+      if (index < questions.length - 1) setIndex(index + 1);
+    }, 320);
+  }
+  const OPTIONS: { key: QuickAnswer; label: string; icon: string }[] = [
+    { key: "ja", label: "Ja", icon: "👍" },
+    { key: "etwas", label: "Ein bisschen", icon: "🤏" },
+    { key: "nein", label: "Noch nicht", icon: "🌱" },
+  ];
+  return (
+    <div className="v2-check">
+      <JourneyStepHeading
+        step="04"
+        kicker="KURZ-CHECK"
+        title={
+          questions.length === 0
+            ? "Dein Profil steht schon"
+            : `${V2_CHECK_TITLE_PREFIX[goal ?? ""] ?? ""}${V2_CHECK_TITLE_PREFIX[goal ?? ""] ? "noch" : "Noch"} ${questions.length} schnelle Frage${questions.length === 1 ? "" : "n"}`
+        }
+        description="Ehrlich antworten lohnt sich: So zeigen wir dir nur Kurse, die dir wirklich etwas Neues bringen."
+      />
+      {wayLabel && (
+        <div className="v2-way">
+          <span className="v2-way-icon" aria-hidden="true">
+            🧭
+          </span>
+          <span>
+            Dein Weg: <strong>{wayLabel}</strong>
+          </span>
+          <button type="button" onClick={onChangeWay}>
+            ändern
+          </button>
+        </div>
+      )}
+      {(evidence.length > 0 || removedEvidence.size > 0) && (
+        <div className="v2-evidence">
+          <div className="v2-evidence-title">✓ Das bringst du schon mit – aus deinen Tätigkeiten</div>
+          <div className="v2-evidence-chips">
+            {shownEvidence.map((e) => (
+              <span key={e.skill_id} className="v2-evidence-chip" title={e.sourceLabels.length ? `weil du: ${e.sourceLabels.join(", ")}` : undefined}>
+                {e.name}
+                <button type="button" onClick={() => onToggleEvidence(e.skill_id)} aria-label={`${e.name} stimmt nicht – lieber fragen`}>
+                  ×
+                </button>
+              </span>
+            ))}
+            {evidence.length > 4 && (
+              <button type="button" className="v2-evidence-more" onClick={() => setShowEvidence((v) => !v)}>
+                {showEvidence ? "weniger" : `+${evidence.length - 4} weitere`}
+              </button>
+            )}
+          </div>
+          <div className="v2-evidence-hint">Stimmt etwas nicht? Einfach auf × tippen – dann fragen wir es kurz ab.</div>
+        </div>
+      )}
+      {q ? (
+        <>
+          <div className="v2-check-progress" aria-hidden="true">
+            {questions.map((qq, i) => (
+              <button
+                key={qq.skill_id}
+                type="button"
+                tabIndex={-1}
+                className={`v2-check-dot ${i === index ? "active" : ""} ${answers.has(qq.skill_id) ? "done" : ""}`}
+                onClick={() => setIndex(i)}
+              />
+            ))}
+          </div>
+          <div className="v2-check-card" key={q.skill_id} aria-live="polite">
+            <div className="v2-check-count">
+              Frage {index + 1} von {questions.length}
+            </div>
+            <div className="v2-check-question">{q.question}</div>
+            <div className="v2-check-hint">{q.partialFromActivity ? `Du hast „${q.partialFromActivity}“ angegeben – zählt das schon?` : q.hint}</div>
+            <div className="v2-check-options" role="group" aria-label="Antwort">
+              {OPTIONS.map((o) => {
+                const selected = (flash ?? answers.get(q.skill_id)) === o.key;
+                return (
+                  <button
+                    key={o.key}
+                    type="button"
+                    className={`v2-check-option ${selected ? "selected" : ""} ${flash === o.key ? "flash" : ""}`}
+                    aria-pressed={selected}
+                    onClick={() => answer(o.key)}
+                  >
+                    <span className="v2-check-option-icon" aria-hidden="true">
+                      {o.icon}
+                    </span>
+                    {o.label}
+                  </button>
+                );
+              })}
+            </div>
+            {index > 0 && (
+              <button type="button" className="v2-check-prev" onClick={() => setIndex(index - 1)}>
+                ← vorherige Frage
+              </button>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="v2-check-card">
+          <div className="v2-check-question">Deine Tätigkeiten decken schon alles Wichtige ab. 🎉</div>
+          <div className="v2-check-hint">Weiter geht&apos;s mit deinem Rahmen – dann siehst du deine Empfehlung.</div>
+        </div>
+      )}
+      <ActionsRow
+        onBack={onBack}
+        forwardLabel={allAnswered ? "Weiter →" : `Noch ${questions.filter((qq) => !answers.has(qq.skill_id)).length} offen`}
+        forwardDisabled={!allAnswered}
+        onForward={onForward}
+      />
+    </div>
+  );
+}
+
+/** Bildschirm 5 "Dein Rahmen" (Journey v2 Teil 2): hoechstens 4 Fragen,
+ *  alle optional. Oben ein ehrlicher Erfolgs-Moment (nur echte Zahlen). */
+function V2RahmenStep({
+  showTime,
+  showLocation,
+  priority,
+  onSelectPriority,
+  hurdles,
+  onToggleHurdle,
+  situation,
+  onSelectSituation,
+  employmentType,
+  onSelectEmploymentType,
+  desiredStart,
+  onSelectStart,
+  workLocation,
+  onSelectWorkLocation,
+  preparing,
+  error,
+  evidenceCount,
+  onForward,
+  onBack,
+}: {
+  showTime: boolean;
+  showLocation: boolean;
+  priority: V2Priority | null;
+  onSelectPriority: (p: V2Priority | null) => void;
+  hurdles: ReadonlySet<V2Hurdle>;
+  onToggleHurdle: (h: V2Hurdle) => void;
+  situation: Situation | null;
+  onSelectSituation: (s: Situation | null) => void;
+  employmentType: string | null;
+  onSelectEmploymentType: (v: string | null) => void;
+  desiredStart: string | null;
+  onSelectStart: (v: string | null) => void;
+  workLocation: string | null;
+  onSelectWorkLocation: (v: string | null) => void;
+  preparing: boolean;
+  error: string | null;
+  evidenceCount: number;
+  onForward: () => void;
+  onBack: () => void;
+}) {
+  if (preparing) {
+    return (
+      <div className="v2-preparing" role="status" aria-live="polite">
+        <div className="v2-preparing-orbit" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+        <div className="v2-preparing-title">Wir stellen deine Empfehlung zusammen …</div>
+        <ul className="v2-preparing-steps">
+          <li>✓ Deine Stärken erfasst</li>
+          <li>✓ Deine Richtung eingegrenzt</li>
+          <li className="active">Passende Kurse werden sortiert</li>
+        </ul>
+      </div>
+    );
+  }
+  const answered = [situation, employmentType, desiredStart, workLocation, priority].filter(Boolean).length + hurdles.size;
+  return (
+    <div>
+      {evidenceCount > 0 && (
+        <div className="v2-success" role="status">
+          <span className="v2-success-icon" aria-hidden="true">
+            💪
+          </span>
+          <div>
+            <strong>
+              Stark – {evidenceCount} Stärke{evidenceCount === 1 ? "" : "n"} hast du schon.
+            </strong>
+            <span>Jetzt noch dein Rahmen, dann siehst du deine Empfehlung.</span>
+          </div>
+        </div>
+      )}
+      <JourneyStepHeading
+        step="05"
+        kicker="DEIN RAHMEN"
+        title="Was muss zu deinem Alltag passen?"
+        description="Alles optional – aber je mehr wir wissen, desto besser passen Zeit, Start, Förderung und deine Beratung."
+      />
+      <div className="v2-rahmen-grid">
+        <OptionCard
+          icon="🧾"
+          title="Deine Situation"
+          sub="Damit zeigen wir dir die Förderung, die für dich infrage kommt."
+          options={V2_SITUATION_OPTIONS}
+          selected={situation}
+          onSelect={(k) => onSelectSituation((k as Situation | null) ?? null)}
+        />
+        {showTime && (
+          <OptionCard icon="⏰" title="Wie viel Zeit hast du?" sub="Vollzeit, Teilzeit oder egal." options={EMPLOYMENT_OPTIONS} selected={employmentType} onSelect={onSelectEmploymentType} />
+        )}
+        <OptionCard icon="🚀" title="Wann möchtest du starten?" sub="Wir bevorzugen Kurse mit passendem Start." options={START_OPTIONS} selected={desiredStart} onSelect={onSelectStart} />
+        {showLocation && (
+          <OptionCard icon="📍" title="Wo möchtest du lernen?" sub="Online, vor Ort oder egal." options={LOCATION_OPTIONS} selected={workLocation} onSelect={onSelectWorkLocation} />
+        )}
+      </div>
+      <div className="v2-hurdles">
+        <div className="v2-hurdles-title">Was ist dir am wichtigsten? <span>optional</span></div>
+        <div className="v2-hurdles-chips" style={{ marginBottom: "14px" }}>
+          {V2_PRIORITY_OPTIONS.map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              className={`start-chip ${priority === o.key ? "selected" : ""}`}
+              aria-pressed={priority === o.key}
+              onClick={() => onSelectPriority(priority === o.key ? null : o.key)}
+            >
+              {priority === o.key && (
+                <span className="start-chip-check" aria-hidden="true">
+                  ✓
+                </span>
+              )}
+              {o.label}
+            </button>
+          ))}
+        </div>
+        <div className="v2-hurdles-title">Was könnte schwierig werden? <span>optional · mehrere möglich</span></div>
+        <div className="v2-hurdles-chips">
+          {V2_HURDLE_OPTIONS.map((h) => (
+            <button
+              key={h.key}
+              type="button"
+              className={`start-chip ${hurdles.has(h.key) ? "selected" : ""}`}
+              aria-pressed={hurdles.has(h.key)}
+              onClick={() => onToggleHurdle(h.key)}
+            >
+              {hurdles.has(h.key) && (
+                <span className="start-chip-check" aria-hidden="true">
+                  ✓
+                </span>
+              )}
+              {h.label}
+            </button>
+          ))}
+        </div>
+        <div className="v2-hurdles-hint">Darauf gehen wir direkt an deinen Kursen ein – und deine Beratung weiß Bescheid.</div>
+      </div>
+      {error && (
+        <div className="status-line err" aria-live="polite">
+          {error}
+        </div>
+      )}
+      <ActionsRow onBack={onBack} forwardLabel={answered > 0 ? "Meine Empfehlung zeigen →" : "Überspringen & Empfehlung zeigen →"} onForward={onForward} />
+    </div>
+  );
+}
+
+/** Bildschirm 6 "Deine Empfehlung" (Journey v2 Teil 3): 1 Top-Kurs + 2
+ *  Alternativen. Jede Karte: Pitch (coursePitch.ts, nur echte Daten),
+ *  Karriereleiter, max. 3 Luecken, Rahmendaten, Foerderung. Die Anfrage
+ *  passiert direkt an der Karte: Vorname + E-Mail (+ Telefon optional) +
+ *  Einwilligung. Das Ergebnis ist ohne Daten-Eingabe sichtbar. */
+function V2ErgebnisStep({
+  cards,
+  evidence,
+  confirmedSkills,
+  selectedCourseId,
+  onSelectCourse,
+  leadName,
+  setLeadName,
+  leadEmail,
+  setLeadEmail,
+  leadPhone,
+  setLeadPhone,
+  consent,
+  setConsent,
+  busy,
+  error,
+  onSubmit,
+  privacyPolicyUrl,
+  activityLabels,
+  priority,
+  hurdles,
+  situation,
+  qualificationLevel,
+  onAdjust,
+  onBack,
+}: {
+  cards: { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean }[];
+  evidence: ActivityEvidence[];
+  confirmedSkills: string[];
+  selectedCourseId: string | null;
+  onSelectCourse: (id: string) => void;
+  leadName: string;
+  setLeadName: (v: string) => void;
+  leadEmail: string;
+  setLeadEmail: (v: string) => void;
+  leadPhone: string;
+  setLeadPhone: (v: string) => void;
+  consent: boolean;
+  setConsent: (v: boolean) => void;
+  busy: boolean;
+  error: string | null;
+  onSubmit: (intent: "start" | "info" | "consultation") => void;
+  privacyPolicyUrl: string;
+  activityLabels: string[];
+  priority: V2Priority | null;
+  hurdles: ReadonlySet<V2Hurdle>;
+  situation: Situation | null;
+  qualificationLevel: string | null;
+  onAdjust: () => void;
+  onBack: () => void;
+}) {
+  const [formFor, setFormFor] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [clicked, setClicked] = useState<"start" | "info" | "consultation" | null>(null);
+  const emailValid = EMAIL_RE.test(leadEmail.trim());
+  const strengths = [...evidence.map((e) => e.name), ...confirmedSkills].filter((v, i, a) => a.indexOf(v) === i);
+
+  function openForm(courseId: string) {
+    onSelectCourse(courseId);
+    setFormFor(courseId);
+    window.setTimeout(() => document.getElementById(`v2-lead-${courseId}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 60);
+  }
+  function send(intent: "start" | "info" | "consultation", bookingUrl?: string | null) {
+    if (!emailValid) {
+      document.getElementById("v2LeadEmail")?.focus();
+      return;
+    }
+    if (!consent) return;
+    setClicked(intent);
+    onSubmit(intent);
+    if (intent === "start" && bookingUrl) window.open(bookingUrl, "_blank", "noopener,noreferrer");
+  }
+
+  function leadForm(course: OrbitCourse, pitch: CoursePitch) {
+    return (
+      <div className="v2-lead" id={`v2-lead-${course.course_id}`}>
+        <div className="v2-lead-title">Fast geschafft – wohin dürfen wir die Infos schicken?</div>
+        <div className="v2-lead-grid">
+          <input className="big-input" placeholder="Vorname" aria-label="Vorname" value={leadName} onChange={(e) => setLeadName(e.target.value)} />
+          <div className="input-wrap">
+            <input
+              id="v2LeadEmail"
+              className="big-input"
+              type="email"
+              placeholder="E-Mail-Adresse"
+              aria-label="E-Mail-Adresse (Pflichtfeld)"
+              aria-required="true"
+              value={leadEmail}
+              onChange={(e) => setLeadEmail(e.target.value)}
+            />
+            {emailValid && (
+              <span className="input-check" aria-hidden="true">
+                ✓
+              </span>
+            )}
+          </div>
+          <input
+            className="big-input v2-lead-full"
+            type="tel"
+            placeholder="Telefon (optional – für schnellere Rückmeldung)"
+            aria-label="Telefonnummer (optional)"
+            value={leadPhone}
+            onChange={(e) => setLeadPhone(e.target.value)}
+          />
+        </div>
+        <label className="consent-row v2-consent">
+          <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+          <span>
+            Ich stimme zu, dass meine Angaben gespeichert werden, damit der Bildungsträger mich zu dieser Weiterbildung
+            kontaktieren darf. Widerruf jederzeit möglich.
+            {privacyPolicyUrl ? (
+              <>
+                {" "}
+                <a href={privacyPolicyUrl} target="_blank" rel="noreferrer">
+                  Datenschutzerklärung
+                </a>
+              </>
+            ) : null}
+          </span>
+        </label>
+        {error && (
+          <div className="status-line err" aria-live="polite">
+            {error}
+          </div>
+        )}
+        <button
+          type="button"
+          className={`btn-cta-primary v2-lead-submit ${busy && clicked === "info" ? "loading" : ""}`}
+          onClick={() => send("info")}
+          disabled={busy || !emailValid || !consent}
+        >
+          {busy && clicked === "info" ? (
+            <>
+              <span className="btn-spinner" aria-hidden="true" /> Wird gesendet…
+            </>
+          ) : (
+            <>
+              {pitch.cta} <span className="arrow">→</span>
+            </>
+          )}
+        </button>
+        <div className="v2-lead-alt">
+          {course.booking_url && (
+            <button type="button" onClick={() => send("start", course.booking_url)} disabled={busy || !emailValid || !consent}>
+              🚀 Direkt zur Anmeldung ↗
+            </button>
+          )}
+          <button type="button" onClick={() => send("consultation")} disabled={busy || !emailValid || !consent}>
+            📞 Lieber erst persönlich beraten lassen
+          </button>
+        </div>
+        <div className="v2-lead-trust">
+          <span>✓ Kostenlos</span>
+          <span>✓ Unverbindlich</span>
+          <span>✓ Meldung meist in 1–2 Werktagen</span>
+        </div>
+      </div>
+    );
+  }
+
+  function card(course: OrbitCourse, pitch: CoursePitch, top: boolean) {
+    const open = top || expanded === course.course_id;
+    const ladder = pitch.ladder;
+    return (
+      <article key={course.course_id} className={`v2-course ${top ? "is-top" : ""} ${selectedCourseId === course.course_id && formFor ? "is-selected" : ""}`}>
+        {top && <div className="v2-course-badge">⭐ Deine Top-Empfehlung</div>}
+        <div className="v2-course-headline">{pitch.headline}</div>
+        <h3 className="v2-course-name">{course.course_name}</h3>
+        {course.provider && <div className="v2-course-provider">{course.provider}</div>}
+        {ladder.reach && (
+          <div className="v2-ladder">
+            <div className="v2-ladder-step now">
+              <span className="v2-ladder-label">{ladder.reachSource === "skills" ? "Bereitet vor auf" : "Führt zu"}</span>
+              <strong>{ladder.reach.role_name}</strong>
+              {ladder.reach.niveauLabel && <span className="v2-ladder-niveau">{ladder.reach.niveauLabel}</span>}
+            </div>
+            {ladder.then && (
+              <>
+                <span className="v2-ladder-arrow" aria-hidden="true">
+                  →
+                </span>
+                <div className="v2-ladder-step then">
+                  <span className="v2-ladder-label">{ladder.isSteppingStone ? "Dein Ziel danach" : "Danach möglich"}</span>
+                  <strong>{ladder.then.role_name}</strong>
+                  {ladder.then.niveauLabel && <span className="v2-ladder-niveau">{ladder.then.niveauLabel}</span>}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        <div className="v2-facts">
+          <span>⏱ {formatCourseDuration(course)}</span>
+          <span>💶 {courseCostText(course)}</span>
+          <span>📅 {courseStartText(course)}</span>
+          <span>{courseLocationText(course)}</span>
+        </div>
+        {open ? (
+          <>
+            {pitch.because && <p className="v2-because">{pitch.because}</p>}
+            {pitch.closes && (
+              <div className="v2-closes">
+                <div className="v2-closes-line">{pitch.closes.line}</div>
+                <div className="v2-closes-chips">
+                  {pitch.closes.skills.slice(0, 3).map((sk) => (
+                    <span key={sk}>＋ {sk}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {pitch.fit.length > 0 && (
+              <ul className="v2-fit">
+                {pitch.fit.map((f) => (
+                  <li key={f}>✓ {f}</li>
+                ))}
+              </ul>
+            )}
+            {(() => {
+              const plan = fundingPlan(course, situation);
+              const prio = priorityLine(course, priority, { nextRoleName: ladder.then?.role_name ?? null });
+              const prereq = prerequisiteLine(course, { qualificationLevel });
+              const notes = hurdleNotes(course, hurdles, Boolean(plan));
+              return (
+                <>
+                  {prio && <div className="v2-priority">⭐ {prio}</div>}
+                  {prereq && (
+                    <div className={`v2-prereq ${prereq.ok === true ? "ok" : prereq.ok === false ? "warn" : ""}`}>
+                      {prereq.ok === true ? "✓" : prereq.ok === false ? "!" : "ℹ"} {prereq.text}
+                    </div>
+                  )}
+                  {notes.length > 0 && (
+                    <div className="v2-hurdle-notes">
+                      <div className="v2-block-title">Deine Fragen – kurz beantwortet</div>
+                      <ul>
+                        {notes.map((n) => (
+                          <li key={n.hurdle}>{n.text}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {plan ? (
+                    <div className="v2-funding-plan">
+                      <div className="v2-block-title">💚 {plan.title}</div>
+                      <ol>
+                        {plan.steps.map((st) => (
+                          <li key={st}>{st}</li>
+                        ))}
+                      </ol>
+                      {plan.link && (
+                        <a href={plan.link.url} target="_blank" rel="noopener noreferrer">
+                          {plan.link.label} ↗
+                        </a>
+                      )}
+                    </div>
+                  ) : (
+                    pitch.funding && <div className="v2-funding">💚 {pitch.funding}</div>
+                  )}
+                </>
+              );
+            })()}
+            {pitch.outlook && !ladder.then && <div className="v2-outlook">{pitch.outlook}</div>}
+            {formFor === course.course_id ? (
+              leadForm(course, pitch)
+            ) : (
+              <button type="button" className="btn-cta-primary v2-course-cta" onClick={() => openForm(course.course_id)}>
+                {pitch.cta} <span className="arrow">→</span>
+              </button>
+            )}
+          </>
+        ) : (
+          <button type="button" className="v2-course-more" onClick={() => setExpanded(course.course_id)}>
+            Details & Anfrage ↓
+          </button>
+        )}
+      </article>
+    );
+  }
+
+  return (
+    <div className="v2-result">
+      <JourneyStepHeading
+        step="06"
+        kicker="DEINE EMPFEHLUNG"
+        title={cards.length > 0 ? "Dein nächster Schritt" : "Wir finden deinen Weg gemeinsam"}
+        description={
+          cards.length > 0
+            ? "Ausgewählt nach deinen Stärken, deinen Lücken und deinem Rahmen – ganz ohne Anmeldung."
+            : "Gerade passt kein Kurs aus dem Katalog genau zu deinem Profil. Lass dich kostenlos beraten – der Bildungsträger kennt auch Angebote, die hier noch nicht stehen."
+        }
+      />
+      {cards.length > 0 && cards[0].course.provider && (
+        <div className="v2-transparency">Empfehlungen aus dem Kursangebot von {cards[0].course.provider}.</div>
+      )}
+      {activityLabels.length > 0 && (
+        <div className="v2-basis">
+          <span className="v2-strengths-title">Deine Basis:</span>
+          {activityLabels.slice(0, 4).map((a) => (
+            <span key={a} className="v2-basis-chip">
+              {a}
+            </span>
+          ))}
+          {activityLabels.length > 4 && <span className="v2-strength-more">+{activityLabels.length - 4}</span>}
+        </div>
+      )}
+      {strengths.length > 0 && (
+        <div className="v2-strengths">
+          <span className="v2-strengths-title">Das bringst du mit:</span>
+          {strengths.slice(0, 6).map((sk) => (
+            <span key={sk} className="v2-strength-chip">
+              ✓ {sk}
+            </span>
+          ))}
+          {strengths.length > 6 && <span className="v2-strength-more">+{strengths.length - 6}</span>}
+          <button type="button" className="v2-adjust" onClick={onAdjust}>
+            Stimmt etwas nicht? Anpassen
+          </button>
+        </div>
+      )}
+      {cards.length > 0 ? (
+        <>
+          {card(cards[0].course, cards[0].pitch, true)}
+          {cards.length > 1 && (
+            <div className="v2-alt-title">{cards.slice(1).every((c) => c.fromDirection) ? "Ebenfalls in deiner Richtung" : "Ebenfalls passend"}</div>
+          )}
+          {cards.slice(1).map((c) => card(c.course, c.pitch, false))}
+        </>
+      ) : (
+        <div className="v2-course is-top">
+          <div className="v2-course-headline">Persönliche Beratung</div>
+          <h3 className="v2-course-name">Kostenloses Beratungsgespräch</h3>
+          <p className="v2-because">Wir schauen gemeinsam, welche Weiterbildung zu deinen Stärken und deinem Ziel passt.</p>
+          <div className="v2-lead">
+            <div className="v2-lead-grid">
+              <input className="big-input" placeholder="Vorname" aria-label="Vorname" value={leadName} onChange={(e) => setLeadName(e.target.value)} />
+              <input
+                id="v2LeadEmail"
+                className="big-input"
+                type="email"
+                placeholder="E-Mail-Adresse"
+                aria-label="E-Mail-Adresse (Pflichtfeld)"
+                value={leadEmail}
+                onChange={(e) => setLeadEmail(e.target.value)}
+              />
+            </div>
+            <label className="consent-row v2-consent">
+              <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+              <span>Ich stimme zu, dass meine Angaben gespeichert werden, damit der Bildungsträger mich kontaktieren darf.</span>
+            </label>
+            {error && <div className="status-line err">{error}</div>}
+            <button type="button" className="btn-cta-primary v2-lead-submit" onClick={() => send("consultation")} disabled={busy || !emailValid || !consent}>
+              📞 Beratung anfragen <span className="arrow">→</span>
+            </button>
+          </div>
+        </div>
+      )}
+      <ActionsRow onBack={onBack} hideForward />
+    </div>
+  );
+}
+/** Journey v2: Abschluss nach der Anfrage — "Dein persoenlicher Plan"
+ *  (Ziel, Weg, Kurs, Foerderweg, naechste Schritte) zum Ausdrucken bzw. als
+ *  PDF speichern. Ersetzt in v2 den FinalScreen. */
+function V2PlanScreen({
+  leadName,
+  goalLabel,
+  card,
+  situation,
+  hurdles,
+  consultation,
+  strengths,
+}: {
+  leadName: string;
+  goalLabel: string | null;
+  card: { course: OrbitCourse; pitch: CoursePitch } | null;
+  situation: Situation | null;
+  hurdles: ReadonlySet<V2Hurdle>;
+  consultation: boolean;
+  strengths: string[];
+}) {
+  const plan = card ? fundingPlan(card.course, situation) : null;
+  const steps = personalPlanSteps({ consultation, funding: plan, hurdles });
+  const ladder = card?.pitch.ladder ?? null;
+  const uniqueStrengths = strengths.filter((v, i, a) => a.indexOf(v) === i);
+  return (
+    <div className="final-screen v2-plan-screen">
+      <div className="final-check">✓</div>
+      <h2 className="display">Geschafft{leadName.trim() ? `, ${leadName.trim()}` : ""}!</h2>
+      <p>
+        Deine Anfrage ist angekommen. Hier ist dein persönlicher Plan – speicher ihn dir, dann hast du alles für das Gespräch beisammen.
+      </p>
+      <section className="v2-plan" aria-label="Dein persönlicher Plan">
+        <div className="v2-plan-head">
+          <span>Dein persönlicher Weiterbildungsplan</span>
+          <span>{new Date().toLocaleDateString("de-DE")}</span>
+        </div>
+        {goalLabel && (
+          <div className="v2-plan-row">
+            <div className="v2-plan-label">Dein Ziel</div>
+            <div>{goalLabel}</div>
+          </div>
+        )}
+        {ladder?.reach && (
+          <div className="v2-plan-row">
+            <div className="v2-plan-label">Dein Weg</div>
+            <div>
+              {ladder.reach.role_name}
+              {ladder.then ? ` → danach ${ladder.then.role_name}` : ""}
+            </div>
+          </div>
+        )}
+        {card && (
+          <div className="v2-plan-row">
+            <div className="v2-plan-label">Dein Kurs</div>
+            <div>
+              <strong>{card.course.course_name}</strong>
+              <div className="v2-plan-sub">
+                {formatCourseDuration(card.course)} · {courseStartText(card.course)} · {courseCostText(card.course)}
+              </div>
+            </div>
+          </div>
+        )}
+        {uniqueStrengths.length > 0 && (
+          <div className="v2-plan-row">
+            <div className="v2-plan-label">Das bringst du mit</div>
+            <div>{uniqueStrengths.slice(0, 6).join(" · ")}</div>
+          </div>
+        )}
+        {card?.pitch.closes && (
+          <div className="v2-plan-row">
+            <div className="v2-plan-label">Das lernst du</div>
+            <div>{card.pitch.closes.skills.slice(0, 3).join(" · ")}</div>
+          </div>
+        )}
+        {plan && (
+          <div className="v2-plan-row">
+            <div className="v2-plan-label">Förderung</div>
+            <div>
+              <strong>{plan.title}</strong>
+              <ol>
+                {plan.steps.map((st) => (
+                  <li key={st}>{st}</li>
+                ))}
+              </ol>
+            </div>
+          </div>
+        )}
+        <div className="v2-plan-row">
+          <div className="v2-plan-label">Deine nächsten Schritte</div>
+          <ol>
+            {steps.map((st) => (
+              <li key={st}>{st}</li>
+            ))}
+          </ol>
+        </div>
+        {card?.course.provider && <div className="v2-plan-foot">Empfehlung aus dem Kursangebot von {card.course.provider}.</div>}
+      </section>
+      <button type="button" className="btn-cta-primary v2-plan-print" onClick={() => window.print()}>
+        🖨️ Plan drucken oder als PDF speichern
+      </button>
+    </div>
+  );
+}
+
 /** Fünfte Iteration (15.09., "der User soll nicht die Rollen selber
  *  auswählen müssen, weil das ist einfach ein zu großer Showstopper"): die
  *  optionale Rollenkarten-Zwischenauswahl aus der Vorrunde ist komplett

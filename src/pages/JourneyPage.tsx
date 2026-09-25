@@ -289,8 +289,6 @@ const V2_STEPS_KNOWN: StepConfig[] = [
   { key: "v2ergebnis", label: "Empfehlung", subtitle: "Dein nächster Schritt." },
 ];
 /** Ergebnis (Weg ueber die Branche): ein moeglicher Beruf. */
-/** formFor-Wert der allgemeinen Beratungs-Box im Ergebnis. */
-const V2_CONSULT_FORM = "__consult__";
 interface V2Option {
   role_id: string;
   role_name: string;
@@ -5209,141 +5207,162 @@ function V2ErgebnisStep({
   onAdjust: () => void;
   onBack: () => void;
 }) {
-  const [formFor, setFormFor] = useState<string | null>(null);
-  /** "course" = Anfrage zum Kurs, "consult" = persoenliche Beratung zuerst. */
-  const [formMode, setFormMode] = useState<"course" | "consult">("course");
+  // Eine einzige Abschlussseite (25.09.2026): Kurs waehlen -> "Deine Anfrage"
+  // mit Kontaktdaten und einem Haken fuer die persoenliche Beratung
+  // (-> consultation_requested, im Dashboard als "Beratungsgespräch angefragt").
+  const [view, setView] = useState<"results" | "contact">(cards.length === 0 ? "contact" : "results");
+  const [wantsConsult, setWantsConsult] = useState(cards.length === 0);
   const openDirection = options.length > 0;
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [clicked, setClicked] = useState<"start" | "info" | "consultation" | null>(null);
   const emailValid = EMAIL_RE.test(leadEmail.trim());
   const strengths = [...evidence.map((e) => e.name), ...confirmedSkills].filter((v, i, a) => a.indexOf(v) === i);
+  const chosen = cards.find((c) => c.course.course_id === selectedCourseId) ?? null;
 
-  function openForm(courseId: string, mode: "course" | "consult" = "course") {
-    onSelectCourse(courseId);
-    setFormFor(courseId);
-    setFormMode(mode);
-    window.setTimeout(() => document.getElementById(`v2-lead-${courseId}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 60);
+  function scrollTop() {
+    window.setTimeout(() => {
+      const el = document.querySelector(".v2-result");
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      else window.scrollTo({ top: 0, behavior: "smooth" });
+    }, 30);
   }
-  /** Allgemeine Beratung (Box unter den Kursen): Kontext ist der gerade
-   *  gewaehlte Kurs, sonst die Top-Empfehlung. */
-  function openConsult() {
-    if (!selectedCourseId && cards[0]) onSelectCourse(cards[0].course.course_id);
-    setFormFor(V2_CONSULT_FORM);
-    setFormMode("consult");
-    window.setTimeout(() => document.getElementById("v2-consult")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+  /** Zur Abschlussseite. consult=true setzt den Beratungs-Haken schon vor. */
+  function goContact(courseId: string | null, consult: boolean) {
+    if (courseId) onSelectCourse(courseId);
+    else if (!selectedCourseId && cards[0]) onSelectCourse(cards[0].course.course_id);
+    if (consult) setWantsConsult(true);
+    setView("contact");
+    scrollTop();
+  }
+  function backToResults() {
+    setView("results");
+    scrollTop();
   }
   function jumpToCourse(courseId: string) {
     setExpanded(courseId);
     window.setTimeout(() => document.getElementById(`v2-course-${courseId}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 40);
   }
-  function send(intent: "start" | "info" | "consultation", bookingUrl?: string | null) {
+  function send() {
     if (!emailValid) {
       document.getElementById("v2LeadEmail")?.focus();
       return;
     }
     if (!consent) return;
-    setClicked(intent);
-    onSubmit(intent);
-    if (intent === "start" && bookingUrl) window.open(bookingUrl, "_blank", "noopener,noreferrer");
+    onSubmit(wantsConsult ? "consultation" : "info");
   }
 
-  function leadForm(course: OrbitCourse | null, pitch: CoursePitch | null) {
-    const consult = formMode === "consult" || !course || !pitch;
-    const primaryIntent: "info" | "consultation" = consult ? "consultation" : "info";
+  function contactPage() {
+    const course = chosen?.course ?? null;
+    const reach = chosen?.pitch.ladder.reach ?? null;
+    const provider = course?.provider ?? cards[0]?.course.provider ?? null;
     return (
-      <div className="v2-lead" id={course ? `v2-lead-${course.course_id}` : "v2-lead-consult"}>
-        <div className="v2-lead-title">
-          {consult ? "Wie erreicht dich deine Beraterin oder dein Berater?" : "Fast geschafft – wohin dürfen wir die Infos schicken?"}
-        </div>
-        <div className="v2-lead-grid">
-          <input className="big-input" placeholder="Vorname" aria-label="Vorname" value={leadName} onChange={(e) => setLeadName(e.target.value)} />
-          <div className="input-wrap">
-            <input
-              id="v2LeadEmail"
-              className="big-input"
-              type="email"
-              placeholder="E-Mail-Adresse"
-              aria-label="E-Mail-Adresse (Pflichtfeld)"
-              aria-required="true"
-              value={leadEmail}
-              onChange={(e) => setLeadEmail(e.target.value)}
-            />
-            {emailValid && (
-              <span className="input-check" aria-hidden="true">
-                ✓
-              </span>
+      <div className="v2-result v2-contact">
+        <JourneyStepHeading
+          step="06"
+          kicker="DEINE ANFRAGE"
+          title="Fast geschafft!"
+          description={`Nur noch deine Kontaktdaten – dann meldet sich ${provider ?? "dein Bildungsträger"} persönlich bei dir.`}
+        />
+        <div className="v2-contact-summary">
+          <span className="v2-contact-summary-icon" aria-hidden="true">
+            {course ? "🎓" : "💬"}
+          </span>
+          <div className="v2-contact-summary-body">
+            <div className="v2-contact-summary-label">{course ? "Deine Auswahl" : "Dein Anliegen"}</div>
+            <div className="v2-contact-summary-name">{course ? course.course_name : "Kostenlose Weiterbildungsberatung"}</div>
+            {course && (
+              <div className="v2-contact-summary-meta">
+                {[reach ? `Führt zu: ${reach.role_name}` : null, formatCourseDuration(course), courseStartText(course)].filter(Boolean).join(" · ")}
+              </div>
             )}
           </div>
-          <input
-            className="big-input v2-lead-full"
-            type="tel"
-            placeholder={consult ? "Telefon (empfohlen – für den Rückruf)" : "Telefon (optional – für schnellere Rückmeldung)"}
-            aria-label="Telefonnummer (optional)"
-            value={leadPhone}
-            onChange={(e) => setLeadPhone(e.target.value)}
-          />
+          {cards.length > 0 && (
+            <button type="button" className="v2-contact-change" onClick={backToResults}>
+              Ändern
+            </button>
+          )}
         </div>
-        <label className="consent-row v2-consent">
-          <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-          <span>
-            Ich stimme zu, dass meine Angaben gespeichert werden, damit der Bildungsträger mich zu dieser Weiterbildung
-            kontaktieren darf. Widerruf jederzeit möglich.
-            {privacyPolicyUrl ? (
-              <>
-                {" "}
-                <a href={privacyPolicyUrl} target="_blank" rel="noreferrer">
-                  Datenschutzerklärung
-                </a>
-              </>
-            ) : null}
-          </span>
-        </label>
-        {error && (
-          <div className="status-line err" aria-live="polite">
-            {error}
+        <div className="v2-contact-form">
+          <div className="v2-lead-grid">
+            <input className="big-input" placeholder="Vorname" aria-label="Vorname" value={leadName} onChange={(e) => setLeadName(e.target.value)} />
+            <div className="input-wrap">
+              <input
+                id="v2LeadEmail"
+                className="big-input"
+                type="email"
+                placeholder="E-Mail-Adresse *"
+                aria-label="E-Mail-Adresse (Pflichtfeld)"
+                aria-required="true"
+                value={leadEmail}
+                onChange={(e) => setLeadEmail(e.target.value)}
+              />
+              {emailValid && (
+                <span className="input-check" aria-hidden="true">
+                  ✓
+                </span>
+              )}
+            </div>
+            <input
+              className="big-input v2-lead-full"
+              type="tel"
+              placeholder={wantsConsult ? "Telefon (empfohlen – für den Rückruf)" : "Telefon (optional – für schnellere Rückmeldung)"}
+              aria-label="Telefonnummer (optional)"
+              value={leadPhone}
+              onChange={(e) => setLeadPhone(e.target.value)}
+            />
           </div>
-        )}
-        <button
-          type="button"
-          className={`btn-cta-primary v2-lead-submit ${busy && clicked === primaryIntent ? "loading" : ""}`}
-          onClick={() => send(primaryIntent)}
-          disabled={busy || !emailValid || !consent}
-        >
-          {busy && clicked === primaryIntent ? (
-            <>
-              <span className="btn-spinner" aria-hidden="true" /> Wird gesendet…
-            </>
-          ) : consult ? (
-            <>
-              📞 Kostenloses Beratungsgespräch anfragen <span className="arrow">→</span>
-            </>
-          ) : (
-            <>
-              {pitch?.cta} <span className="arrow">→</span>
-            </>
+          <label className={`v2-contact-consult ${wantsConsult ? "checked" : ""}`}>
+            <input type="checkbox" checked={wantsConsult} onChange={(e) => setWantsConsult(e.target.checked)} />
+            <span className="v2-contact-consult-box" aria-hidden="true">
+              {wantsConsult ? "✓" : ""}
+            </span>
+            <span className="v2-contact-consult-text">
+              <strong>📞 Ich möchte ein kostenloses persönliches Beratungsgespräch</strong>
+              <span>Gemeinsam klärt ihr Förderung, Start und ob der Weg wirklich zu dir passt. Deine Antworten liegen der Beratung schon vor.</span>
+            </span>
+          </label>
+          <label className="consent-row v2-consent">
+            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+            <span>
+              Ich stimme zu, dass meine Angaben gespeichert werden, damit der Bildungsträger mich zu dieser Weiterbildung
+              kontaktieren darf. Widerruf jederzeit möglich.
+              {privacyPolicyUrl ? (
+                <>
+                  {" "}
+                  <a href={privacyPolicyUrl} target="_blank" rel="noreferrer">
+                    Datenschutzerklärung
+                  </a>
+                </>
+              ) : null}
+            </span>
+          </label>
+          {error && (
+            <div className="status-line err" aria-live="polite">
+              {error}
+            </div>
           )}
-        </button>
-        <div className="v2-lead-alt">
-          {course?.booking_url && (
-            <button type="button" onClick={() => send("start", course.booking_url)} disabled={busy || !emailValid || !consent}>
-              🚀 Direkt zur Anmeldung ↗
-            </button>
-          )}
-          {consult && pitch ? (
-            <button type="button" onClick={() => send("info")} disabled={busy || !emailValid || !consent}>
-              ✉️ Lieber erst Infos per E-Mail
-            </button>
-          ) : !consult ? (
-            <button type="button" onClick={() => send("consultation")} disabled={busy || !emailValid || !consent}>
-              📞 Lieber erst persönlich beraten lassen
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className={`btn-cta-primary v2-lead-submit ${busy ? "loading" : ""}`}
+            onClick={send}
+            disabled={busy || !emailValid || !consent}
+          >
+            {busy ? (
+              <>
+                <span className="btn-spinner" aria-hidden="true" /> Wird gesendet…
+              </>
+            ) : (
+              <>
+                {wantsConsult ? "Anfrage & Beratung absenden" : "Anfrage absenden"} <span className="arrow">→</span>
+              </>
+            )}
+          </button>
+          <div className="v2-lead-trust">
+            <span>✓ Kostenlos</span>
+            <span>✓ Unverbindlich</span>
+            <span>✓ Meldung meist in 1–2 Werktagen</span>
+          </div>
         </div>
-        <div className="v2-lead-trust">
-          <span>✓ Kostenlos</span>
-          <span>✓ Unverbindlich</span>
-          <span>✓ Meldung meist in 1–2 Werktagen</span>
-        </div>
+        <ActionsRow onBack={cards.length > 0 ? backToResults : onBack} hideForward />
       </div>
     );
   }
@@ -5352,7 +5371,7 @@ function V2ErgebnisStep({
     const open = top || expanded === course.course_id;
     const ladder = pitch.ladder;
     return (
-      <article key={course.course_id} id={`v2-course-${course.course_id}`} className={`v2-course ${top ? "is-top" : ""} ${selectedCourseId === course.course_id && formFor ? "is-selected" : ""}`}>
+      <article key={course.course_id} id={`v2-course-${course.course_id}`} className={`v2-course ${top ? "is-top" : ""}`}>
         {top && <div className="v2-course-badge">⭐ Deine Top-Empfehlung</div>}
         <div className="v2-course-headline">
           {openDirection
@@ -5454,18 +5473,9 @@ function V2ErgebnisStep({
               );
             })()}
             {pitch.outlook && !ladder.then && <div className="v2-outlook">{pitch.outlook}</div>}
-            {formFor === course.course_id ? (
-              leadForm(course, pitch)
-            ) : (
-              <div className="v2-course-actions">
-                <button type="button" className="btn-cta-primary v2-course-cta" onClick={() => openForm(course.course_id)}>
-                  {pitch.cta} <span className="arrow">→</span>
-                </button>
-                <button type="button" className="v2-consult-btn" onClick={() => openForm(course.course_id, "consult")}>
-                  📞 Persönlich beraten lassen
-                </button>
-              </div>
-            )}
+            <button type="button" className="btn-cta-primary v2-course-cta" onClick={() => goContact(course.course_id, false)}>
+              {pitch.cta} <span className="arrow">→</span>
+            </button>
           </>
         ) : (
           <button type="button" className="v2-course-more" onClick={() => setExpanded(course.course_id)}>
@@ -5476,6 +5486,7 @@ function V2ErgebnisStep({
     );
   }
 
+  if (view === "contact" || cards.length === 0) return contactPage();
   return (
     <div className="v2-result">
       <JourneyStepHeading
@@ -5505,7 +5516,7 @@ function V2ErgebnisStep({
                   key={o.role_id}
                   type="button"
                   className={`v2-option is-${kind} ${top ? "is-top" : ""}`}
-                  onClick={() => (o.courseId && !o.later ? jumpToCourse(o.courseId) : openConsult())}
+                  onClick={() => (o.courseId && !o.later ? jumpToCourse(o.courseId) : goContact(o.courseId, true))}
                 >
                   <span className="v2-option-head">
                     <span className="v2-option-icon" aria-hidden="true">
@@ -5580,44 +5591,12 @@ function V2ErgebnisStep({
                 </div>
               </div>
             </div>
-            {formFor === V2_CONSULT_FORM ? (
-              leadForm(null, null)
-            ) : (
-              <button type="button" className="v2-consult-cta" onClick={openConsult}>
-                Kostenloses Beratungsgespräch anfragen <span className="arrow">→</span>
-              </button>
-            )}
+            <button type="button" className="v2-consult-cta" onClick={() => goContact(null, true)}>
+              Kostenloses Beratungsgespräch anfragen <span className="arrow">→</span>
+            </button>
           </section>
         </>
-      ) : (
-        <div className="v2-course is-top">
-          <div className="v2-course-headline">Persönliche Beratung</div>
-          <h3 className="v2-course-name">Kostenloses Beratungsgespräch</h3>
-          <p className="v2-because">Wir schauen gemeinsam, welche Weiterbildung zu deinen Stärken und deinem Ziel passt.</p>
-          <div className="v2-lead">
-            <div className="v2-lead-grid">
-              <input className="big-input" placeholder="Vorname" aria-label="Vorname" value={leadName} onChange={(e) => setLeadName(e.target.value)} />
-              <input
-                id="v2LeadEmail"
-                className="big-input"
-                type="email"
-                placeholder="E-Mail-Adresse"
-                aria-label="E-Mail-Adresse (Pflichtfeld)"
-                value={leadEmail}
-                onChange={(e) => setLeadEmail(e.target.value)}
-              />
-            </div>
-            <label className="consent-row v2-consent">
-              <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-              <span>Ich stimme zu, dass meine Angaben gespeichert werden, damit der Bildungsträger mich kontaktieren darf.</span>
-            </label>
-            {error && <div className="status-line err">{error}</div>}
-            <button type="button" className="btn-cta-primary v2-lead-submit" onClick={() => send("consultation")} disabled={busy || !emailValid || !consent}>
-              📞 Beratung anfragen <span className="arrow">→</span>
-            </button>
-          </div>
-        </div>
-      )}
+      ) : null}
       <ActionsRow onBack={onBack} hideForward />
     </div>
   );

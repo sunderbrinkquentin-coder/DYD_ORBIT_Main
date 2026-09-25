@@ -63,6 +63,7 @@ import { guessExperienceLevel } from "../lib/skillLevel";
 import { matchSkills } from "../data/skillMatcher";
 import { listBereiche } from "../data/gapAnalysis";
 import { ROLES_CATALOG } from "../data/rolesCatalog";
+import { classifyCourse, splitLearningGoals, type Confidence as SuggestionConfidence } from "../data/courseClassifier";
 import { BereichBadges, CourseBadgeRow } from "../data/courseBadges";
 import { AnimatedNumber } from "../components/AnimatedNumber";
 import { DashboardTour } from "../components/DashboardTour";
@@ -1295,6 +1296,21 @@ export function DashboardPage({
   const [connStatus, setConnStatus] = useState<{ msg: string; kind: StatusKind }>({ msg: "", kind: "" });
   const [connecting, setConnecting] = useState(false);
   const [roles, setRoles] = useState<TargetRole[]>([]);
+  // Zielrollen fuer die KURS-Zuordnung (25.09.2026): der lokale Rollen-Katalog
+  // (dieselben 126 Rollen, mit denen die Journey arbeitet) plus eventuelle,
+  // nur im Backend angelegte eigene Rollen. Vorher kam die Auswahl nur aus
+  // dem Backend (target_role_skills) - Rollen, die die Journey kennt, waren
+  // im Dashboard teils gar nicht waehlbar, und beim Speichern wurden
+  // target_role_ids, die nicht im Backend standen, stillschweigend verworfen.
+  const courseRoleOptions = useMemo<TargetRole[]>(() => {
+    const local: TargetRole[] = ROLES_CATALOG.filter((r) => !r.role_id.startsWith("bereich:")).map((r) => ({
+      role_id: r.role_id,
+      role_name: r.role_name,
+      required_skill_count: r.skills.length,
+    }));
+    const localIds = new Set(local.map((r) => r.role_id));
+    return [...local, ...roles.filter((r) => !localIds.has(r.role_id))];
+  }, [roles]);
   const [leads, setLeads] = useState<LeadResponse[]>([]);
   const [courses, setCourses] = useState<OrbitCourse[]>([]);
   const [report, setReport] = useState<OrbitReportResponse | null>(null);
@@ -1410,7 +1426,7 @@ export function DashboardPage({
   // Zielrollen-Vorschlaege (siehe suggestTargetRoles weiter unten): rankt alle
   // Zielrollen per Gap-Analyse gegen den aktuellen Kurstext und zeigt die
   // besten Treffer als anklickbare Chips ueber dem Zielrollen-Select.
-  const [targetRoleSuggestions, setTargetRoleSuggestions] = useState<{ role: TargetRole; percentage: number }[]>([]);
+  const [targetRoleSuggestions, setTargetRoleSuggestions] = useState<{ role: TargetRole; reason: string; confidence: SuggestionConfidence }[]>([]);
   const [targetRoleSuggestBusy, setTargetRoleSuggestBusy] = useState(false);
   /** True sobald fuer den AKTUELLEN Kurstext einmal ein Zielrollen-Abgleich
    *  durchgelaufen ist — anders als bei manualSkillDetectError gibt es hier
@@ -2101,7 +2117,7 @@ export function DashboardPage({
       // target_role_name bleiben zusätzlich als ERSTE ausgewählte Rolle gesetzt,
       // rein für ein Backend, das nur das alte Einzelfeld kennt.
       const targetRolesSelected = courseForm.targetRoleIds
-        .map((id) => roles.find((r) => r.role_id === id))
+        .map((id) => courseRoleOptions.find((r) => r.role_id === id))
         .filter((r): r is TargetRole => Boolean(r));
       const coveredSkills: CourseSkillEntry[] = Array.from(courseSkillUris).map((uri) => ({
         esco_uri: uri,
@@ -2310,7 +2326,24 @@ export function DashboardPage({
     setManualSkillDetectBusy(true);
     setManualSkillDetectError(null);
     try {
-      const matches: MatchedSkill[] = matchSkillsLocal(text, { maxResults: 12, minScore: 60 });
+      // Seit 25.09.2026 ueber courseClassifier: Titel, einzelne Lerninhalte
+      // und Beschreibung getrennt ausgewertet, mit Beleg je Vorschlag. Was
+      // nur bei Zielgruppe/Voraussetzungen steht, wird NICHT vorgeschlagen
+      // (vorausgesetzt, nicht vermittelt). matched_on traegt die Fundstelle,
+      // score die Sicherheit (hoch 95 / mittel 75 / niedrig 55).
+      const { skills } = classifyCourse({
+        title: courseForm.courseName,
+        description: courseForm.description,
+        learningGoals: splitLearningGoals(courseForm.description),
+        prerequisites: courseForm.targetGroup,
+      });
+      const matches: MatchedSkill[] = skills.slice(0, 20).map((sk) => ({
+        esco_uri: sk.skill_id,
+        preferred_label: sk.name,
+        skill_type: "custom",
+        matched_on: sk.evidence,
+        score: sk.confidence === "hoch" ? 95 : sk.confidence === "mittel" ? 75 : 55,
+      }));
       const fresh = matches.filter((m) => !courseSkillUris.has(m.esco_uri));
       setManualSuggestedSkills(fresh);
       setSkillLabelCache((prev) => {
@@ -2558,51 +2591,51 @@ export function DashboardPage({
     setCourseSkillUris((prev) => new Set(prev).add(m.esco_uri));
   }
   // ---------- Zielrollen-Vorschläge (siehe targetRoleSuggestions oben) ----------
-  // Rankt alle Zielrollen per bestehender Gap-Analyse (leerer Text-Trick
-  // entfällt hier bewusst — der tatsächliche Kurstext wird genutzt) gegen
-  // den aktuellen Kurstext und zeigt die besten Treffer als Vorschlags-Chips.
+  // Seit 25.09.2026 lokal ueber courseClassifier (alle Rollen des Katalogs,
+  // mit Begruendung) statt per Backend-Gap-Analyse ueber nur die ersten 15
+  // Rollen. Zwei Signale: (1) Kurstitel entspricht der typischen
+  // Weiterbildung/Berufsbezeichnung einer Rolle, (2) Anteil der Kern-Skills
+  // der Rolle, die der Kurs abdeckt. Rein synchron, daher ohne Netzwerk.
   useEffect(() => {
     if (tourOpen) return;
     const text = manualDetectText();
-    if (text.length < MIN_DESCRIPTION_FOR_SKILL_DETECT || roles.length === 0) {
+    if (text.length < MIN_DESCRIPTION_FOR_SKILL_DETECT) {
       setTargetRoleSuggestions([]);
       setTargetRoleSuggestAttempted(false);
       return;
     }
-    let cancelled = false;
-    const timer = window.setTimeout(async () => {
+    const timer = window.setTimeout(() => {
       setTargetRoleSuggestBusy(true);
       try {
-        const results = await Promise.all(
-          roles.slice(0, 15).map(async (role) => {
-            try {
-              const res = await fetchGapAnalysis(baseUrl, apiKey, { text, target_role_id: role.role_id, lang: ESCO_LANG });
-              return { role, percentage: res.match_percentage };
-            } catch {
-              return { role, percentage: 0 };
-            }
-          })
+        const result = classifyCourse(
+          {
+            title: courseForm.courseName,
+            description: courseForm.description,
+            learningGoals: splitLearningGoals(courseForm.description),
+            prerequisites: courseForm.targetGroup,
+            bereichKeys: courseForm.bereichKeys,
+          },
+          { limit: 4 },
         );
-        if (cancelled) return;
         setTargetRoleSuggestions(
-          results
-            .filter((r) => r.percentage > 0)
-            .sort((a, b) => b.percentage - a.percentage)
-            .slice(0, 3)
+          result.roles.map((r) => ({
+            role: courseRoleOptions.find((o) => o.role_id === r.role_id) ?? {
+              role_id: r.role_id,
+              role_name: r.role_name,
+              required_skill_count: r.role_skill_count,
+            },
+            reason: r.reason,
+            confidence: r.confidence,
+          })),
         );
       } finally {
-        if (!cancelled) {
-          setTargetRoleSuggestBusy(false);
-          setTargetRoleSuggestAttempted(true);
-        }
+        setTargetRoleSuggestBusy(false);
+        setTargetRoleSuggestAttempted(true);
       }
-    }, 900);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
+    }, 400);
+    return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseForm.courseName, courseForm.description, roles, tourOpen]);
+  }, [courseForm.courseName, courseForm.description, courseForm.targetGroup, courseForm.bereichKeys, courseRoleOptions, tourOpen]);
   // Bereichs-Vorschläge (siehe suggestBereicheForText oben) — rein
   // synchron/lokal, deshalb ohne Debounce/Busy-State wie beim
   // Zielrollen-Abgleich oben (der echte Netzwerk-Calls macht).
@@ -5595,17 +5628,28 @@ export function DashboardPage({
                       {targetRoleSuggestions.length > 0 && (
                         <div className="role-suggest-row">
                           <span className="hint">Vorschlag:</span>
-                          {targetRoleSuggestions.map(({ role, percentage }) => (
+                          {targetRoleSuggestions.map(({ role, reason, confidence }) => (
                             <button
                               type="button"
                               key={role.role_id}
                               className={`role-suggest-chip ${courseForm.targetRoleIds.includes(role.role_id) ? "active" : ""}`}
                               onClick={() => toggleCourseTargetRole(role.role_id)}
+                              title={reason}
+                              aria-label={`${role.role_name || role.role_id} (${confidence === "hoch" ? "sehr passend" : confidence === "mittel" ? "passend" : "möglich"}): ${reason}`}
                             >
-                              {role.role_name || role.role_id} · {Math.round(percentage)}%
+                              {role.role_name || role.role_id} · {confidence === "hoch" ? "sehr passend" : confidence === "mittel" ? "passend" : "möglich"}
                             </button>
                           ))}
                         </div>
+                      )}
+                      {targetRoleSuggestions.length > 0 && (
+                        <ul className="role-suggest-reasons hint">
+                          {targetRoleSuggestions.map(({ role, reason }) => (
+                            <li key={role.role_id}>
+                              <b>{role.role_name || role.role_id}:</b> {reason}
+                            </li>
+                          ))}
+                        </ul>
                       )}
                       <label>Zielrollen zuordnen (optional, mehrere möglich)</label>
                       {/* Kompakte Combobox statt dauerhaft ausgeklappter Checkbox-Liste
@@ -5615,7 +5659,7 @@ export function DashboardPage({
                       {courseForm.targetRoleIds.length > 0 && (
                         <div className="role-chip-row">
                           {courseForm.targetRoleIds.map((id) => {
-                            const r = roles.find((x) => x.role_id === id);
+                            const r = courseRoleOptions.find((x) => x.role_id === id);
                             return (
                               <span className="role-chip" key={id}>
                                 {r ? r.role_name || r.role_id : id}
@@ -5635,7 +5679,7 @@ export function DashboardPage({
                         <input
                           className="role-combo-input"
                           type="text"
-                          placeholder={roles.length === 0 ? "Noch keine Zielrollen — hier eine anlegen…" : "Zielrolle suchen…"}
+                          placeholder={courseRoleOptions.length === 0 ? "Noch keine Zielrollen — hier eine anlegen…" : "Zielrolle suchen…"}
                           value={roleComboQuery}
                           onChange={(e) => {
                             setRoleComboQuery(e.target.value);
@@ -5647,7 +5691,7 @@ export function DashboardPage({
                         {roleComboOpen &&
                           (() => {
                             const q = roleComboQuery.trim().toLowerCase();
-                            const matches = roles
+                            const matches = courseRoleOptions
                               .filter((r) => !courseForm.targetRoleIds.includes(r.role_id))
                               .filter((r) => !q || (r.role_name || r.role_id).toLowerCase().includes(q))
                               .slice(0, 30);
@@ -6565,7 +6609,7 @@ export function DashboardPage({
                                   </>
                                 }
                               />
-                              {roles.length > 0 && (
+                              {courseRoleOptions.length > 0 && (
                                 <UrlImportProgressStep
                                   status={targetRoleSuggestBusy ? "active" : targetRoleSuggestAttempted ? "done" : "pending"}
                                   label={

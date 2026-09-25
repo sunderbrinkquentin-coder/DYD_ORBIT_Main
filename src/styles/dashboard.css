@@ -3792,3 +3792,13 @@ button.course-skill-chip:disabled {
   align-self: center;
   white-space: nowrap;
 }
+/* Begruendungen zu den Zielrollen-Vorschlaegen (25.09.2026, courseClassifier) */
+.role-suggest-reasons {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.role-suggest-reasons li + li {
+  margin-top: 2px;
+}

@@ -71,7 +71,7 @@ import {
   type QuickAnswer,
   type QuickCheckItem,
 } from "../data/journeyFlow";
-import { buildCoursePitchV2, type CoursePitch, type PitchCourse, type Situation } from "../data/coursePitch";
+import { buildCoursePitchV2, NIVEAU_LABELS, type CoursePitch, type PitchCourse, type Situation } from "../data/coursePitch";
 import { skillQuestionFor } from "../data/skillQuestions";
 import {
   adviceNoteForLead,
@@ -287,6 +287,18 @@ const V2_STEPS_KNOWN: StepConfig[] = [
   { key: "v2rahmen", label: "Rahmen", subtitle: "Was muss passen?" },
   { key: "v2ergebnis", label: "Empfehlung", subtitle: "Dein nächster Schritt." },
 ];
+/** Ergebnis (Weg ueber die Branche): ein moeglicher Beruf. */
+interface V2Option {
+  role_id: string;
+  role_name: string;
+  niveauLabel: string | null;
+  /** Anteil (0–100) der Berufs-Skills, die die Taetigkeiten schon abdecken. */
+  experience: number | null;
+  /** Kurs, der dorthin fuehrt (bzw. bei later=true: danach moeglich). */
+  courseId: string | null;
+  courseName: string | null;
+  later: boolean;
+}
 /** Bildschirm 4: Ueberschrift knuepft am Ziel aus Bildschirm 1 an. */
 const V2_CHECK_TITLE_PREFIX: Record<string, string> = {
   weiterkommen: "Damit du weiterkommst: ",
@@ -2307,7 +2319,11 @@ async function runDemoAnalysis() {
     [activityIds]
   );
   /** Der Weg, fuer den der Kurz-Check laeuft — sichtbar gemacht (Relevanz). */
-  const v2WayLabel = v2KnowsTarget ? targetRoleName : v2Direction[0]?.role.role_name ?? null;
+  // Nur wer den Beruf selbst gewaehlt hat, sieht ihn hier. Wer nur die
+  // Branche gewaehlt hat, sieht die Branche — die konkreten Moeglichkeiten
+  // kommen erst im Ergebnis (Rueckmeldung 25.09.: sonst wirkt es, als haette
+  // das System schon einen Beruf festgelegt).
+  const v2WayLabel = v2KnowsTarget ? targetRoleName : targetBereichLabel ?? null;
   /** Rahmen-Fragen nur, wenn der Katalog in der Richtung eine echte Wahl
    *  bietet (alle Kurse online -> Frage nach dem Ort entfaellt). */
   const v2RahmenVisibility = useMemo(() => {
@@ -3757,6 +3773,32 @@ async function runDemoAnalysis() {
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isV2, courseResult, allCourses, careerGoal, v2Situation, employmentType, desiredStart, v2Direction, v2Plan, v2Answers, v2Role, activityIds, targetBereichLabel, rolesInPortfolio, bereichRole]);
+  /** Ergebnis, Weg ueber die Branche: realistische Berufe (Richtung) plus
+   *  die Berufe, zu denen die empfohlenen Kurse fuehren — als Moeglichkeiten. */
+  const v2Options = useMemo(() => {
+    if (!isV2 || v2KnowsTarget) return [] as V2Option[];
+    const out = new Map<string, V2Option>();
+    const niveau = (r: CatalogRole) => (r.anforderungsniveau ? NIVEAU_LABELS[r.anforderungsniveau] : null);
+    for (const card of v2ResultCards) {
+      const reach = card.pitch.ladder.reach;
+      if (reach && !out.has(reach.role_id)) {
+        out.set(reach.role_id, { role_id: reach.role_id, role_name: reach.role_name, niveauLabel: reach.niveauLabel, experience: null, courseId: card.course.course_id, courseName: card.course.course_name, later: false });
+      }
+    }
+    for (const d of v2Direction) {
+      const ex = out.get(d.role.role_id);
+      if (ex) ex.experience = d.experienceMatch;
+      else out.set(d.role.role_id, { role_id: d.role.role_id, role_name: d.role.role_name, niveauLabel: niveau(d.role), experience: d.experienceMatch, courseId: null, courseName: null, later: false });
+    }
+    for (const card of v2ResultCards) {
+      const then = card.pitch.ladder.then;
+      if (then && !out.has(then.role_id)) {
+        out.set(then.role_id, { role_id: then.role_id, role_name: then.role_name, niveauLabel: then.niveauLabel, experience: null, courseId: card.course.course_id, courseName: card.course.course_name, later: true });
+      }
+    }
+    return [...out.values()].slice(0, 4);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isV2, v2KnowsTarget, v2ResultCards, v2Direction]);
   return (
     <>
       {depthBusy && (
@@ -3907,6 +3949,7 @@ async function runDemoAnalysis() {
                     <V2CheckStep
                       goal={careerGoal}
                       wayLabel={v2WayLabel}
+                      wayIsRole={v2KnowsTarget}
                       onChangeWay={() => setCurrent(stepIndex(v2KnowsTarget ? "zielrolle" : "v2richtung"))}
                       questions={v2Plan.questions}
                       evidence={v2Plan.evidence}
@@ -4007,6 +4050,8 @@ async function runDemoAnalysis() {
                     hurdles={v2Hurdles}
                     situation={v2Situation}
                     qualificationLevel={qualificationLevel}
+                    options={v2Options}
+                    bereichLabel={targetBereichLabel ?? null}
                     onAdjust={() => setCurrent(stepIndex("v2check"))}
                     onBack={() => setCurrent(stepIndex("v2rahmen"))}
                   />
@@ -4690,6 +4735,7 @@ function V2RichtungStep({
 function V2CheckStep({
   goal,
   wayLabel,
+  wayIsRole,
   onChangeWay,
   questions,
   evidence,
@@ -4702,6 +4748,7 @@ function V2CheckStep({
 }: {
   goal: string | null;
   wayLabel: string | null;
+  wayIsRole: boolean;
   onChangeWay: () => void;
   questions: QuickCheckItem[];
   evidence: ActivityEvidence[];
@@ -4752,7 +4799,7 @@ function V2CheckStep({
             🧭
           </span>
           <span>
-            Dein Weg: <strong>{wayLabel}</strong>
+            {wayIsRole ? "Dein Weg" : "Dein Bereich"}: <strong>{wayLabel}</strong>
           </span>
           <button type="button" onClick={onChangeWay}>
             ändern
@@ -5019,6 +5066,8 @@ function V2ErgebnisStep({
   hurdles,
   situation,
   qualificationLevel,
+  options,
+  bereichLabel,
   onAdjust,
   onBack,
 }: {
@@ -5044,10 +5093,14 @@ function V2ErgebnisStep({
   hurdles: ReadonlySet<V2Hurdle>;
   situation: Situation | null;
   qualificationLevel: string | null;
+  /** Weg ueber die Branche: moegliche Berufe (leer = Beruf selbst gewaehlt). */
+  options: V2Option[];
+  bereichLabel: string | null;
   onAdjust: () => void;
   onBack: () => void;
 }) {
   const [formFor, setFormFor] = useState<string | null>(null);
+  const openDirection = options.length > 0;
   const [expanded, setExpanded] = useState<string | null>(null);
   const [clicked, setClicked] = useState<"start" | "info" | "consultation" | null>(null);
   const emailValid = EMAIL_RE.test(leadEmail.trim());
@@ -5160,9 +5213,15 @@ function V2ErgebnisStep({
     const open = top || expanded === course.course_id;
     const ladder = pitch.ladder;
     return (
-      <article key={course.course_id} className={`v2-course ${top ? "is-top" : ""} ${selectedCourseId === course.course_id && formFor ? "is-selected" : ""}`}>
+      <article key={course.course_id} id={`v2-course-${course.course_id}`} className={`v2-course ${top ? "is-top" : ""} ${selectedCourseId === course.course_id && formFor ? "is-selected" : ""}`}>
         {top && <div className="v2-course-badge">⭐ Deine Top-Empfehlung</div>}
-        <div className="v2-course-headline">{pitch.headline}</div>
+        <div className="v2-course-headline">
+          {openDirection
+            ? ladder.reach
+              ? `Dein Weg zu: ${ladder.reach.role_name}`
+              : `Dein nächster Schritt${bereichLabel ? ` in ${bereichLabel}` : ""}`
+            : pitch.headline}
+        </div>
         <h3 className="v2-course-name">{course.course_name}</h3>
         {course.provider && <div className="v2-course-provider">{course.provider}</div>}
         {ladder.reach && (
@@ -5178,7 +5237,7 @@ function V2ErgebnisStep({
                   →
                 </span>
                 <div className="v2-ladder-step then">
-                  <span className="v2-ladder-label">{ladder.isSteppingStone ? "Dein Ziel danach" : "Danach möglich"}</span>
+                  <span className="v2-ladder-label">{ladder.isSteppingStone && !openDirection ? "Dein Ziel danach" : "Danach möglich"}</span>
                   <strong>{ladder.then.role_name}</strong>
                   {ladder.then.niveauLabel && <span className="v2-ladder-niveau">{ladder.then.niveauLabel}</span>}
                 </div>
@@ -5287,6 +5346,33 @@ function V2ErgebnisStep({
       />
       {cards.length > 0 && cards[0].course.provider && (
         <div className="v2-transparency">Empfehlungen aus dem Kursangebot von {cards[0].course.provider}.</div>
+      )}
+      {openDirection && (
+        <section className="v2-options" aria-label="Deine Möglichkeiten">
+          <div className="v2-options-title">Deine Möglichkeiten{bereichLabel ? ` in ${bereichLabel}` : ""}</div>
+          <div className="v2-options-sub">Diese Berufe sind mit deinem Profil realistisch – wähle, was dich reizt. Die Kurse unten bringen dich dorthin.</div>
+          <div className="v2-options-grid">
+            {options.map((o) => (
+              <button
+                key={o.role_id}
+                type="button"
+                className="v2-option"
+                onClick={() => o.courseId && document.getElementById(`v2-course-${o.courseId}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                disabled={!o.courseId}
+              >
+                <span className="v2-option-name">{o.role_name}</span>
+                <span className="v2-option-meta">
+                  {[o.niveauLabel, o.later ? "danach möglich" : null, o.experience !== null && o.experience >= 25 ? "passt zu deiner Erfahrung" : null]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+                <span className="v2-option-course">
+                  {o.courseName ? `${o.later ? "Aufbauend auf" : "Über"}: ${o.courseName} ↓` : "Dazu berät dich der Bildungsträger gern."}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
       )}
       {activityLabels.length > 0 && (
         <div className="v2-basis">

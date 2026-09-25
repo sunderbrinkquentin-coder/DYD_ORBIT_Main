@@ -1531,7 +1531,16 @@ export function DashboardPage({
   const [catalogEditingUrl, setCatalogEditingUrl] = useState(false);
   const [catalogSaving, setCatalogSaving] = useState(false);
   const [catalogSaveError, setCatalogSaveError] = useState<string | null>(null);
-  const [catalogCrawl, setCatalogCrawl] = useState<{ runId: string; checked: number; total: number; found: number } | null>(null);
+  const [catalogCrawl, setCatalogCrawl] = useState<{
+    runId: string;
+    checked: number;
+    total: number;
+    found: number;
+    recent: string[];
+    startedAt: number;
+    done: boolean;
+  } | null>(null);
+  const [catalogTipIndex, setCatalogTipIndex] = useState(0);
   const [catalogCrawlError, setCatalogCrawlError] = useState<string | null>(null);
   const [catalogResult, setCatalogResult] = useState<(CatalogCrawlOutcome & { review: boolean }) | null>(null);
   const [catalogBusyIds, setCatalogBusyIds] = useState<Set<string>>(new Set());
@@ -3048,7 +3057,8 @@ export function DashboardPage({
     void (async () => {
       const ov = await loadCatalogOverview();
       // Eine noch laufende Suche (z. B. nach Neuladen der Seite) fortsetzen
-      if (ov?.active_run) void runCatalogCrawlLoop(ov.active_run.run_id, ov.active_run.checked, ov.active_run.total, ov.active_run.found_so_far);
+      if (ov?.active_run)
+        void runCatalogCrawlLoop(ov.active_run.run_id, ov.active_run.checked, ov.active_run.total, ov.active_run.found_so_far, ov.active_run.recent_found ?? []);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live]);
@@ -3087,14 +3097,14 @@ export function DashboardPage({
     setCatalogCrawlError(null);
     // Sofort als "läuft" anzeigen: der Start liest bereits robots.txt,
     // Sitemap und Startseite und kann einige Sekunden dauern.
-    setCatalogCrawl({ runId: "", checked: 0, total: 0, found: 0 });
+    setCatalogCrawl({ runId: "", checked: 0, total: 0, found: 0, recent: [], startedAt: Date.now(), done: false });
     try {
       const p = await startCatalogCrawl(catalogAssistantBaseUrl(baseUrl), apiKey);
       if (p.outcome) {
         finishCatalogCrawl(p.outcome);
         return;
       }
-      await runCatalogCrawlLoop(p.run_id, p.checked, p.total, p.found_so_far);
+      await runCatalogCrawlLoop(p.run_id, p.checked, p.total, p.found_so_far, p.recent_found ?? []);
     } catch (err) {
       setCatalogCrawl(null);
       setCatalogCrawlError(err instanceof Error ? err.message : "Die Suche konnte nicht gestartet werden.");
@@ -3102,8 +3112,8 @@ export function DashboardPage({
   }
 
   /** Ruft Schritt fuer Schritt auf, bis der Server ein Ergebnis liefert. */
-  async function runCatalogCrawlLoop(runId: string, checked: number, total: number, found: number) {
-    setCatalogCrawl({ runId, checked, total, found });
+  async function runCatalogCrawlLoop(runId: string, checked: number, total: number, found: number, recent: string[]) {
+    setCatalogCrawl((prev) => ({ runId, checked, total, found, recent, startedAt: prev?.startedAt ?? Date.now(), done: false }));
     let failures = 0;
     while (catalogCrawlAliveRef.current) {
       try {
@@ -3113,7 +3123,15 @@ export function DashboardPage({
           finishCatalogCrawl(p.outcome);
           return;
         }
-        setCatalogCrawl({ runId, checked: p.checked, total: p.total, found: p.found_so_far });
+        setCatalogCrawl((prev) => ({
+          runId,
+          checked: p.checked,
+          total: p.total,
+          found: p.found_so_far,
+          recent: p.recent_found ?? prev?.recent ?? [],
+          startedAt: prev?.startedAt ?? Date.now(),
+          done: false,
+        }));
       } catch (err) {
         failures++;
         if (failures >= 3) {
@@ -3129,9 +3147,47 @@ export function DashboardPage({
   }
 
   function finishCatalogCrawl(outcome: CatalogCrawlOutcome) {
-    setCatalogCrawl(null);
-    setCatalogResult({ ...outcome, review: false });
-    void loadCatalogOverview();
+    // ARCS "Satisfaction": kurzer, sichtbarer Abschlussmoment (Haken +
+    // Ergebniszahl), erst danach öffnet sich das Ergebnis-Popup.
+    setCatalogCrawl((prev) => ({
+      runId: prev?.runId ?? "",
+      checked: outcome.stats.checked,
+      total: Math.max(outcome.stats.checked, prev?.total ?? 0),
+      found: outcome.new_courses.length,
+      recent: prev?.recent ?? [],
+      startedAt: prev?.startedAt ?? Date.now(),
+      done: true,
+    }));
+    window.setTimeout(() => {
+      setCatalogCrawl(null);
+      setCatalogResult({ ...outcome, review: false });
+      void loadCatalogOverview();
+    }, 1400);
+  }
+
+  // Wechselnde Hinweise während der Suche (ARCS: Relevance + Confidence).
+  const CATALOG_CRAWL_TIPS = [
+    "Jeder Kurs in Ihrem Katalog kann Interessent:innen mit passender Zielrolle empfohlen werden.",
+    "Wir lesen nur öffentliche Seiten und beachten robots.txt — Ihre Website wird nicht belastet.",
+    "Nichts wird automatisch gespeichert: Sie entscheiden bei jedem gefundenen Kurs selbst.",
+    "Die erste Suche dauert am längsten. Danach werden nur neue Seiten geprüft — das geht deutlich schneller.",
+    "Preis, Termine und Dauer werden beim Übernehmen direkt von Ihrer Kursseite gelesen.",
+    "Sie können nebenbei weiterarbeiten — lassen Sie diese Seite einfach geöffnet.",
+  ];
+  useEffect(() => {
+    if (!catalogCrawl || catalogCrawl.done) return;
+    const id = window.setInterval(() => setCatalogTipIndex((i) => (i + 1) % CATALOG_CRAWL_TIPS.length), 5500);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Boolean(catalogCrawl), catalogCrawl?.done]);
+
+  /** Grobe Restzeit aus dem bisherigen Tempo (erst ab ein paar geprüften Seiten). */
+  function catalogEtaLabel(c: { checked: number; total: number; startedAt: number }): string {
+    if (c.total === 0 || c.checked < 3) return "wird berechnet";
+    const perPage = (Date.now() - c.startedAt) / c.checked;
+    const remainingMs = Math.max(0, (c.total - c.checked) * perPage);
+    if (remainingMs < 60_000) return "unter 1 Min.";
+    return `ca. ${Math.round(remainingMs / 60_000)} Min.`;
   }
 
   /** Oeffnet die noch offenen Vorschlaege ohne neue Suche. */
@@ -4966,6 +5022,219 @@ export function DashboardPage({
                   {refreshIcon()}
                 </div>
               </div>
+              {/* Website-Suche (25.09.): bewusst ganz oben und immer sichtbar
+                 (nicht in einer zugeklappten Karte). Gestaltung nach ARCS:
+                 Attention (Radar-Animation, Live-Zähler), Relevance (gefundene
+                 Kurstitel live, Bezug zur Journey), Confidence (Schritte,
+                 Restzeit, Hinweise zu Sicherheit/Kontrolle), Satisfaction
+                 (Abschlussmoment, dann Ergebnis-Popup). */}
+              {(() => {
+                const src = catalogOverview?.source ?? null;
+                let host = "";
+                try {
+                  host = src ? new URL(src.start_url).hostname.replace(/^www\./, "") : "";
+                } catch {
+                  host = src?.start_url ?? "";
+                }
+                const openCount = catalogOverview?.open.length ?? 0;
+                const c = catalogCrawl;
+                if (c) {
+                  const step = c.done ? 3 : c.total === 0 ? 0 : c.checked >= c.total ? 2 : 1;
+                  const pct = c.done ? 100 : c.total > 0 ? Math.max(6, Math.round((c.checked / c.total) * 100)) : 4;
+                  const phaseTitle = c.done
+                    ? c.found > 0
+                      ? `Geschafft — ${c.found} neue${c.found === 1 ? "r" : ""} Kurs${c.found === 1 ? "" : "e"} gefunden!`
+                      : "Geschafft — Ihre Website ist durchsucht"
+                    : ["Wir lesen Ihre Website …", "Wir prüfen Ihre Kursseiten …", "Wir gleichen mit Ihrem Katalog ab …"][step];
+                  const steps = ["Website lesen", "Kursseiten prüfen", "Mit Katalog abgleichen", "Ergebnis"];
+                  return (
+                    <section className={`catalog-hero is-running ${c.done ? "is-done" : ""}`} aria-live="polite" aria-busy={!c.done}>
+                      <div className="catalog-run">
+                        <div className="catalog-radar" aria-hidden="true">
+                          <span className="catalog-radar-ring r1" />
+                          <span className="catalog-radar-ring r2" />
+                          <span className="catalog-radar-ring r3" />
+                          <span className="catalog-radar-sweep" />
+                          <span className="catalog-radar-dot d1" />
+                          <span className="catalog-radar-dot d2" />
+                          <span className="catalog-radar-dot d3" />
+                          <span className="catalog-radar-core">{c.done ? "✓" : "🌐"}</span>
+                        </div>
+                        <div className="catalog-run-body">
+                          <div className="catalog-run-title">{phaseTitle}</div>
+                          {host && <div className="catalog-run-domain">{host}</div>}
+                          <ol className="catalog-steps">
+                            {steps.map((label, i) => (
+                              <li key={label} className={i < step || c.done ? "is-done" : i === step ? "is-active" : ""}>
+                                <span className="catalog-step-dot">{i < step || c.done ? "✓" : i + 1}</span>
+                                <span className="catalog-step-label">{label}</span>
+                              </li>
+                            ))}
+                          </ol>
+                          <div className="catalog-run-bar">
+                            <span style={{ width: `${pct}%` }} />
+                          </div>
+                          <div className="catalog-run-counters">
+                            <div>
+                              <strong>
+                                {c.checked}
+                                {c.total > 0 ? <small> / {c.total}</small> : null}
+                              </strong>
+                              <span>Seiten geprüft</span>
+                            </div>
+                            <div className={c.found > 0 ? "is-highlight" : ""}>
+                              <strong key={c.found} className="catalog-count-pop">
+                                {c.found}
+                              </strong>
+                              <span>neue Kurse</span>
+                            </div>
+                            <div>
+                              <strong className="catalog-eta">{c.done ? "fertig" : catalogEtaLabel(c)}</strong>
+                              <span>Restzeit</span>
+                            </div>
+                          </div>
+                          {c.recent.length > 0 && (
+                            <div className="catalog-run-found">
+                              <span className="catalog-run-found-label">Gerade gefunden</span>
+                              {c.recent.slice(-4).map((t) => (
+                                <span className="catalog-found-chip" key={t}>
+                                  ✨ {t}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {!c.done && (
+                            <div className="catalog-run-tip" key={catalogTipIndex}>
+                              💡 {CATALOG_CRAWL_TIPS[catalogTipIndex % CATALOG_CRAWL_TIPS.length]}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </section>
+                  );
+                }
+                const showForm = !src || catalogEditingUrl;
+                return (
+                  <section className="catalog-hero" aria-label="Neue Kurse auf Ihrer Website finden">
+                    <div className="catalog-hero-main">
+                      <div className="catalog-hero-icon" aria-hidden="true">
+                        🔎
+                      </div>
+                      <div className="catalog-hero-text">
+                        <div className="catalog-hero-eyebrow">Kurssuche</div>
+                        <h2>Neue Kurse auf Ihrer Website finden</h2>
+                        <p>
+                          {src ? (
+                            <>
+                              Ein Klick prüft <strong>{host}</strong> und zeigt alle Kurse, die noch nicht in Ihrem
+                              Katalog stehen.
+                            </>
+                          ) : (
+                            "Verbinden Sie einmal Ihre Website — danach findet ein Klick alle Kurse, die noch nicht in Ihrem Katalog stehen."
+                          )}
+                        </p>
+                        {src && !catalogEditingUrl && (
+                          <div className="catalog-hero-meta">
+                            <a href={src.start_url} target="_blank" rel="noopener noreferrer" title={src.start_url}>
+                              🔗 {src.start_url.replace(/^https?:\/\//, "")}
+                            </a>
+                            <button
+                              type="button"
+                              className="catalog-hero-link"
+                              onClick={() => {
+                                setCatalogUrlInput(src.start_url);
+                                setCatalogSaveError(null);
+                                setCatalogEditingUrl(true);
+                              }}
+                            >
+                              Ändern
+                            </button>
+                            {catalogOverview?.last_run?.finished_at && (
+                              <span>
+                                · Letzte Suche{" "}
+                                {new Date(catalogOverview.last_run.finished_at).toLocaleString("de-DE", {
+                                  dateStyle: "short",
+                                  timeStyle: "short",
+                                })}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      {src && !catalogEditingUrl && (
+                        <div className="catalog-hero-cta">
+                          <button type="button" className="catalog-hero-button" onClick={() => void handleStartCatalogCrawl()}>
+                            <span aria-hidden="true">🔎</span> Jetzt neue Kurse suchen
+                          </button>
+                          {openCount > 0 && (
+                            <button type="button" className="catalog-hero-open" onClick={showOpenCatalogProposals}>
+                              <span className="catalog-hero-badge">{openCount}</span>
+                              {openCount === 1 ? "offener Vorschlag" : "offene Vorschläge"}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {showForm && (
+                      <>
+                        <div className="catalog-hero-form">
+                          <input
+                            placeholder="https://www.ihre-akademie.de/weiterbildungen"
+                            aria-label="Adresse Ihrer Website oder Kursübersicht"
+                            value={catalogUrlInput}
+                            onChange={(e) => setCatalogUrlInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void handleSaveCatalogSource(!src);
+                            }}
+                            disabled={catalogSaving}
+                          />
+                          <button
+                            type="button"
+                            className="catalog-hero-button"
+                            onClick={() => void handleSaveCatalogSource(!src)}
+                            disabled={catalogSaving || !catalogUrlInput.trim()}
+                          >
+                            {catalogSaving ? "Speichere …" : src ? "Speichern" : "Verbinden & Kurse suchen"}
+                          </button>
+                          {src && (
+                            <button
+                              type="button"
+                              className="catalog-hero-link"
+                              onClick={() => {
+                                setCatalogEditingUrl(false);
+                                setCatalogSaveError(null);
+                              }}
+                              disabled={catalogSaving}
+                            >
+                              Abbrechen
+                            </button>
+                          )}
+                        </div>
+                        <div className="catalog-hero-trust">
+                          <span>🔒 Nur öffentliche Seiten</span>
+                          <span>🤖 robots.txt wird beachtet</span>
+                          <span>✋ Nichts wird automatisch gespeichert</span>
+                        </div>
+                      </>
+                    )}
+                    {(catalogLoadError || catalogSaveError || catalogCrawlError) && (
+                      <div className="catalog-hero-error" role="alert">
+                        <span>⚠️ {catalogSaveError ?? catalogCrawlError ?? catalogLoadError}</span>
+                        {catalogCrawlError && src && (
+                          <button type="button" className="catalog-hero-link" onClick={() => void handleStartCatalogCrawl()}>
+                            Erneut versuchen
+                          </button>
+                        )}
+                        {catalogLoadError && !catalogCrawlError && !catalogSaveError && (
+                          <button type="button" className="catalog-hero-link" onClick={() => void loadCatalogOverview()}>
+                            Erneut laden
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </section>
+                );
+              })()}
               <details
                 className="app-card collapsible-card"
                 ref={courseFormRef}
@@ -6595,17 +6864,16 @@ export function DashboardPage({
               </details>
               <details className="app-card collapsible-card" data-tour="kurse-url-import" ref={urlImportDetailsRef}>
                 <summary>
-                  <span>🔗 Kurse von der Website übernehmen</span>
+                  <span>🔗 Kurs per Link importieren</span>
                   <span className="collapsible-hint">
-                    Website einmal verbinden und per Klick neue Kurse finden — oder eine einzelne Kurs-Seite
-                    einfügen. Eine KI liest Preis, Förderung &amp; Co. heraus, du prüfst vor dem Speichern
+                    Einzelne Kurs-Seite einfügen — eine KI liest Preis, Förderung &amp; Co. heraus, du prüfst vor dem
+                    Speichern
                   </span>
                 </summary>
                 <div className="app-card-body">
                   <div className="hint">
-                    Ergänzt Formular und CSV-Import um einen dritten Weg: entweder eure Website einmal verbinden
-                    (wir suchen dann per Klick nach Kurs-Seiten, die noch nicht im Katalog stehen) oder direkt eine
-                    einzelne Kurs-Seiten-URL einfügen. Für jeden übernommenen Kurs wird ein Entwurf ins Formular oben
+                    Ergänzt Formular und CSV-Import um einen dritten Weg: eine einzelne Kurs-Seiten-URL einfügen oder
+                    Kurse aus der Website-Suche oben übernehmen. Für jeden übernommenen Kurs wird ein Entwurf ins Formular oben
                     übernommen — <strong>nichts wird automatisch gespeichert</strong>, du prüfst und ergänzt jeden
                     Kurs, bevor du auf „Kurs speichern" klickst. Felder mit einem wörtlichen Beleg auf der Seite
                     sind mit „✓ von Seite" markiert, alle anderen wie eine leere Eingabe zu behandeln.
@@ -6631,137 +6899,9 @@ export function DashboardPage({
 
                   {!urlImportCurrentUrl && urlImportQueueTotal === 0 && (
                     <>
-                      <div className="catalog-source-block">
-                        <div className="catalog-source-head">
-                          <span className="catalog-source-title">🌐 Ihre Website</span>
-                          {catalogOverview?.open && catalogOverview.open.length > 0 && !catalogCrawl && (
-                            <button type="button" className="btn-ghost btn-small" onClick={showOpenCatalogProposals}>
-                              {catalogOverview.open.length === 1
-                                ? "1 offenen Vorschlag ansehen"
-                                : `${catalogOverview.open.length} offene Vorschläge ansehen`}
-                            </button>
-                          )}
-                        </div>
-                        {catalogLoadError && <div className="hint warn">{catalogLoadError}</div>}
-                        {catalogOverview?.source && !catalogEditingUrl ? (
-                          <>
-                            <div className="catalog-source-row">
-                              <div className="catalog-source-url">
-                                <span className="catalog-source-label">Verbunden:</span>{" "}
-                                <a href={catalogOverview.source.start_url} target="_blank" rel="noopener noreferrer">
-                                  {catalogOverview.source.start_url}
-                                </a>
-                              </div>
-                              <button
-                                type="button"
-                                className="btn-ghost btn-small"
-                                onClick={() => {
-                                  setCatalogUrlInput(catalogOverview.source?.start_url ?? "");
-                                  setCatalogSaveError(null);
-                                  setCatalogEditingUrl(true);
-                                }}
-                                disabled={Boolean(catalogCrawl)}
-                              >
-                                Ändern
-                              </button>
-                            </div>
-                            <button
-                              type="button"
-                              className={`btn-ai ${catalogCrawl ? "busy" : ""}`}
-                              onClick={() => void handleStartCatalogCrawl()}
-                              disabled={Boolean(catalogCrawl)}
-                            >
-                              <span className="btn-ai-icon">🔎</span>
-                              {catalogCrawl ? "Suche läuft…" : "Jetzt neue Kurse suchen"}
-                            </button>
-                            {catalogCrawl && (
-                              <div className="catalog-crawl-progress" aria-live="polite">
-                                <div className="catalog-crawl-bar">
-                                  <span
-                                    style={{
-                                      width: `${
-                                        catalogCrawl.total > 0
-                                          ? Math.max(4, Math.round((catalogCrawl.checked / catalogCrawl.total) * 100))
-                                          : 4
-                                      }%`,
-                                    }}
-                                  />
-                                </div>
-                                <div className="hint">
-                                  {catalogCrawl.total === 0
-                                    ? "Website wird gelesen (robots.txt, Sitemap, Kursübersicht)…"
-                                    : `${catalogCrawl.checked} von ${catalogCrawl.total} Seiten geprüft${
-                                        catalogCrawl.found > 0 ? ` · ${catalogCrawl.found} neue Kurse bisher` : ""
-                                      }`}
-                                  <br />
-                                  Die erste Suche kann einige Minuten dauern. Danach werden nur noch neue Seiten geprüft.
-                                </div>
-                              </div>
-                            )}
-                            {!catalogCrawl && catalogOverview.last_run?.finished_at && (
-                              <div className="hint catalog-last-run">
-                                Letzte Suche:{" "}
-                                {new Date(catalogOverview.last_run.finished_at).toLocaleString("de-DE", {
-                                  dateStyle: "short",
-                                  timeStyle: "short",
-                                })}
-                                {catalogOverview.last_run.stats ? ` · ${catalogOverview.last_run.stats.checked} Seiten geprüft` : ""}
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            <div className="hint">
-                              Einmal die Adresse Ihrer Website oder Kursübersicht hinterlegen — danach genügt ein Klick, um
-                              neue Kurse zu finden. Wir lesen nur öffentliche Seiten, beachten robots.txt und speichern
-                              nichts automatisch.
-                            </div>
-                            <div className="row2">
-                              <div className="lf-field" style={{ flex: "1 1 260px" }}>
-                                <label>Website oder Kursübersicht</label>
-                                <input
-                                  placeholder="https://www.ihre-akademie.de/weiterbildungen"
-                                  value={catalogUrlInput}
-                                  onChange={(e) => setCatalogUrlInput(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") void handleSaveCatalogSource(!catalogOverview?.source);
-                                  }}
-                                  disabled={catalogSaving}
-                                />
-                              </div>
-                              <div className="lf-field catalog-source-save" style={{ flex: "0 0 auto", alignSelf: "flex-end" }}>
-                                <button
-                                  type="button"
-                                  className={`btn-ai ${catalogSaving ? "busy" : ""}`}
-                                  onClick={() => void handleSaveCatalogSource(!catalogOverview?.source)}
-                                  disabled={catalogSaving || !catalogUrlInput.trim()}
-                                >
-                                  <span className="btn-ai-icon">🔎</span>
-                                  {catalogSaving ? "Speichere…" : catalogOverview?.source ? "Speichern" : "Speichern & Kurse suchen"}
-                                </button>
-                                {catalogOverview?.source && (
-                                  <button
-                                    type="button"
-                                    className="btn-ghost btn-small"
-                                    onClick={() => {
-                                      setCatalogEditingUrl(false);
-                                      setCatalogSaveError(null);
-                                    }}
-                                    disabled={catalogSaving}
-                                  >
-                                    Abbrechen
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          </>
-                        )}
-                        {catalogSaveError && <div className="hint warn">{catalogSaveError}</div>}
-                        {catalogCrawlError && <div className="hint warn">{catalogCrawlError}</div>}
-                      </div>
-
-                      <div className="hint" style={{ marginTop: 14 }}>
-                        Oder direkt eine einzelne Kurs-Seiten-URL einfügen:
+                      <div className="hint" style={{ marginTop: 6 }}>
+                        Einzelne Kurs-Seite importieren (die ganze Website durchsuchen Sie oben über „Neue Kurse auf
+                        Ihrer Website finden“):
                       </div>
                       {urlImportDiscoverError && <div className="hint warn">{urlImportDiscoverError}</div>}
                       <div className="row2">

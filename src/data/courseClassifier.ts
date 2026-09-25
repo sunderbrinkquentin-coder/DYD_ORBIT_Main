@@ -13,9 +13,9 @@
  *  - Skills nur aus dem, was der Kurs VERMITTELT (Titel, Lerninhalte,
  *    Beschreibung). Was nur unter Voraussetzungen/Zielgruppe steht, ist kein
  *    Kurs-Skill ("Excel-Grundkenntnisse vorausgesetzt").
- *  - Unscharfe Treffer (Tippfehler-Toleranz) nur in kurzen Feldern (Titel,
- *    einzelne Lernziele), nicht in langen Beschreibungen - dort erzeugen sie
- *    ueberwiegend Rauschen.
+ *  - Unscharfe Treffer (Tippfehler-Toleranz) nur im Kurstitel. In Lerninhalten
+ *    und Beschreibungen nur exakte Treffer: dort erzeugt die Toleranz
+ *    ueberwiegend Rauschen und kostet spuerbar Rechenzeit.
  *  - Zielrollen: (1) Kurstitel entspricht der typischen Weiterbildung oder
  *    der Berufsbezeichnung einer Rolle, (2) Anteil der Kern-Skills der Rolle,
  *    die der Kurs abdeckt, und Anteil der Kurs-Skills, die zur Rolle gehoeren.
@@ -108,7 +108,7 @@ export function titleKey(s: string): string {
     .split(" ")
     .filter(Boolean)
     .map((w) => (w.length > 7 && /(wirt|ist|ant|ent|eur|ler|ner|ter|ker|ger|rer|ser|ier|ter|or)in$/.test(w) ? w.slice(0, -2) : w))
-    .filter((w) => !["kurs", "lehrgang", "weiterbildung", "vorbereitung", "auf", "die", "zum", "zur", "der", "und", "berufsbegleitend", "online", "vollzeit", "teilzeit", "pruefung", "pruefungsvorbereitung", "zertifikat"].includes(w));
+    .filter((w) => !["kurs", "lehrgang", "weiterbildung", "vorbereitung", "auf", "die", "zum", "zur", "der", "und", "berufsbegleitend", "online", "vollzeit", "teilzeit", "pruefung", "pruefungsvorbereitung", "zertifikat", "fuer", "im", "als", "nach", "gem", "gemaess", "umschulung", "teilqualifizierung", "qualifizierung", "mit"].includes(w));
   return words.join(" ").trim();
 }
 
@@ -176,9 +176,16 @@ function hitsIn(text: string, source: SkillSource, allowFuzzy: boolean): RawHit[
 export function suggestSkills(input: CourseText): { skills: SkillSuggestion[]; excluded: ExcludedSkill[] } {
   const hits: RawHit[] = [];
   hits.push(...hitsIn(input.title, "titel", true));
+  // Lerninhalte: nur exakte Treffer. Die Tippfehler-Toleranz kostet je Text
+  // ~0,2 s (Fensterabgleich gegen ~2.000 Suchbegriffe) - bei 30 Modulen waeren
+  // das mehrere Sekunden eingefrorenes Formular. Webseiten-Texte sind zudem
+  // redigiert; Tippfehler-Toleranz bleibt dem (einen) Kurstitel vorbehalten.
+  const seenGoals = new Set<string>();
   for (const goal of input.learningGoals ?? []) {
-    // Einzelne Lernziele sind kurz genug fuer eine Tippfehler-Toleranz.
-    hits.push(...hitsIn(goal, "lerninhalte", goal.length <= 160));
+    const key = normalizeDe(goal.trim());
+    if (!key || seenGoals.has(key)) continue;
+    seenGoals.add(key);
+    hits.push(...hitsIn(goal, "lerninhalte", false));
   }
   hits.push(...hitsIn(input.description ?? "", "beschreibung", false));
 
@@ -237,6 +244,16 @@ export function suggestSkills(input: CourseText): { skills: SkillSuggestion[]; e
     });
   }
   const order: Record<Confidence, number> = { hoch: 0, mittel: 1, niedrig: 2 };
+  // Gleichnamige Katalog-Eintraege (z.B. zweimal "Büroorganisation" in
+  // verschiedenen Bereichen) nur einmal anzeigen - der sicherere gewinnt.
+  const byName = new Map<string, SkillSuggestion>();
+  for (const sk of skills) {
+    const k = normalizeDe(sk.name);
+    const prev = byName.get(k);
+    if (!prev || order[sk.confidence] < order[prev.confidence]) byName.set(k, sk);
+  }
+  skills.length = 0;
+  skills.push(...byName.values());
   skills.sort((a, b) => order[a.confidence] - order[b.confidence] || b.sources.length - a.sources.length || a.name.localeCompare(b.name, "de"));
   return { skills, excluded };
 }
@@ -251,11 +268,17 @@ export interface SuggestRolesOptions {
   catalog?: CatalogRole[];
 }
 
-export function suggestRoles(input: CourseText, skillIds: Iterable<string>, opts: SuggestRolesOptions = {}): RoleSuggestion[] {
+export function suggestRoles(
+  input: CourseText,
+  skillIds: Iterable<string>,
+  opts: SuggestRolesOptions = {},
+  titleSkillIds: Iterable<string> = [],
+): RoleSuggestion[] {
   const catalog = opts.catalog ?? ROLES_CATALOG;
   const limit = opts.limit ?? 5;
   const titleNorm = titleKey(input.title);
   const courseSkills = new Set(skillIds);
+  const titleSkills = new Set(titleSkillIds);
   const bereiche = new Set(input.bereichKeys ?? []);
   const out: RoleSuggestion[] = [];
 
@@ -271,17 +294,30 @@ export function suggestRoles(input: CourseText, skillIds: Iterable<string>, opts
     if (titleHit) rank += titleHit.kind === "weiterbildung" ? 1 : 0.8;
     if (bereiche.size && bereiche.has(role.bereich_key)) rank += 0.05;
 
-    const skillBased = matched.length >= 3 || (matched.length >= 2 && coverage >= 0.15);
-    if (!titleHit && !skillBased) continue;
+    // Kerninhalt im Titel: ein im Kurstitel genannter Skill gehoert zu den drei
+    // wichtigsten Skills der Rolle (z.B. "Schweisskurs MAG" -> Schweisstechniken
+    // beim Schweisser). Schwaecher als ein Titeltreffer, staerker als Einzeltreffer.
+    const topThree = [...role.skills].sort((a, b) => b.weight - a.weight).slice(0, 3);
+    const titleCore = topThree.find((s) => titleSkills.has(s.skill_id));
+    if (titleCore && !titleHit) rank += 0.35;
 
-    const confidence: Confidence = titleHit ? "hoch" : coverage >= 0.3 && matched.length >= 3 ? "mittel" : "niedrig";
+    const skillBased = matched.length >= 3 || (matched.length >= 2 && coverage >= 0.15);
+    if (!titleHit && !skillBased && !titleCore) continue;
+
+    const confidence: Confidence = titleHit
+      ? "hoch"
+      : (coverage >= 0.3 && matched.length >= 3) || titleCore
+        ? "mittel"
+        : "niedrig";
     const names = matched.map((s) => s.name);
     const skillPart = matched.length
       ? `deckt ${matched.length} von ${roleSkillIds.length} Kern-Skills ab (${names.slice(0, 4).join(", ")}${names.length > 4 ? " …" : ""})`
       : "";
     const reason = titleHit
       ? `Kurstitel entspricht ${titleHit.kind === "weiterbildung" ? "der typischen Weiterbildung" : "der Berufsbezeichnung"} „${titleHit.label}“${skillPart ? `; ${skillPart}` : ""}`
-      : skillPart.charAt(0).toUpperCase() + skillPart.slice(1);
+      : titleCore
+        ? `Kurstitel nennt einen Kerninhalt der Rolle („${titleCore.name}“)${skillPart ? `; ${skillPart}` : ""}`
+        : skillPart.charAt(0).toUpperCase() + skillPart.slice(1);
 
     out.push({
       role_id: role.role_id,
@@ -304,10 +340,12 @@ export function suggestRoles(input: CourseText, skillIds: Iterable<string>, opts
 
 export function classifyCourse(input: CourseText, opts: SuggestRolesOptions = {}): CourseClassification {
   const { skills, excluded } = suggestSkills(input);
+  const reliable = skills.filter((s) => s.confidence !== "niedrig");
   const roles = suggestRoles(
     input,
-    skills.filter((s) => s.confidence !== "niedrig").map((s) => s.skill_id),
+    reliable.map((s) => s.skill_id),
     opts,
+    reliable.filter((s) => s.sources.includes("titel")).map((s) => s.skill_id),
   );
   return { skills, excluded, roles };
 }

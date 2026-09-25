@@ -101,6 +101,8 @@ export function titleKey(s: string): string {
   t = t.replace(/\bzertifizierte?r?\b(\/r)?/g, " ");
   t = t.replace(/\/-?(in|innen|frau|r|e)\b/g, "");
   t = t.replace(/kauffrau/g, "kaufmann").replace(/fachfrau/g, "fachmann");
+  // "Kita-Leitung"/"Pflegedienstleitung" soll "Kita-Leiter/in"/"Pflegedienstleiter/in" finden.
+  t = t.replace(/leitung\b/g, "leiter");
   t = t.replace(/\/(koechin|pflegefachmann)\b/g, "");
   t = t.replace(/\(.*?\)/g, " ");
   t = t.replace(/[^a-z0-9]+/g, " ");
@@ -112,24 +114,66 @@ export function titleKey(s: string): string {
   return words.join(" ").trim();
 }
 
+const MIN_TITLE_KEY_LENGTH = 4; // "koch" soll noch zaehlen; Treffer immer auf ganzen Woertern
+
 function roleTitleKeys(role: CatalogRole): { key: string; kind: "weiterbildung" | "beruf"; label: string }[] {
   const out: { key: string; kind: "weiterbildung" | "beruf"; label: string }[] = [];
-  const tw = (role as CatalogRole & { typische_weiterbildung?: string }).typische_weiterbildung;
-  if (tw) {
-    for (const part of tw.split(/\s+\/\s+/)) {
-      const key = titleKey(part);
-      if (key.length >= 6) out.push({ key, kind: "weiterbildung", label: part.trim() });
-    }
-  }
-  const rk = titleKey(role.role_name);
-  if (rk.length >= 6) out.push({ key: rk, kind: "beruf", label: role.role_name });
+  const add = (text: string, kind: "weiterbildung" | "beruf") => {
+    const key = titleKey(text);
+    if (key.length >= MIN_TITLE_KEY_LENGTH && !out.some((o) => o.key === key)) out.push({ key, kind, label: text.trim() });
+  };
+  const tw = role.typische_weiterbildung;
+  if (tw) for (const part of tw.split(/\s+\/\s+/)) add(part, "weiterbildung");
+  for (const alias of role.title_aliases ?? []) add(alias, "weiterbildung");
+  add(role.role_name, "beruf");
   return out;
 }
 
-/** Enthaelt `haystack` die Wortfolge `needle` (auf Wortgrenzen)? */
+/** Ein Wort aus dem Rollen-Schluessel (`needle`) passt zu einem Titelwort,
+ *  wenn identisch, wenn es der Wortanfang des Titelworts ist (ab 5 Zeichen:
+ *  "design" in "designer") oder das Ende eines zusammengesetzten Titelworts
+ *  (ab 8 Zeichen: "staplerfahrer" in "gabelstaplerfahrer"). Nur in diese
+ *  Richtung: Der Titel darf spezifischer sein als die Rolle, nie umgekehrt -
+ *  sonst wuerde "Betriebswirt" die Rolle mit "Hotelbetriebswirt" treffen. */
+function wordsMatch(needleWord: string, titleWord: string): boolean {
+  if (needleWord === titleWord) return true;
+  if (needleWord.length >= titleWord.length) return false;
+  if (needleWord.length >= 5 && titleWord.startsWith(needleWord)) return true;
+  if (needleWord.length >= 8 && titleWord.endsWith(needleWord)) return true;
+  return false;
+}
+
+/** Enthaelt `haystack` die Wortfolge `needle` (auf Wortgrenzen, mit
+ *  wordsMatch-Toleranz)? Zusaetzlich ohne Leerzeichen verglichen, damit
+ *  "Tischler Meister" auch "Tischlermeister" findet. */
 function containsPhrase(haystack: string, needle: string): boolean {
   if (!needle) return false;
-  return ` ${haystack} `.includes(` ${needle} `);
+  if (` ${haystack} `.includes(` ${needle} `)) return true;
+  const h = haystack.split(" ").filter(Boolean);
+  const nd = needle.split(" ").filter(Boolean);
+  for (let i = 0; i + nd.length <= h.length; i++) {
+    if (nd.every((w, j) => wordsMatch(w, h[i + j]))) return true;
+  }
+  return joinedWordsMatch(h, needle.replace(/ /g, ""));
+}
+
+/** Getrennt vs. zusammengeschrieben: "tischler meister" ~ "tischlermeister".
+ *  Nur ganze, aufeinanderfolgende Titelwoerter werden zusammengesetzt. */
+function joinedWordsMatch(titleWords: string[], joinedNeedle: string): boolean {
+  if (joinedNeedle.length < 10) return false;
+  for (let i = 0; i < titleWords.length; i++) {
+    let acc = titleWords[i];
+    for (let j = i + 1; j < titleWords.length && acc.length < joinedNeedle.length; j++) {
+      acc += titleWords[j];
+      if (acc === joinedNeedle) return true;
+    }
+  }
+  return false;
+}
+
+/** Exakter Treffer (ohne Wort-Toleranz)? Exakte Treffer ranken hoeher. */
+function containsExact(haystack: string, needle: string): boolean {
+  return ` ${haystack} `.includes(` ${needle} `) || joinedWordsMatch(haystack.split(" ").filter(Boolean), needle.replace(/ /g, ""));
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +194,14 @@ function snippet(text: string, term: string): string {
  * Analytics"). Sie werden nur als unsichere Vorschlaege gefuehrt.
  */
 const GENERIC_SKILL_IDS = new Set(["ausbildung", "abrechnung", "analytics", "betreuung", "wartung", "testing", "monitoring", "reporting", "routing", "verhandlung"]);
+
+/** Allgemeine Kurs-Woerter ("Umschulung", "Schulung", "Lehrgang" ...) vor der
+ *  Skill-Suche im Titel entfernen - sonst trifft die Tippfehler-Toleranz z.B.
+ *  "Schalung" in "Schulung". */
+const COURSE_WORDS = /\b(umschulung|schulung|lehrgang|weiterbildung|fortbildung|seminar|kurs|training|workshop|zertifikatslehrgang|qualifizierung|teilqualifizierung|ausbildung|grundlagen|einsteiger|aufbaukurs|vorbereitung|pruefungsvorbereitung)\b/gi;
+function stripCourseWords(title: string): string {
+  return title.replace(COURSE_WORDS, " ").replace(/\s+/g, " ").trim();
+}
 
 interface RawHit {
   skill_id: string;
@@ -175,7 +227,7 @@ function hitsIn(text: string, source: SkillSource, allowFuzzy: boolean): RawHit[
 
 export function suggestSkills(input: CourseText): { skills: SkillSuggestion[]; excluded: ExcludedSkill[] } {
   const hits: RawHit[] = [];
-  hits.push(...hitsIn(input.title, "titel", true));
+  hits.push(...hitsIn(stripCourseWords(input.title), "titel", true));
   // Lerninhalte: nur exakte Treffer. Die Tippfehler-Toleranz kostet je Text
   // ~0,2 s (Fensterabgleich gegen ~2.000 Suchbegriffe) - bei 30 Modulen waeren
   // das mehrere Sekunden eingefrorenes Formular. Webseiten-Texte sind zudem
@@ -284,14 +336,19 @@ export function suggestRoles(
 
   for (const role of catalog) {
     if (role.role_id.startsWith("bereich:")) continue;
-    const titleHit = roleTitleKeys(role).find((k) => containsPhrase(titleNorm, k.key));
+    // Bei mehreren Titeltreffern zaehlt der spezifischste (meiste Woerter/laengster).
+    const titleHit = roleTitleKeys(role)
+      .filter((k) => containsPhrase(titleNorm, k.key))
+      .map((k) => ({ ...k, exact: containsExact(titleNorm, k.key) }))
+      .sort((a, b) => Number(b.exact) - Number(a.exact) || b.key.length - a.key.length)[0];
     const roleSkillIds = role.skills.map((s) => s.skill_id);
     const matched = role.skills.filter((s) => courseSkills.has(s.skill_id));
     const coverage = matched.reduce((sum, s) => sum + s.weight, 0) / 100;
     const precision = courseSkills.size ? matched.length / courseSkills.size : 0;
 
     let rank = 0.6 * coverage + 0.4 * precision;
-    if (titleHit) rank += titleHit.kind === "weiterbildung" ? 1 : 0.8;
+    // Titeltreffer: exakt vor tolerant, spezifisch (lang) vor allgemein.
+    if (titleHit) rank += (titleHit.exact ? 1 : 0.7) + Math.min(0.3, titleHit.key.length / 100);
     if (bereiche.size && bereiche.has(role.bereich_key)) rank += 0.05;
 
     // Kerninhalt im Titel: ein im Kurstitel genannter Skill gehoert zu den drei
@@ -336,6 +393,36 @@ export function suggestRoles(
   // schwache Skill-Treffer wuerden dann nur ablenken.
   const hasStrong = out.some((r) => r.confidence !== "niedrig");
   return (hasStrong ? out.filter((r) => r.confidence !== "niedrig") : out).slice(0, limit);
+}
+
+/**
+ * Bereiche (Journey-Kategorien) fuer einen Kurs: zuerst die Bereiche der
+ * sicher passenden Zielrollen, dann nach Gewicht der belegten Skills
+ * (nur hoch/mittel) - hoechstens drei, nur Bereiche mit mind. halb so viel
+ * Gewicht wie der staerkste. Ersetzt die fruehere Unscharf-Suche ueber den
+ * ganzen Text, die viele Zufallstreffer lieferte.
+ */
+export function suggestBereiche(result: CourseClassification, catalog: CatalogRole[] = ROLES_CATALOG): string[] {
+  const out: string[] = [];
+  const roleById = new Map(catalog.map((r) => [r.role_id, r]));
+  for (const r of result.roles) {
+    if (r.confidence !== "hoch") continue;
+    const key = roleById.get(r.role_id)?.bereich_key;
+    if (key && !out.includes(key)) out.push(key);
+  }
+  const reliable = new Set(result.skills.filter((s) => s.confidence !== "niedrig").map((s) => s.skill_id));
+  const score = new Map<string, number>();
+  for (const role of catalog) {
+    if (role.role_id.startsWith("bereich:")) continue;
+    for (const sk of role.skills) if (reliable.has(sk.skill_id)) score.set(role.bereich_key, (score.get(role.bereich_key) ?? 0) + sk.weight);
+  }
+  const sorted = [...score.entries()].sort((a, b) => b[1] - a[1]);
+  const top = sorted[0]?.[1] ?? 0;
+  for (const [key, val] of sorted) {
+    if (out.length >= 3) break;
+    if (val >= top * 0.5 && !out.includes(key)) out.push(key);
+  }
+  return out.slice(0, 3);
 }
 
 export function classifyCourse(input: CourseText, opts: SuggestRolesOptions = {}): CourseClassification {

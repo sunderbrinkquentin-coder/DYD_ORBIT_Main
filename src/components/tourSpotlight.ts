@@ -37,8 +37,9 @@ const EDGE = 8;
 /** Abstand nach oben bei hohen Zielen (Platz fuer fixierte Leisten). */
 const TOP_GAP = 72;
 
-function findTarget(selectors: string[]): HTMLElement | null {
-  for (const sel of selectors) {
+function findTargetIndexed(selectors: string[]): { el: HTMLElement; index: number } | null {
+  for (let index = 0; index < selectors.length; index++) {
+    const sel = selectors[index];
     const el = document.querySelector(sel);
     if (!(el instanceof HTMLElement)) continue;
     // Eingeklappte <details>-Vorfahren oeffnen, sonst hat das Ziel keine Box.
@@ -51,7 +52,7 @@ function findTarget(selectors: string[]): HTMLElement | null {
       node = node.parentElement;
     }
     const r = el.getBoundingClientRect();
-    if (r.width > 0 && r.height > 0) return el;
+    if (r.width > 0 && r.height > 0) return { el, index };
   }
   return null;
 }
@@ -107,10 +108,24 @@ export function useTourSpotlight(
       if (overlap > 0 && r.top > 72) window.scrollBy({ top: Math.min(overlap, r.top - 72), behavior: "smooth" });
     };
 
-    const raf = requestAnimationFrame(() => {
+    // Ziel suchen — bei Unter-Ansichten, die erst nach dem Navigieren
+    // gerendert werden, bis zu ~1,2 s lang erneut versuchen.
+    let attempts = 0;
+    const start = () => {
       if (cancelled) return;
-      const el = findTarget(selectors);
+      const hit = findTargetIndexed(selectors);
+      // Nur ein Ausweich-Treffer? Kurz auf das eigentliche Ziel warten.
+      if (hit && hit.index > 0 && attempts < 4) {
+        attempts++;
+        timers.push(window.setTimeout(start, 150));
+        return;
+      }
+      const el = hit ? hit.el : null;
       if (!el) {
+        if (attempts++ < 8) {
+          timers.push(window.setTimeout(start, 150));
+          return;
+        }
         setRect(null);
         return;
       }
@@ -138,7 +153,8 @@ export function useTourSpotlight(
         observer = new ResizeObserver(measure);
         observer.observe(el);
       }
-    });
+    };
+    const raf = requestAnimationFrame(start);
 
     window.addEventListener("resize", measure);
     window.addEventListener("scroll", measure, true);

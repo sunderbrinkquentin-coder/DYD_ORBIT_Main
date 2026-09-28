@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { readingDurationMs, TourAutoplayBar, TourAutoplayToggle, TourDemoToast, TourStepDots, useTourAutoplay } from "./tourAutoplay";
+import { useTourSpotlight } from "./tourSpotlight";
 
 /**
  * Gefuehrter Rundgang durch die Endnutzer-Journey — fuer Demos/Praesentationen
@@ -41,7 +42,14 @@ export type JourneyStepKey =
   | "skills"
   | "gap"
   | "kurs"
-  | "lead";
+  | "lead"
+  // Journey v2 (28.09.2026)
+  | "v2ziel"
+  | "v2herkunft"
+  | "v2richtung"
+  | "v2check"
+  | "v2rahmen"
+  | "v2ergebnis";
 
 interface RawStep {
   /** Journey-Schritt, zu dem vor diesem Tour-Schritt navigiert wird - oder
@@ -63,7 +71,9 @@ interface RawStep {
    *  eigener, vollwertiger Schritt (sonst gaebe es dort gar keine
    *  Rollen-Auswahl im Rundgang mehr). */
   hideIfKeyPresent?: JourneyStepKey;
-  selector: string | null;
+  /** Ziel-Selektor(en) in Prioritaet — der erste sichtbare Treffer gewinnt
+   *  (z. B. erst ein Detail-Element, sonst das ganze Panel). */
+  selector: string | string[] | null;
   title: string;
   description: string;
   /** NEU (18.09.): eigener, optischer abgesetzter Nutzen-Satz aus Sicht des
@@ -240,15 +250,110 @@ const RAW_STEPS: RawStep[] = [
   },
 ];
 
-interface Rect {
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-}
+
+/**
+ * Journey v2 (28.09.2026): eigener Rundgang fuer die neue, kurze Journey
+ * (Ziel -> Erfahrung -> Richtung/Schwerpunkt -> Kurz-Check -> Rahmen ->
+ * Empfehlung/Anfrage). Die Vorschau-Daten baut runV2Demo() in JourneyPage.tsx
+ * aus dem echten Katalog des Traegers, ohne Eintrag in den Reports.
+ */
+const RAW_STEPS_V2: RawStep[] = [
+  {
+    key: null,
+    selector: null,
+    title: "Rundgang durch die Journey",
+    description:
+      "So erleben Interessierte deinen Weiterbildungs-Finder: sechs kurze Schritte von „Was möchtest du erreichen?“ bis zur Anfrage in deinem Dashboard. Die Beispielwerte kommen aus deinem echten Kurskatalog und tauchen nicht in deinen Reports auf.",
+    benefit: "Für eine Bildschirmaufnahme: „▶ Automatisch abspielen“ lässt den Rundgang von selbst laufen.",
+  },
+  {
+    key: "v2ziel",
+    selector: '[data-tour="tour-stepper"]',
+    title: "Sechs Schritte, klarer Fortschritt",
+    description: "Die Fortschrittsleiste zeigt jederzeit, wo man steht und wie viel noch kommt.",
+    benefit: "Sichtbarer Fortschritt hält Interessierte bis zur Anfrage bei der Stange.",
+  },
+  {
+    key: "v2ziel",
+    selector: '[data-tour="tour-panel"]',
+    title: "Ziel statt Berufsbezeichnung",
+    description:
+      "Der Einstieg fragt nach dem Ziel – etwa weiterkommen, sich neu orientieren oder Führung übernehmen. Wer schon einen Beruf im Kopf hat, nimmt die Abkürzung über die Berufssuche.",
+    benefit: "Niemand muss am Anfang einen Berufsnamen kennen – das senkt die Hürde für den Einstieg.",
+  },
+  {
+    key: "v2herkunft",
+    selector: '[data-tour="tour-panel"]',
+    title: "Erfahrung in Alltagssprache",
+    description:
+      "Abschluss antippen und anklicken, was man schon gemacht hat, z. B. „Waren annehmen und einlagern“. Daraus leitet ORBIT Kompetenzen ab – ein Lebenslauf ist nicht nötig, kann aber hochgeladen werden.",
+    benefit: "Auch Menschen ohne aktuellen Lebenslauf, etwa aus Transfergesellschaften, kommen so ins Matching.",
+  },
+  {
+    key: "v2richtung",
+    selector: '[data-tour="tour-panel"]',
+    title: "Bereich, dann Schwerpunkt",
+    description:
+      "Erst die Branche, danach ein Schwerpunkt wie „IT-Projektmanagement“ oder „Lager & Umschlag“. Häkchen zeigen, wo schon Erfahrung da ist; „Passende Kurse“ markiert, wo dein Angebot liegt.",
+    benefit: "Schwerpunkte mit deinen Kursen stehen oben – so landen Interessierte eher bei deinem Angebot.",
+    demoEvent: "🧭 Schwerpunkt gewählt",
+  },
+  {
+    key: "v2check",
+    selector: '[data-tour="tour-panel"]',
+    title: "Kurz-Check: höchstens fünf Fragen",
+    description:
+      "Nur die Fragen, die für den gewählten Weg wirklich zählen – beantwortet mit „Ja“, „Ein bisschen“ oder „Noch nicht“. Was die Tätigkeiten schon belegen, wird nicht noch einmal gefragt.",
+    benefit: "Kurz genug gegen Abbrüche, genau genug für ein belastbares Kompetenzprofil im Lead.",
+  },
+  {
+    key: "v2rahmen",
+    selector: '[data-tour="tour-panel"]',
+    title: "Rahmen, Förderung, Hürden",
+    description:
+      "Situation (z. B. arbeitsuchend oder beschäftigt), Zeit, Ort, was am wichtigsten ist und was schwierig werden könnte. Fragen zu Zeit und Ort erscheinen nur, wenn dein Katalog dort eine echte Wahl bietet.",
+    benefit: "Situation, Prioritäten und Hürden stehen als Notiz im Lead – dein Beratungsgespräch startet nicht bei null.",
+  },
+  {
+    key: "v2ergebnis",
+    requires: "courseResult",
+    selector: ['[data-tour="v2-options"]', '[data-tour="tour-panel"]'],
+    title: "Möglichkeiten statt Einzeltreffer",
+    description:
+      "Wer nur einen Bereich gewählt hat, sieht hier realistische Berufe und den Weg dorthin. Gibt es für einen Beruf keinen passenden Kurs, führt der Klick direkt zur Beratung.",
+    benefit: "Auch Interessierte ohne festes Ziel landen bei einem konkreten nächsten Schritt.",
+    demoEvent: "🎓 Empfehlung berechnet",
+  },
+  {
+    key: "v2ergebnis",
+    requires: "courseResult",
+    selector: ['[data-tour="v2-top-course"]', '[data-tour="tour-panel"]'],
+    title: "Kurskarte mit Begründung",
+    description:
+      "Jede Empfehlung zeigt, worauf sie aufbaut, was neu dazukommt, wohin sie führt, ob die Zulassung passt und wie die Förderung konkret läuft. Mit „Zur Anfrage hinzufügen“ lassen sich mehrere Kurse sammeln.",
+    benefit: "Gepflegte Kursdaten wie Start, Preis, Förderung, Abschluss und Bereich machen deine Kurse hier überzeugender.",
+  },
+  {
+    key: "v2ergebnis",
+    requires: "courseResult",
+    selector: ['[data-tour="v2-consult"]', '[data-tour="tour-panel"]'],
+    title: "Eine Anfrage, optional mit Beratung",
+    description:
+      "Alle gewählten Kurse gehen gesammelt über eine Abschlussseite raus: Kontaktdaten, Einwilligung und ein Haken für das kostenlose Beratungsgespräch. Danach erhält die Person ihren persönlichen Plan zum Speichern.",
+    benefit: "Im Dashboard erscheint ein Lead mit allen Kursen, Beratungswunsch, Kompetenzprofil und Notiz – bereit für den Rückruf.",
+    demoEvent: "📥 Neuer Lead im Dashboard",
+  },
+  {
+    key: null,
+    selector: null,
+    title: "Das war der Rundgang",
+    description:
+      "Beim Beenden wird die Beispiel-Journey zurückgesetzt. Den Button „Rundgang starten“ findest du jederzeit wieder.",
+  },
+];
 
 const PAD = 10;
-const CARD_WIDTH = 360;
+const CARD_WIDTH = 380;
 
 interface JourneyTourProps {
   open: boolean;
@@ -272,6 +377,8 @@ interface JourneyTourProps {
    *  nur aufgerufen, wenn hasGapResult/hasCourseResult beim Oeffnen noch
    *  false sind; ist schon ein echtes Ergebnis da, passiert nichts. */
   onEnsureDemoResults: () => void;
+  /** Welche Journey laeuft (v2 = neue, kurze Journey). */
+  version?: "v1" | "v2";
 }
 
 export function JourneyTour({
@@ -283,10 +390,11 @@ export function JourneyTour({
   hasCourseResult,
   onNavigate,
   onEnsureDemoResults,
+  version = "v1",
 }: JourneyTourProps) {
   const steps = useMemo(
     () =>
-      RAW_STEPS.filter((s) => {
+      (version === "v2" ? RAW_STEPS_V2 : RAW_STEPS).filter((s) => {
         if (s.key === null) return true;
         if (!availableKeys.includes(s.key)) return false;
         if (s.requires === "gapResult" && !hasGapResult) return false;
@@ -298,11 +406,13 @@ export function JourneyTour({
         return true;
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [availableKeys.join(","), hasGapResult, hasCourseResult],
+    [availableKeys.join(","), hasGapResult, hasCourseResult, version],
   );
   const [stepIdx, setStepIdx] = useState(0);
-  const [rect, setRect] = useState<Rect | null>(null);
-  const pulsedElRef = useRef<Element | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Karte einklappen (v. a. auf schmalen Screens), damit das hervorgehobene
+  // Element komplett sichtbar ist. Bleibt ueber die Schritte hinweg bestehen.
+  const [collapsed, setCollapsed] = useState(false);
   const demoTriggeredRef = useRef(false);
   // Automatische Wiedergabe (NEU, 18.09., siehe tourAutoplay.tsx) — rein
   // clientseitig, nur fuers Bild bei einer Bildschirmaufzeichnung.
@@ -377,66 +487,15 @@ export function JourneyTour({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, waitingForDemoResults, stepIdx, step.key]);
 
-  useEffect(() => {
-    if (!open || waitingForDemoResults) return;
-    if (step.key && step.key !== currentKey) return; // Navigation oben noch nicht angekommen
-
-    if (pulsedElRef.current) {
-      pulsedElRef.current.classList.remove("tour-pulse-target", "tour-highlight-active");
-      pulsedElRef.current = null;
-    }
-
-    if (!step.selector) {
-      setRect(null);
-      return;
-    }
-
-    const raf = requestAnimationFrame(() => {
-      const el = document.querySelector(step.selector as string);
-      if (!el) {
-        setRect(null);
-        return;
-      }
-      // "nearest" statt "center": bei einem hohen Ziel (z.B. der Zielrollen-
-      // Liste mit vielen Karten) hat "center" versucht, dessen MITTE zu
-      // zentrieren und dabei die Seite viel zu weit nach unten gescrollt -
-      // "nearest" scrollt nur so weit wie noetig, um das Ziel sichtbar zu
-      // machen, meist gar nicht, wenn es (teilweise) schon im Blick ist.
-      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      // Analog zu DashboardTour.tsx (siehe Kommentar dort): "tour-highlight-active"
-      // haelt das Element DAUERHAFT ueber dem dunklen Overlay, solange dieser
-      // Schritt aktiv ist; "tour-pulse-target" ist nur der kurze Bounce beim
-      // Erscheinen und wird nach 550ms wieder entfernt, OHNE die Sichtbarkeit
-      // zu beeintraechtigen. Vorher uebernahm "tour-pulse-target" beides, wurde
-      // aber nach 550ms entfernt -> das Element fiel danach hinter das Overlay
-      // zurueck und wirkte "dunkel", obwohl der Schritt noch lief.
-      window.setTimeout(() => {
-        const r = el.getBoundingClientRect();
-        setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
-        el.classList.add("tour-highlight-active", "tour-pulse-target");
-        pulsedElRef.current = el;
-        window.setTimeout(() => el.classList.remove("tour-pulse-target"), 550);
-      }, 260);
-    });
-    return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, waitingForDemoResults, stepIdx, step.key, step.selector, currentKey]);
-
-  useEffect(() => {
-    if (!open || !step.selector) return;
-    function remeasure() {
-      const el = document.querySelector(step.selector as string);
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
-    }
-    window.addEventListener("resize", remeasure);
-    window.addEventListener("scroll", remeasure, true);
-    return () => {
-      window.removeEventListener("resize", remeasure);
-      window.removeEventListener("scroll", remeasure, true);
-    };
-  }, [open, step.selector]);
+  // Spotlight erst, wenn die Navigation im richtigen Journey-Schritt
+  // angekommen ist (gemeinsame Logik, siehe tourSpotlight.ts).
+  const selectors = step.selector === null ? null : Array.isArray(step.selector) ? step.selector : [step.selector];
+  const rect = useTourSpotlight(
+    open && !waitingForDemoResults && (!step.key || step.key === currentKey),
+    selectors,
+    stepIdx,
+    cardRef,
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -455,20 +514,12 @@ export function JourneyTour({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, onClose, steps.length]);
 
-  useEffect(() => {
-    if (open) return;
-    if (pulsedElRef.current) {
-      pulsedElRef.current.classList.remove("tour-pulse-target", "tour-highlight-active");
-      pulsedElRef.current = null;
-    }
-  }, [open]);
-
   if (!open) return null;
 
   if (waitingForDemoResults) {
     return (
       <div className="tour-layer" role="dialog" aria-modal="true" aria-label="Gefuehrter Rundgang durch die Journey">
-        <div className="tour-scrim" onClick={onClose} />
+        <div className="tour-scrim" />
         <div className="tour-card tour-card-dock tour-card-preparing" style={{ width: CARD_WIDTH }}>
           <div className="tour-card-head">
             <span className="tour-step-count">Rundgang wird vorbereitet</span>
@@ -482,8 +533,8 @@ export function JourneyTour({
             </div>
             <div className="tour-preparing-spinner" aria-hidden="true" />
             <p className="tour-desc">
-              Für „Skill-Gap“ und „Kurs“ lädt der Rundgang gerade ein echtes Beispielergebnis, damit dort auch ohne
-              vorherigen eigenen Durchlauf etwas zu sehen ist — dauert nur einen Moment.
+              Der Rundgang bereitet gerade ein Beispiel aus deinem Kurskatalog vor, damit auch die Empfehlung etwas
+              zeigt – dauert nur einen Moment.
             </p>
           </div>
         </div>
@@ -497,7 +548,9 @@ export function JourneyTour({
 
   return (
     <div className="tour-layer" role="dialog" aria-modal="true" aria-label="Gefuehrter Rundgang durch die Journey">
-      <div className="tour-scrim" onClick={onClose} />
+      {/* Mit Spotlight durchsichtig (dessen Schatten dunkelt ab), sonst dunkel.
+          Ein Klick darauf beendet den Rundgang nicht versehentlich. */}
+      <div className={`tour-scrim ${highlightBox ? "is-clear" : ""}`} />
       {highlightBox && (
         <div
           className="tour-spotlight"
@@ -505,14 +558,25 @@ export function JourneyTour({
         />
       )}
       <TourDemoToast text={autoplay ? step.demoEvent : null} toastKey={stepIdx} />
-      <div className="tour-card tour-card-dock" style={{ width: CARD_WIDTH }}>
+      <div ref={cardRef} className={`tour-card tour-card-dock ${collapsed ? "is-collapsed" : ""}`} style={{ width: CARD_WIDTH }}>
         <div className="tour-card-head">
           <span className="tour-step-count">
             {stepIdx + 1} / {steps.length}
           </span>
-          <button className="tour-close" onClick={onClose} aria-label="Rundgang beenden" title="Beenden (Esc)">
-            ×
-          </button>
+          <span className="tour-head-btns">
+            <button
+              type="button"
+              className="tour-collapse"
+              onClick={() => setCollapsed((c) => !c)}
+              aria-expanded={!collapsed}
+              title={collapsed ? "Erklärung wieder anzeigen" : "Karte einklappen, um den Bereich ganz zu sehen"}
+            >
+              {collapsed ? "Text zeigen ▴" : "Einklappen ▾"}
+            </button>
+            <button className="tour-close" onClick={onClose} aria-label="Rundgang beenden" title="Beenden (Esc)">
+              ×
+            </button>
+          </span>
         </div>
         {/* Rueckmeldung (19./20.09., "Beschreibung soll immer sichtbar sein,
            egal in welchem Format man die Seite offen hat") — identischer

@@ -60,7 +60,7 @@ import {
   rankCoursesForGap,
   QUALIFICATION_LABELS,
 } from "../data/courseMatcher";
-import { BereichBadges, CourseBadgeRow, daysUntilCourseStart } from "../data/courseBadges";
+import { BereichBadges, CourseBadgeRow, courseBadges, daysUntilCourseStart, type CourseBadge } from "../data/courseBadges";
 import { ACTIVITY_FIELDS, deriveSkillsFromActivities, getActivity, suggestedProficiency } from "../data/activitiesCatalog";
 import {
   buildDirectionRole,
@@ -505,6 +505,8 @@ const GOAL_TIE_EPSILON = 1;
  *  geht es um die GRUPPIERUNG der weiteren Kurse unten, nicht um den
  *  Badge-Text auf der Karte selbst. */
 const POPULAR_SOON_START_DAYS = 30;
+/** Nach dieser Zeit wird der Kurskatalog vor dem Matching neu geladen. */
+const CATALOG_MAX_AGE_MS = 10 * 60 * 1000;
 
 /** Initial sichtbare Karten je Sektion ("Vorhanden"/"Noch zu lernen") in
  *  GapStep (15.09., "dadurch, dass das jetzt mehr sind, soll da nicht so
@@ -2074,9 +2076,17 @@ async function runDemoAnalysis() {
   // /course-match kennt kein location_mode, nur der volle Katalog hier.
   // Kein zusätzlicher Request — derselbe fetchCourses()-Aufruf wie bisher.
   const [allCourses, setAllCourses] = useState<OrbitCourse[]>([]);
+  useEffect(() => {
+    allCoursesRef.current = allCourses;
+  }, [allCourses]);
   const [courseCatalogError, setCourseCatalogError] = useState<string | null>(null);
   const [courseCatalogLoading, setCourseCatalogLoading] = useState(false);
   const [courseCatalogLoadedAt, setCourseCatalogLoadedAt] = useState<number | null>(null);
+  // Refs fuer die Katalog-Ladelogik (siehe loadFeaturedCourses): Zeitpunkt
+  // des letzten erfolgreichen Abrufs, laufender Abruf, aktueller Katalog.
+  const courseCatalogLoadedAtRef = useRef<number | null>(null);
+  const catalogRequestRef = useRef<Promise<OrbitCourse[]> | null>(null);
+  const allCoursesRef = useRef<OrbitCourse[]>([]);
   // Portfolio-Filter, finale Fassung (15.09., Feedback "wir müssen am
   // Dashboard ansetzen und das als Fixpunkt hinterlegen"): Bereich ist im
   // Kursformular jetzt Pflichtfeld (siehe bereich_key in orbit.ts) — die
@@ -2214,9 +2224,26 @@ async function runDemoAnalysis() {
   const [earlyLeadSaved, setEarlyLeadSaved] = useState(false);
   useEffect(() => {
     loadRoles();
-    loadFeaturedCourses();
+    void loadFeaturedCourses();
+    // Neu laden, sobald sich Server-Adresse oder API-Key aendern (29.09.2026):
+    // vorher nur einmal beim Oeffnen - ein spaeter gesetzter Key blieb ohne Katalog.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [apiKey, baseUrl]);
+  // Lange offene Journey (29.09.2026, "bleibt die API nicht so lange
+  // verbunden?"): Es gibt keine Dauerverbindung - jede Abfrage ist ein
+  // eigener Request. Damit der Katalog aber nicht veraltet oder nach einem
+  // fehlgeschlagenen ersten Abruf leer bleibt, wird er beim Zurueckkehren in
+  // den Tab neu geladen, wenn er leer oder aelter als 10 Minuten ist.
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState !== "visible") return;
+      const age = courseCatalogLoadedAtRef.current ? Date.now() - courseCatalogLoadedAtRef.current : Infinity;
+      if (age > CATALOG_MAX_AGE_MS) void loadFeaturedCourses();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiKey, baseUrl]);
   // Branding des Bildungstraegers (28.09.2026): Logo + Corporate-Farben aus
   // der Edge Function "tenant-branding". Fehlt sie oder ist nichts gepflegt,
   // bleibt die Journey in den DYD-Farben — nie ein Fehler fuer Nutzer.
@@ -2269,12 +2296,21 @@ async function runDemoAnalysis() {
    * markierten "Top"-Kurse. Rein optionaler Zusatzinhalt — schlägt das fehl
    * (z.B. weil das Backend noch nicht auf Version 14 aktualisiert wurde),
    * bleibt die Sektion einfach leer, ohne die Journey zu stören. */
-  async function loadFeaturedCourses() {
+  function loadFeaturedCourses(): Promise<OrbitCourse[]> {
+    // Laeuft schon ein Abruf, auf denselben warten statt doppelt zu fragen.
+    if (catalogRequestRef.current) return catalogRequestRef.current;
+    const req = loadFeaturedCoursesOnce().finally(() => {
+      catalogRequestRef.current = null;
+    });
+    catalogRequestRef.current = req;
+    return req;
+  }
+  async function loadFeaturedCoursesOnce(): Promise<OrbitCourse[]> {
     if (!apiKey) {
       setFeaturedCourses([]);
       setAllCourses([]);
       setCourseCatalogError("API-Key fehlt.");
-      return;
+      return [];
     }
 
     setCourseCatalogLoading(true);
@@ -2286,7 +2322,22 @@ async function runDemoAnalysis() {
         timestamp: new Date().toISOString(),
       });
 
-      const res = await fetchCourses(baseUrl, apiKey);
+      // Bis zu 3 Versuche (29.09.2026): Die Edge Function braucht beim
+      // ersten Aufruf nach einer Pause manchmal laenger ("Kaltstart") oder
+      // bricht einmal ab. Vorher blieb der Katalog dann fuer die ganze
+      // Sitzung leer und es wurden keine Kurse vorgeschlagen.
+      let res: Awaited<ReturnType<typeof fetchCourses>> | null = null;
+      let lastErr: unknown = null;
+      for (let attempt = 0; attempt < 3 && !res; attempt++) {
+        if (attempt > 0) await new Promise((r) => window.setTimeout(r, attempt === 1 ? 800 : 2000));
+        try {
+          res = await fetchCourses(baseUrl, apiKey);
+        } catch (err) {
+          lastErr = err;
+          console.warn("[JourneyPage] course_catalog_retry", { attempt: attempt + 1, err });
+        }
+      }
+      if (!res) throw lastErr ?? new Error("Der Kurskatalog konnte nicht geladen werden.");
       const rawCatalog = Array.isArray(res?.courses) ? res.courses : [];
       // NEU (18.09., Rückmeldung "wenn der Startzeitpunkt überschritten ist,
       // sollen die Kurse nicht angezeigt werden"): ein Kurs, bei dem ALLE
@@ -2298,6 +2349,7 @@ async function runDemoAnalysis() {
       setFeaturedCourses(catalog.filter((c) => c.is_featured));
       setAllCourses(catalog);
       setCourseCatalogLoadedAt(Date.now());
+      courseCatalogLoadedAtRef.current = catalog.length > 0 ? Date.now() : null;
 
       console.info("[JourneyPage] course_catalog_loaded", {
         course_count: catalog.length,
@@ -2310,15 +2362,21 @@ async function runDemoAnalysis() {
           "Der Kurskatalog hat keine veröffentlichten Weiterbildungen zurückgegeben."
         );
       }
+      return catalog;
     } catch (err) {
       console.error("[JourneyPage] course_catalog_failed:", err);
-      setFeaturedCourses([]);
-      setAllCourses([]);
+      // Einen bereits geladenen Katalog bei einem fehlgeschlagenen
+      // Nachladen NICHT verwerfen.
+      if (!courseCatalogLoadedAtRef.current) {
+        setFeaturedCourses([]);
+        setAllCourses([]);
+      }
       setCourseCatalogError(
         err instanceof Error
           ? err.message
           : "Der Kurskatalog konnte nicht geladen werden."
       );
+      return courseCatalogLoadedAtRef.current ? allCoursesRef.current : [];
     } finally {
       setCourseCatalogLoading(false);
     }
@@ -3297,7 +3355,15 @@ async function runDemoAnalysis() {
 
       // Harte Runtime-Absicherung: ein alter/teilweise gemergter Journey-Stand
       // darf den Kursfluss niemals mit "undefined.length" crashen.
-      const courseCatalog: OrbitCourse[] = Array.isArray(allCourses) ? allCourses : [];
+      // Vor dem Matching sicherstellen, dass der Katalog da und aktuell ist
+      // (29.09.2026) - sonst wurden bei leerem/abgelaufenem Katalog still
+      // keine Kurse vorgeschlagen.
+      let courseCatalog: OrbitCourse[] = Array.isArray(allCourses) ? allCourses : [];
+      const catalogAge = courseCatalogLoadedAtRef.current ? Date.now() - courseCatalogLoadedAtRef.current : Infinity;
+      if (courseCatalog.length === 0 || catalogAge > CATALOG_MAX_AGE_MS) {
+        const fresh = await loadFeaturedCourses();
+        if (fresh.length > 0) courseCatalog = fresh;
+      }
       if (!Array.isArray(allCourses)) {
         console.warn("[JourneyPage] course_catalog_state_invalid", {
           received_type: typeof courseCatalog,
@@ -3425,7 +3491,7 @@ async function runDemoAnalysis() {
           res.recommended_courses.length === 0) &&
         courseCatalog.length > 0
       ) {
-        const fallbackCourses: CourseRecommendation[] = allCourses
+        const fallbackCourses: CourseRecommendation[] = courseCatalog
           .filter((course) => Boolean(course.course_id && course.course_name) && courseIsInTargetBereich(course))
           .slice()
           .sort((a, b) => {
@@ -3982,6 +4048,14 @@ async function runDemoAnalysis() {
     const bereichById = new Map(ROLES_CATALOG.map((r) => [r.role_id, r.bereich_key]));
     const inDirBereich = (c: OrbitCourse) =>
       dirBereiche.size === 0 || [...(c.bereich_keys ?? []), ...(c.bereich_key ? [c.bereich_key] : [])].some((k) => dirBereiche.has(k));
+    // Titel-Passung (29.09.2026): Viele Kurse haben im Dashboard (noch)
+    // keinen Beruf und keine Skills hinterlegt und fielen dadurch komplett
+    // raus. Fachwoerter aus Schwerpunkt und Berufen der Richtung (z. B.
+    // "marketing", "social media", "controlling") im Kurstitel zaehlen
+    // deshalb als Passung, im Beschreibungstext als schwache Passung.
+    // Allgemeine Woerter (Manager, Fachwirt, IHK ...) zaehlen nicht.
+    const directRoles = ROLES_CATALOG.filter((r) => directRoleIds.has(r.role_id));
+    const focusTerms = directionTerms([v2SchwerpunktText ?? "", ...directRoles.map((r) => r.role_name), ...directRoles.map((r) => r.typische_weiterbildung ?? "")]);
 
     const candidates: { course: OrbitCourse; fromDirection: boolean }[] = [];
     const seen = new Set<string>();
@@ -4005,10 +4079,12 @@ async function runDemoAnalysis() {
         const reachId = pitch.ladder.reach?.role_id;
         const reachNiveau = reachId ? niveauById.get(reachId) ?? 0 : 0;
         const tooLow = Boolean(reachId) && targetNiveau > 0 && reachNiveau > 0 && reachNiveau < targetNiveau - 1;
+        const titleHit = termHit(cand.course.course_name, focusTerms);
+        const descHit = !titleHit && termHit(`${cand.course.description ?? ""} ${cand.course.target_group ?? ""}`, focusTerms);
         let level = 0;
         if (reachId && directRoleIds.has(reachId)) level = 3;
-        else if (pitch.gapCoverage > 0) level = 2;
-        else if (reachId && (dirBereiche.size === 0 || dirBereiche.has(bereichById.get(reachId) ?? ""))) level = 1;
+        else if (pitch.gapCoverage > 0 || (!reachId && titleHit)) level = 2;
+        else if ((reachId && (dirBereiche.size === 0 || dirBereiche.has(bereichById.get(reachId) ?? ""))) || (!reachId && descHit)) level = 1;
         if (tooLow) level = 0;
         return { ...cand, pitch, level, index };
       })
@@ -4024,7 +4100,7 @@ async function runDemoAnalysis() {
       (x): V2Card => ({ course: x.course, pitch: x.pitch, fromDirection: x.fromDirection, fit: x.level >= 2 ? "direct" : "bereich" })
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isV2, courseResult, allCourses, careerGoal, v2Situation, employmentType, desiredStart, v2Direction, v2Plan, v2Answers, v2Role, activityIds, targetBereichLabel, rolesInPortfolio, bereichRole, v2SchwerpunktRoleIds]);
+  }, [isV2, courseResult, allCourses, careerGoal, v2Situation, employmentType, desiredStart, v2Direction, v2Plan, v2Answers, v2Role, activityIds, targetBereichLabel, rolesInPortfolio, bereichRole, v2SchwerpunktRoleIds, v2SchwerpunktText]);
 
   /**
    * Spotlight (29.09.2026, Rueckmeldung "vorher gab es ein dynamisches Feld
@@ -5491,6 +5567,34 @@ function V2RahmenStep({
  *  Karriereleiter, max. 3 Luecken, Rahmendaten, Foerderung. Die Anfrage
  *  passiert direkt an der Karte: Vorname + E-Mail (+ Telefon optional) +
  *  Einwilligung. Das Ergebnis ist ohne Daten-Eingabe sichtbar. */
+/** Allgemeine Woerter, die in fast jedem Kurs-/Berufstitel stehen und
+ *  deshalb nichts ueber die fachliche Richtung sagen. */
+const GENERIC_TITLE_TERMS = new Set([
+  "manager", "managerin", "management", "fachwirt", "fachwirtin", "fachkraft", "spezialist", "spezialistin",
+  "berater", "beraterin", "assistent", "assistentin", "kaufmann", "kauffrau", "kaufleute", "gepruefte", "geprufte",
+  "geprüfte", "gepruefter", "geprüfter", "weiterbildung", "umschulung", "zertifikat", "zertifizierung", "lehrgang",
+  "grundlagen", "kompakt", "leiter", "leiterin", "leitung", "referent", "referentin", "mitarbeiter", "mitarbeiterin",
+  "sachbearbeiter", "sachbearbeiterin", "techniker", "technikerin", "meister", "meisterin", "betriebswirt", "betriebswirtin",
+  "bachelor", "master", "online", "praesenz", "präsenz", "vollzeit", "teilzeit", "kurs", "seminar", "bereich",
+  "head", "senior", "junior", "expert", "experte", "expertin", "professional", "ihk", "hwk",
+]);
+/** Fachwoerter (ab 4 Buchstaben, ohne Allgemeines) aus Schwerpunkt- und Berufsnamen. */
+function directionTerms(texts: string[]): string[] {
+  const out = new Set<string>();
+  for (const t of texts) {
+    for (const w of t.toLowerCase().replace(/\(.*?\)/g, " ").split(/[^a-zäöüß0-9]+/)) {
+      if (w.length >= 4 && !GENERIC_TITLE_TERMS.has(w)) out.add(w);
+    }
+  }
+  return [...out];
+}
+/** Kommt eines der Fachwoerter im Text vor (auch als Wortteil, z. B. "Onlinemarketing")? */
+function termHit(text: string, terms: string[]): boolean {
+  if (!text || terms.length === 0) return false;
+  const t = text.toLowerCase();
+  return terms.some((w) => t.includes(w));
+}
+
 /** Ein Kurs im Spotlight der v2-Ergebnisseite (siehe v2Spotlight). */
 interface V2SpotlightItem {
   course: OrbitCourse;
@@ -5502,6 +5606,32 @@ interface V2SpotlightItem {
   inDirection: boolean;
   /** Tage bis Start, nur wenn innerhalb von 30 Tagen. */
   daysUntilStart: number | null;
+}
+
+/**
+ * Der "Aufmacher"-Banner eines Spotlight-Kurses (29.09.2026, "die einzelnen
+ * Banner sollen vorgestellt werden"): der eigene Banner-Text des
+ * Bildungstraegers hat Vorrang, dann Top-Kurs, dann knappe Plaetze, dann der
+ * Start. Alles aus denselben echten Feldern wie die Banner-Leiste
+ * (courseBadges); die uebrigen Banner stehen klein daneben.
+ */
+function spotlightLead(course: OrbitCourse): { lead: CourseBadge | null; note: string | null; rest: CourseBadge[] } {
+  const all = courseBadges(course, { showFeatured: true });
+  const order: CourseBadge["kind"][] = ["custom", "featured", "seats", "soon", "upcoming"];
+  const lead = order.map((k) => all.find((b) => b.kind === k)).find((b): b is CourseBadge => Boolean(b)) ?? null;
+  const provider = course.provider || "dem Bildungsträger";
+  const note = !lead
+    ? null
+    : lead.kind === "custom"
+      ? `Hinweis von ${provider}`
+      : lead.kind === "featured"
+        ? `Von ${provider} als Top-Kurs empfohlen`
+        : lead.kind === "seats"
+          ? "Nur noch wenige Plätze frei"
+          : course.starts_at
+            ? `Start am ${new Date(course.starts_at).toLocaleDateString("de-DE", { day: "numeric", month: "long" })}`
+            : null;
+  return { lead, note, rest: all.filter((b) => b !== lead) };
 }
 
 /**
@@ -5533,9 +5663,11 @@ function V2SpotlightRail({
   if (count === 0) return null;
   const item = items[safe];
   const c = item.course;
+  const banner = spotlightLead(c);
   const provider = c.provider || "deinem Bildungsträger";
   const isOn = requested.has(c.course_id);
-  const icon = (it: V2SpotlightItem) => (it.course.is_featured ? "★" : it.course.custom_banner ? "✦" : "🚀");
+  // Chip = Banner-Text + Kursname, damit man die Banner auch in der Leiste sieht.
+  const chipLabel = (it: V2SpotlightItem) => spotlightLead(it.course).lead?.text ?? "📚";
   return (
     <section
       className="v2-spot"
@@ -5560,8 +5692,18 @@ function V2SpotlightRail({
           </button>
         )}
         <article className={`v2-spot-card ${item.inDirection ? "in-direction" : ""}`} key={c.course_id}>
+          {banner.lead && (
+            <div className={`v2-spot-banner kind-${banner.lead.kind}`}>
+              <span className="v2-spot-banner-text">{banner.lead.text}</span>
+              {banner.note && <span className="v2-spot-banner-note">{banner.note}</span>}
+            </div>
+          )}
           <div className="v2-spot-card-top">
-            <CourseBadgeRow course={c} showFeatured />
+            {banner.rest.map((b, i) => (
+              <span key={i} className={`course-banner course-banner-${b.kind}`}>
+                {b.text}
+              </span>
+            ))}
             <span className={`v2-spot-tag ${item.inDirection ? "dir" : ""}`}>
               {item.inDirection ? "🧭 In deiner Richtung" : `🔥 Beliebt bei ${provider}`}
             </span>
@@ -5623,7 +5765,8 @@ function V2SpotlightRail({
               onClick={() => setIndex(i)}
               title={it.course.course_name}
             >
-              <span aria-hidden="true">{requested.has(it.course.course_id) ? "✓" : icon(it)}</span> {it.course.course_name}
+              <span className="v2-spot-chip-banner">{requested.has(it.course.course_id) ? "✓ Angefragt" : chipLabel(it)}</span>
+              <span className="v2-spot-chip-name">{it.course.course_name}</span>
             </button>
           ))}
         </div>
@@ -5702,7 +5845,7 @@ function V2ErgebnisStep({
   // Eine einzige Abschlussseite (25.09.2026): Kurs waehlen -> "Deine Anfrage"
   // mit Kontaktdaten und einem Haken fuer die persoenliche Beratung
   // (-> consultation_requested, im Dashboard als "Beratungsgespräch angefragt").
-  const [view, setView] = useState<"results" | "contact">(cards.length === 0 ? "contact" : "results");
+  const [view, setView] = useState<"results" | "contact">(cards.length === 0 && spotlight.length === 0 ? "contact" : "results");
   const [wantsConsult, setWantsConsult] = useState(cards.length === 0);
   useEffect(() => {
     if (forceView) setView(forceView);
@@ -6036,7 +6179,7 @@ function V2ErgebnisStep({
     );
   }
 
-  if (view === "contact" || cards.length === 0) return contactPage();
+  if (view === "contact" || (cards.length === 0 && spotlight.length === 0)) return contactPage();
   return (
     <div className="v2-result">
       <JourneyStepHeading
@@ -6046,11 +6189,13 @@ function V2ErgebnisStep({
         description={
           cards.length > 0
             ? "Ausgewählt nach deinen Stärken, deinen Lücken und deinem Rahmen – ganz ohne Anmeldung."
-            : "Gerade passt kein Kurs aus dem Katalog genau zu deinem Profil. Lass dich kostenlos beraten – der Bildungsträger kennt auch Angebote, die hier noch nicht stehen."
+            : spotlight.length > 0
+              ? "Gerade passt kein Kurs genau zu deinem Profil. Unten findest du, was der Bildungsträger aktuell hervorhebt – oder du lässt dich kostenlos beraten."
+              : "Gerade passt kein Kurs aus dem Katalog genau zu deinem Profil. Lass dich kostenlos beraten – der Bildungsträger kennt auch Angebote, die hier noch nicht stehen."
         }
       />
-      {cards.length > 0 && cards[0].course.provider && (
-        <div className="v2-transparency">Empfehlungen aus dem Kursangebot von {cards[0].course.provider}.</div>
+      {(cards[0]?.course.provider || spotlight[0]?.course.provider) && (
+        <div className="v2-transparency">Empfehlungen aus dem Kursangebot von {cards[0]?.course.provider || spotlight[0]?.course.provider}.</div>
       )}
       {openDirection && (
         <section className="v2-options" aria-label="Deine Möglichkeiten" data-tour="v2-options">
@@ -6121,7 +6266,7 @@ function V2ErgebnisStep({
           </button>
         </div>
       )}
-      {cards.length > 0 ? (
+      {cards.length > 0 && (
         <>
           {cards[0].fit === "bereich" && (
             <div className="v2-no-direct">
@@ -6136,7 +6281,16 @@ function V2ErgebnisStep({
             </div>
           )}
           {cards.slice(1).map((c) => card(c.course, c.pitch, false))}
-          <V2SpotlightRail items={spotlight} requested={requested} onToggle={onToggleRequest} />
+        </>
+      )}
+      {cards.length === 0 && (
+        <div className="v2-no-direct">
+          <strong>Für {bereichLabel ?? "deine Richtung"} gibt es gerade keinen passgenauen Kurs.</strong>
+          <span>Schau dir an, was gerade hervorgehoben wird – oder lass dich beraten, welcher Weg zu deinem Ziel führt.</span>
+        </div>
+      )}
+      <V2SpotlightRail items={spotlight} requested={requested} onToggle={onToggleRequest} />
+      <>
           <section className="v2-consult" id="v2-consult" aria-label="Persönliche Beratung" data-tour="v2-consult">
             <div className="v2-consult-head">
               <span className="v2-consult-icon" aria-hidden="true">
@@ -6154,8 +6308,7 @@ function V2ErgebnisStep({
               Kostenloses Beratungsgespräch anfragen <span className="arrow">→</span>
             </button>
           </section>
-        </>
-      ) : null}
+      </>
       {requestedIds.length > 0 && (
         <div className="v2-request-bar" role="status">
           <span className="v2-request-bar-count">{requestedIds.length}</span>

@@ -6605,3 +6605,257 @@ input.big-input:focus {
   margin: 0 auto 10px;
   object-fit: contain;
 }
+
+/* Journey v2: kein passgenauer Kurs fuer die Richtung (29.09.2026) */
+.v2-no-direct {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #f3d38a;
+  background: #fff8e6;
+  color: #5c4300;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.v2-no-direct strong {
+  color: #3d2c00;
+}
+.v2-course .course-banner-row {
+  margin: 6px 0 4px;
+}
+
+/* ------------------------------------------------------------------
+   Journey v2: Spotlight – Top-Kurse, Banner & bald startende Kurse
+   (29.09.2026). Farben ueber die DYD-Variablen, damit das
+   Corporate-Branding des Bildungstraegers greift.
+   ------------------------------------------------------------------ */
+.v2-spot {
+  position: relative;
+  margin: 22px 0 18px;
+  padding: 18px 16px 14px;
+  border-radius: 20px;
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(var(--dyd-mint-rgb), 0.22), transparent 60%),
+    radial-gradient(120% 90% at 100% 100%, rgba(var(--dyd-blue-rgb), 0.18), transparent 60%),
+    #f7fbff;
+  border: 1px solid rgba(var(--dyd-blue-rgb), 0.22);
+  overflow: hidden;
+}
+.v2-spot-head {
+  margin-bottom: 12px;
+}
+.v2-spot-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dyd-blue-dark);
+}
+.v2-spot-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dyd-mint-2);
+  box-shadow: 0 0 0 0 rgba(var(--dyd-mint-2-rgb), 0.6);
+  animation: v2-spot-pulse 1.8s ease-out infinite;
+}
+@keyframes v2-spot-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(var(--dyd-mint-2-rgb), 0.6); }
+  100% { box-shadow: 0 0 0 10px rgba(var(--dyd-mint-2-rgb), 0); }
+}
+.v2-spot-title {
+  margin: 4px 0 2px;
+  font-size: 1.15rem;
+  color: var(--dyd-navy, #0c1c34);
+}
+.v2-spot-sub {
+  margin: 0;
+  font-size: 0.86rem;
+  color: #4a5a70;
+}
+.v2-spot-stage {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.v2-spot-card {
+  flex: 1;
+  min-width: 0;
+  padding: 14px 14px 12px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid rgba(var(--dyd-blue-rgb), 0.18);
+  box-shadow: 0 10px 28px rgba(12, 28, 52, 0.08);
+  animation: v2-spot-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.v2-spot-card.in-direction {
+  border-color: rgba(var(--dyd-mint-2-rgb), 0.7);
+}
+@keyframes v2-spot-in {
+  from { opacity: 0; transform: translateX(18px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.v2-spot-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.v2-spot-card-top .course-banner-row {
+  margin: 0;
+}
+.v2-spot-tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #fff3e6;
+  color: #8a4b00;
+}
+.v2-spot-tag.dir {
+  background: rgba(var(--dyd-mint-rgb), 0.35);
+  color: #0d5a36;
+}
+.v2-spot-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.v2-spot-text {
+  flex: 1;
+  min-width: 0;
+}
+.v2-spot-name {
+  margin: 2px 0 6px;
+  font-size: 1.05rem;
+  line-height: 1.3;
+  color: var(--dyd-navy, #0c1c34);
+}
+.v2-spot-hook {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--dyd-blue-dark);
+}
+.v2-spot-personal {
+  margin-top: 3px;
+  font-size: 0.82rem;
+  color: #2d6a4f;
+}
+/* Countdown-Ring: fuellt sich, je naeher der Start ist (echtes starts_at). */
+.v2-spot-countdown {
+  --p: 50%;
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(closest-side, #fff 78%, transparent 80%),
+    conic-gradient(var(--dyd-mint-2) var(--p), rgba(var(--dyd-blue-rgb), 0.12) 0);
+  line-height: 1;
+}
+.v2-spot-countdown strong {
+  font-size: 1.2rem;
+  color: var(--dyd-navy, #0c1c34);
+}
+.v2-spot-countdown span {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #4a5a70;
+  margin-top: 2px;
+}
+.v2-spot-card .v2-facts {
+  margin: 10px 0;
+}
+.v2-spot-nav {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid rgba(var(--dyd-blue-rgb), 0.25);
+  background: #fff;
+  color: var(--dyd-blue-dark);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.v2-spot-nav:hover,
+.v2-spot-nav:focus-visible {
+  background: rgba(var(--dyd-blue-rgb), 0.1);
+}
+.v2-spot-progress {
+  height: 3px;
+  margin: 10px 42px 0;
+  border-radius: 3px;
+  background: rgba(var(--dyd-blue-rgb), 0.12);
+  overflow: hidden;
+}
+.v2-spot-progress span {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform-origin: left;
+  background: linear-gradient(90deg, var(--dyd-mint-2), var(--dyd-blue));
+  animation: v2-spot-progress 7s linear forwards;
+}
+.v2-spot-progress span.paused {
+  animation-play-state: paused;
+}
+@keyframes v2-spot-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.v2-spot-rail {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+.v2-spot-chip {
+  flex: 0 0 auto;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--dyd-blue-rgb), 0.22);
+  background: #fff;
+  color: #243447;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.v2-spot-chip.active {
+  background: var(--dyd-navy, #0c1c34);
+  border-color: var(--dyd-navy, #0c1c34);
+  color: #fff;
+}
+.v2-spot-chip.requested:not(.active) {
+  border-color: var(--dyd-mint-2);
+  background: rgba(var(--dyd-mint-rgb), 0.25);
+}
+@media (max-width: 560px) {
+  .v2-spot { padding: 14px 10px 12px; }
+  .v2-spot-nav { display: none; }
+  .v2-spot-progress { margin: 10px 4px 0; }
+  .v2-spot-countdown { width: 54px; height: 54px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2-spot-card, .v2-spot-pulse { animation: none; }
+}

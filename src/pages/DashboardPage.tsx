@@ -2365,7 +2365,15 @@ export function DashboardPage({
       // tatsächlich mehr als der Primär-Termin gesendet wurde (sentSessions
       // ist sonst null, siehe buildCourseSessionsPayload).
       const sessionsMismatch = sentSessions !== null && (saved.sessions?.length ?? 0) < sentSessions.length;
+      // Skills (28.09.2026): pruefen, ob wirklich alle gesendeten Skills
+      // gespeichert zurueckkommen — sonst sichtbar melden statt still verlieren.
+      const sentSkillCount = courseSkillUris.size;
+      const savedSkillUris = new Set(saved.covered_skill_uris ?? []);
+      const skillsMismatch = Array.from(courseSkillUris).some((uri) => !savedSkillUris.has(uri));
       const mismatchLabels: string[] = [];
+      if (skillsMismatch) {
+        mismatchLabels.push(`ein Teil der Skills (gesendet ${sentSkillCount}, gespeichert ${savedSkillUris.size})`);
+      }
       if (bereichMismatch) mismatchLabels.push("der Bereich (bereich_key/bereich_keys)");
       if (bookingUrlMismatch) mismatchLabels.push("der Buchungslink (booking_url)");
       if (sessionsMismatch) mismatchLabels.push("die weiteren Termine (sessions)");

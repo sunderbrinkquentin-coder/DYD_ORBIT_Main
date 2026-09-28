@@ -71,6 +71,9 @@ interface RawStep {
    *  eigener, vollwertiger Schritt (sonst gaebe es dort gar keine
    *  Rollen-Auswahl im Rundgang mehr). */
   hideIfKeyPresent?: JourneyStepKey;
+  /** Journey v2: Unter-Ansicht innerhalb des Schritts ("schwerpunkt",
+   *  "contact", "plan"), die JourneyPage beim Navigieren setzt. */
+  sub?: string;
   /** Ziel-Selektor(en) in Prioritaet — der erste sichtbare Treffer gewinnt
    *  (z. B. erst ein Detail-Element, sonst das ganze Panel). */
   selector: string | string[] | null;
@@ -263,56 +266,114 @@ const RAW_STEPS_V2: RawStep[] = [
     selector: null,
     title: "Rundgang durch die Journey",
     description:
-      "So erleben Interessierte deinen Weiterbildungs-Finder: sechs kurze Schritte von „Was möchtest du erreichen?“ bis zur Anfrage in deinem Dashboard. Die Beispielwerte kommen aus deinem echten Kurskatalog und tauchen nicht in deinen Reports auf.",
+      "So erleben Interessierte deinen Weiterbildungs-Finder – Bildschirm für Bildschirm, von „Was möchtest du erreichen?“ bis zur Anfrage in deinem Dashboard. Der Rundgang füllt dafür eine Beispiel-Journey mit Werten aus deinem echten Kurskatalog. Dabei entstehen keine Leads und keine Einträge in deinen Reports; beim Beenden wird alles zurückgesetzt.",
     benefit: "Für eine Bildschirmaufnahme: „▶ Automatisch abspielen“ lässt den Rundgang von selbst laufen.",
   },
   {
     key: "v2ziel",
     selector: '[data-tour="tour-stepper"]',
     title: "Sechs Schritte, klarer Fortschritt",
-    description: "Die Fortschrittsleiste zeigt jederzeit, wo man steht und wie viel noch kommt.",
+    description:
+      "Ziel, Erfahrung, Richtung, Kurz-Check, Rahmen, Empfehlung. Die Leiste zeigt jederzeit, wo man steht und wie viel noch kommt; mit „Zurück“ lässt sich jede Angabe ändern.",
     benefit: "Sichtbarer Fortschritt hält Interessierte bis zur Anfrage bei der Stange.",
   },
   {
     key: "v2ziel",
-    selector: '[data-tour="tour-panel"]',
-    title: "Ziel statt Berufsbezeichnung",
+    selector: ['[data-tour="v2-goals"]', '[data-tour="tour-panel"]'],
+    title: "1 · Ziel statt Berufsbezeichnung",
     description:
-      "Der Einstieg fragt nach dem Ziel – etwa weiterkommen, sich neu orientieren oder Führung übernehmen. Wer schon einen Beruf im Kopf hat, nimmt die Abkürzung über die Berufssuche.",
+      "Der Einstieg fragt nach dem Ziel, nicht nach einem Jobtitel – etwa im Beruf weiterkommen, sich neu orientieren oder Führung übernehmen. Das Ziel steuert später, auf welchem Niveau die passenden Berufe liegen (z. B. Aufstieg statt Wiedereinstieg).",
     benefit: "Niemand muss am Anfang einen Berufsnamen kennen – das senkt die Hürde für den Einstieg.",
   },
   {
+    key: "v2ziel",
+    selector: ['[data-tour="v2-known"]', '[data-tour="tour-panel"]'],
+    title: "Abkürzung für Entschlossene",
+    description:
+      "Wer schon einen Beruf im Kopf hat, springt über „Ich weiß schon, welchen Beruf ich anstrebe“ direkt in die Berufssuche. Wird es dort doch zu konkret, führt „Nur Branche wählen“ zurück auf den Weg über Bereich und Schwerpunkt – ohne neu anzufangen.",
+    benefit: "Beide Gruppen kommen ans Ziel: die Entschlossenen schneller, die Suchenden ohne Abbruch.",
+  },
+  {
     key: "v2herkunft",
-    selector: '[data-tour="tour-panel"]',
+    selector: ['[data-tour="v2-qualification"]', '[data-tour="tour-panel"]'],
+    title: "2 · Höchster Abschluss",
+    description:
+      "Ein Tipp genügt: kein Berufsabschluss, Berufsausbildung, Meister/Fachwirt/Techniker oder Studium. Daraus prüft die Journey später bei jedem Kurs die Zulassung und zeigt realistische nächste Schritte.",
+    benefit: "Du bekommst weniger Anfragen, bei denen die Zulassungsvoraussetzungen gar nicht passen.",
+  },
+  {
+    key: "v2herkunft",
+    selector: ['[data-tour="v2-activities"]', '[data-tour="tour-panel"]'],
     title: "Erfahrung in Alltagssprache",
     description:
-      "Abschluss antippen und anklicken, was man schon gemacht hat, z. B. „Waren annehmen und einlagern“. Daraus leitet ORBIT Kompetenzen ab – ein Lebenslauf ist nicht nötig, kann aber hochgeladen werden.",
+      "Erst das Arbeitsfeld, dann anklicken, was man dort gemacht hat – z. B. „Waren annehmen, prüfen und einlagern“. Jede Tätigkeit ist fest mit Kompetenzen verknüpft; die Journey zeigt sofort, wie viele Stärken dadurch schon erkannt sind. Aushilfsjobs, Praktika und Ehrenamt zählen mit.",
     benefit: "Auch Menschen ohne aktuellen Lebenslauf, etwa aus Transfergesellschaften, kommen so ins Matching.",
   },
   {
-    key: "v2richtung",
-    selector: '[data-tour="tour-panel"]',
-    title: "Bereich, dann Schwerpunkt",
+    key: "v2herkunft",
+    selector: ['[data-tour="v2-cv"]', '[data-tour="tour-panel"]'],
+    title: "Oder: Lebenslauf hochladen",
     description:
-      "Erst die Branche, danach ein Schwerpunkt wie „IT-Projektmanagement“ oder „Lager & Umschlag“. Häkchen zeigen, wo schon Erfahrung da ist; „Passende Kurse“ markiert, wo dein Angebot liegt.",
-    benefit: "Schwerpunkte mit deinen Kursen stehen oben – so landen Interessierte eher bei deinem Angebot.",
+      "Wer lieber seinen Lebenslauf nutzt, lädt ihn hier hoch (auch eingescannte PDFs). Die Einwilligung zur Verarbeitung wird dabei ausdrücklich eingeholt und mit Zeitpunkt gespeichert.",
+  },
+  {
+    key: "v2richtung",
+    sub: "bereich",
+    selector: ['[data-tour="v2-bereiche"]', '[data-tour="tour-panel"]'],
+    title: "3 · Bereich wählen",
+    description:
+      "Ein oder zwei Branchen auswählen. Bereiche, zu denen die angeklickten Tätigkeiten schon passen, stehen oben – mit „✓ Erfahrung vorhanden“ und der Begründung in den Worten der Person. Angezeigt werden nur Bereiche, in denen du Kurse anbietest.",
+    benefit: "Der gewählte Bereich landet im Lead und ist im Dashboard filterbar.",
+  },
+  {
+    key: "v2richtung",
+    sub: "schwerpunkt",
+    selector: ['.v2-focus', '[data-tour="tour-panel"]'],
+    title: "Schwerpunkt im Bereich",
+    description:
+      "Danach grenzt die Person den Bereich ein – in der IT z. B. „Programmierung“ oder „IT-Projektmanagement“, in der Logistik „Lager & Umschlag“ oder „Disposition“. Hinweise zeigen, wo schon Erfahrung da ist und wo es passende Kurse gibt. Wer sich nicht festlegen will, wählt „Noch offen – zeig mir alle Möglichkeiten“.",
+    benefit: "Schwerpunkte mit deinen Kursen stehen oben – und die Fragen danach passen genau zum gewählten Weg.",
     demoEvent: "🧭 Schwerpunkt gewählt",
   },
   {
     key: "v2check",
-    selector: '[data-tour="tour-panel"]',
+    selector: ['.v2-evidence', '[data-tour="tour-panel"]'],
+    title: "4 · Was schon belegt ist",
+    description:
+      "Oben steht „Dein Bereich: … · Schwerpunkt“ (jederzeit änderbar) und darunter, welche Stärken aus den Tätigkeiten schon belegt sind. Stimmt etwas nicht, reicht ein Klick auf ×, dann wird es stattdessen kurz abgefragt.",
+    benefit: "Ehrlich und nachvollziehbar – niemand bekommt Kompetenzen „untergeschoben“.",
+  },
+  {
+    key: "v2check",
+    selector: ['.v2-check-card', '[data-tour="tour-panel"]'],
     title: "Kurz-Check: höchstens fünf Fragen",
     description:
-      "Nur die Fragen, die für den gewählten Weg wirklich zählen – beantwortet mit „Ja“, „Ein bisschen“ oder „Noch nicht“. Was die Tätigkeiten schon belegen, wird nicht noch einmal gefragt.",
+      "Nur die Fragen, die für den gewählten Weg wirklich zählen – in Alltagssprache, eine Frage pro Karte, beantwortet mit „Ja“, „Ein bisschen“ oder „Noch nicht“. Nach jeder Antwort geht es automatisch weiter.",
     benefit: "Kurz genug gegen Abbrüche, genau genug für ein belastbares Kompetenzprofil im Lead.",
   },
   {
     key: "v2rahmen",
-    selector: '[data-tour="tour-panel"]',
-    title: "Rahmen, Förderung, Hürden",
+    selector: ['.v2-rahmen-grid', '[data-tour="tour-panel"]'],
+    title: "5 · Situation und Rahmen",
     description:
-      "Situation (z. B. arbeitsuchend oder beschäftigt), Zeit, Ort, was am wichtigsten ist und was schwierig werden könnte. Fragen zu Zeit und Ort erscheinen nur, wenn dein Katalog dort eine echte Wahl bietet.",
-    benefit: "Situation, Prioritäten und Hürden stehen als Notiz im Lead – dein Beratungsgespräch startet nicht bei null.",
+      "Die Situation (beschäftigt, arbeitsuchend, Transfergesellschaft, Ausbildung) bestimmt die passenden Förderwege. Dazu der Wunschstart sowie Zeitmodell und Lernort – die letzten beiden erscheinen nur, wenn dein Katalog dort eine echte Wahl bietet. Alles ist optional.",
+    benefit: "Die Angaben stehen am Lead – du weißt vor dem Rückruf, ob z. B. ein Bildungsgutschein Thema ist.",
+  },
+  {
+    key: "v2rahmen",
+    selector: ['.v2-hurdles', '[data-tour="tour-panel"]'],
+    title: "Was wichtig ist – und was schwierig werden könnte",
+    description:
+      "Zwei kurze Chip-Zeilen: Was ist am wichtigsten (z. B. anerkannter Abschluss, flexibel lernen)? Was könnte schwierig werden (Zeit, Kosten, lange nicht gelernt, Deutsch)? Die Empfehlung geht später genau darauf ein.",
+    benefit: "Wie im Beratungsgespräch: Einwände werden beantwortet, bevor sie zum Abbruchgrund werden.",
+  },
+  {
+    key: "v2ergebnis",
+    requires: "courseResult",
+    selector: ['.v2-strengths', '.v2-basis', '[data-tour="tour-panel"]'],
+    title: "6 · Deine Basis",
+    description:
+      "Das Ergebnis beginnt mit dem, was die Person mitbringt: die angeklickten Tätigkeiten und die Stärken aus dem Kurz-Check. Über „Stimmt etwas nicht? Anpassen“ geht es direkt zurück zum Check. Darüber steht offen, aus wessen Kursangebot die Empfehlungen stammen.",
   },
   {
     key: "v2ergebnis",
@@ -320,35 +381,83 @@ const RAW_STEPS_V2: RawStep[] = [
     selector: ['[data-tour="v2-options"]', '[data-tour="tour-panel"]'],
     title: "Möglichkeiten statt Einzeltreffer",
     description:
-      "Wer nur einen Bereich gewählt hat, sieht hier realistische Berufe und den Weg dorthin. Gibt es für einen Beruf keinen passenden Kurs, führt der Klick direkt zur Beratung.",
+      "Wer über einen Bereich kam, sieht hier realistische Berufe mit Niveau und dem Kurs dorthin. „Weg ansehen“ springt zur passenden Kurskarte; für Berufe ohne eigenen Kurs führt „Dazu beraten lassen“ direkt zur Anfrage mit Beratung.",
     benefit: "Auch Interessierte ohne festes Ziel landen bei einem konkreten nächsten Schritt.",
     demoEvent: "🎓 Empfehlung berechnet",
   },
   {
     key: "v2ergebnis",
     requires: "courseResult",
-    selector: ['[data-tour="v2-top-course"]', '[data-tour="tour-panel"]'],
-    title: "Kurskarte mit Begründung",
+    selector: ['[data-tour="v2-top-course"] .v2-ladder', '[data-tour="v2-top-course"]'],
+    title: "Top-Empfehlung: wohin der Kurs führt",
     description:
-      "Jede Empfehlung zeigt, worauf sie aufbaut, was neu dazukommt, wohin sie führt, ob die Zulassung passt und wie die Förderung konkret läuft. Mit „Zur Anfrage hinzufügen“ lassen sich mehrere Kurse sammeln.",
-    benefit: "Gepflegte Kursdaten wie Start, Preis, Förderung, Abschluss und Bereich machen deine Kurse hier überzeugender.",
+      "Jede Kurskarte zeigt, zu welchem Beruf der Kurs führt und was danach möglich ist, dazu Dauer, Preis, Start und Lernform. Darunter: worauf der Kurs aufbaut, was neu dazukommt und warum er zu den Angaben passt.",
+    benefit: "Gepflegte Kursdaten wie Start, Preis, Abschluss und Zielberuf machen deine Kurse hier überzeugender.",
+  },
+  {
+    key: "v2ergebnis",
+    requires: "courseResult",
+    selector: [
+      '[data-tour="v2-top-course"] .v2-funding-plan',
+      '[data-tour="v2-top-course"] .v2-prereq',
+      '[data-tour="v2-top-course"]',
+    ],
+    title: "Förderung, Zulassung, offene Fragen",
+    description:
+      "Passend zur Situation erklärt die Karte den Förderweg in konkreten Schritten – etwa zum Bildungsgutschein mit deiner Maßnahmenummer und Link zur Arbeitsagentur. Dazu der Zulassungs-Check zum Abschluss und kurze Antworten auf die genannten Hürden. Förderung wird nie versprochen, nur erklärt.",
+    benefit: "Voraussetzung: Förderwege und Maßnahmenummer sind am Kurs im Dashboard gepflegt.",
+  },
+  {
+    key: "v2ergebnis",
+    requires: "courseResult",
+    selector: ['.v2-request-bar', '[data-tour="v2-top-course"] .v2-request-toggle'],
+    title: "Mehrere Kurse gleichzeitig anfragen",
+    description:
+      "Mit „Zur Anfrage hinzufügen“ sammelt die Person beliebig viele Kurse. Die Leiste unten zeigt, wie viele es sind, und führt mit „Anfrage fertigstellen“ zur Abschlussseite.",
+    benefit: "Im Dashboard entsteht daraus ein einziger Lead, an dem alle angefragten Kurse hängen.",
   },
   {
     key: "v2ergebnis",
     requires: "courseResult",
     selector: ['[data-tour="v2-consult"]', '[data-tour="tour-panel"]'],
-    title: "Eine Anfrage, optional mit Beratung",
+    title: "Lieber erst persönlich sprechen?",
     description:
-      "Alle gewählten Kurse gehen gesammelt über eine Abschlussseite raus: Kontaktdaten, Einwilligung und ein Haken für das kostenlose Beratungsgespräch. Danach erhält die Person ihren persönlichen Plan zum Speichern.",
-    benefit: "Im Dashboard erscheint ein Lead mit allen Kursen, Beratungswunsch, Kompetenzprofil und Notiz – bereit für den Rückruf.",
+      "Wer noch unsicher ist, fragt direkt ein kostenloses Beratungsgespräch an. Die Antworten aus der Journey liegen der Beratung dann schon vor.",
+  },
+  {
+    key: "v2ergebnis",
+    sub: "contact",
+    requires: "courseResult",
+    selector: ['.v2-contact-form', '.v2-contact', '[data-tour="tour-panel"]'],
+    title: "Eine Abschlussseite für alles",
+    description:
+      "Oben die gewählten Kurse (einzeln entfernbar oder ergänzbar), darunter Vorname, E-Mail und Telefon. Ein großer Haken steht für das kostenlose persönliche Beratungsgespräch, danach folgt die DSGVO-Einwilligung – sie wird mit Zeitpunkt und Textversion nachweisbar gespeichert.",
+    benefit: "Ist der Haken gesetzt, steht am Lead im Dashboard „Beratungsgespräch angefragt“ – mit „Vereinbart“ und „Durchgeführt“ zum Abhaken.",
     demoEvent: "📥 Neuer Lead im Dashboard",
+  },
+  {
+    key: "v2ergebnis",
+    sub: "plan",
+    requires: "courseResult",
+    selector: ['.v2-plan', '.v2-plan-screen', '[data-tour="tour-panel"]'],
+    title: "Der persönliche Weiterbildungsplan",
+    description:
+      "Nach dem Absenden bekommt die Person ihren Plan: Ziel, Weg, Kurs mit Dauer, Start und Kosten, was sie mitbringt und lernt, den Förderweg und die nächsten Schritte. Er lässt sich drucken oder als PDF speichern.",
+    benefit: "Die Person geht mit etwas Greifbarem aus der Journey – und kommt gut vorbereitet in dein Beratungsgespräch.",
+  },
+  {
+    key: null,
+    selector: null,
+    title: "Was bei dir im Dashboard ankommt",
+    description:
+      "Ein Lead mit Kontaktdaten, allen angefragten Kursen, Zielberuf und Match, Beratungswunsch sowie einer Notiz aus der Journey: Situation, was wichtig ist, mögliche Hürden und die Erfahrung in den Worten der Person. Bereich und Zeitraum sind filterbar, die Reports werten Skill-Gaps und Top-Kurse aus.",
   },
   {
     key: null,
     selector: null,
     title: "Das war der Rundgang",
     description:
-      "Beim Beenden wird die Beispiel-Journey zurückgesetzt. Den Button „Rundgang starten“ findest du jederzeit wieder.",
+      "Beim Beenden wird die Beispiel-Journey zurückgesetzt. Den Button „Rundgang starten“ findest du jederzeit wieder – praktisch direkt vor einer Präsentation oder Aufnahme.",
   },
 ];
 
@@ -370,7 +479,7 @@ interface JourneyTourProps {
   /** Navigiert die Journey selbst zum gewuenschten Schritt (kuemmert sich in
    *  JourneyPage auch darum, aus der Einstiegsfrage herauszukommen, falls
    *  der Rundgang dort gestartet wurde). */
-  onNavigate: (key: JourneyStepKey) => void;
+  onNavigate: (key: JourneyStepKey, sub?: string) => void;
   /** Loest bei Bedarf eine echte (nicht erfundene) Beispiel-Analyse aus,
    *  damit "Skill-Gap" und "Kurs" auch ohne vorherigen echten Durchlauf im
    *  Rundgang etwas zeigen - siehe runDemoAnalysis in JourneyPage.tsx. Wird
@@ -483,7 +592,9 @@ export function JourneyTour({
   // lospatschen, waehrend im Hintergrund noch nachgeladen wird.
   useEffect(() => {
     if (!open || waitingForDemoResults || !step.key) return;
-    if (step.key !== currentKey) onNavigate(step.key);
+    // v2: immer navigieren (auch innerhalb desselben Schritts wechselt die
+    // Unter-Ansicht, z. B. Bereich -> Schwerpunkt oder Ergebnis -> Anfrage).
+    if (step.key !== currentKey || version === "v2") onNavigate(step.key, step.sub);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, waitingForDemoResults, stepIdx, step.key]);
 

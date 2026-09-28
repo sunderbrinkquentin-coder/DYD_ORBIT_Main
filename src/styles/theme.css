@@ -15,6 +15,11 @@
   --dyd-blue: #2f8fd6;
   --dyd-blue-dark: #1f6fae;
   --dyd-violet: #7c6fe0;
+  /* RGB-Kanaele derselben Farben fuer rgba()-Toene (28.09.2026) — werden
+     beim Branding eines Bildungstraegers mit ueberschrieben (brandTheme.ts). */
+  --dyd-blue-rgb: 47, 143, 214;
+  --dyd-mint-rgb: 143, 236, 180;
+  --dyd-mint-2-rgb: 95, 220, 153;
   --page: #eef2f9;
   --surface: #ffffff;
   --border: #e6eaf2;

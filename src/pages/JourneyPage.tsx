@@ -62,6 +62,7 @@ import {
 } from "../data/courseMatcher";
 import { BereichBadges, CourseBadgeRow, courseBadges, daysUntilCourseStart, type CourseBadge } from "../data/courseBadges";
 import { mapCatalogAsync, type MappedCourse } from "../data/courseMap";
+import { buildCourseOfferIndex, courseCountForBereich, courseCountForRoles, offeredRoleIdsOf, type CourseOfferIndex } from "../data/courseOffer";
 import { ACTIVITY_FIELDS, deriveSkillsFromActivities, getActivity, suggestedProficiency } from "../data/activitiesCatalog";
 import {
   buildDirectionRole,
@@ -69,7 +70,6 @@ import {
   narrowDirection,
   planQuickCheck,
   quickAnswerToDepth,
-  rolesForCourse,
   type ActivityEvidence,
   type DirectionCandidate,
   type QualificationLevel as V2QualificationLevel,
@@ -2102,11 +2102,10 @@ async function runDemoAnalysis() {
   const bereicheInPortfolio: BereichOption[] = useMemo(() => listBereiche(rolesInPortfolio), [rolesInPortfolio]);
   // Journey v2: Berufe, zu denen Kurse dieses Traegers fuehren — Angebots-
   // Bonus in narrowDirection() (keine Richtung ohne passendes Angebot).
-  const offeredRoleIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const c of allCourses) for (const l of rolesForCourse(c, rolesInPortfolio, { max: 2 })) ids.add(l.role.role_id);
-    return ids;
-  }, [allCourses, rolesInPortfolio]);
+  // Seit 29.09.2026 aus dem gemeinsamen Angebots-Index (courseOffer.ts), der
+  // auch die Kurszahlen je Bereich/Schwerpunkt im Richtungs-Schritt liefert.
+  const offerIndex = useMemo(() => buildCourseOfferIndex(allCourses, rolesInPortfolio), [allCourses, rolesInPortfolio]);
+  const offeredRoleIds = useMemo(() => offeredRoleIdsOf(offerIndex), [offerIndex]);
   // Journey v2: hoechster Abschluss (Bildschirm 2) und eingegrenzte
   // Richtung (Bildschirm 3) — die Richtung wird in Teil 3 fuer
   // Karriereleiter und Pitch (coursePitch.ts) gebraucht.
@@ -2506,7 +2505,7 @@ async function runDemoAnalysis() {
       return;
     }
     const goal = careerGoal ?? "weiterkommen";
-    const focus = schwerpunkteFor(bereich, rolesInPortfolio, { offeredRoleIds })[0];
+    const focus = schwerpunkteFor(bereich, rolesInPortfolio, { offeredRoleIds, courseCountFor: (ids) => courseCountForRoles(offerIndex, ids) })[0];
     const spKeys = focus ? [focus.key] : [];
     const roles = rolesForSchwerpunkte(rolesInPortfolio, [bereich], spKeys);
     const base = { bereichKeys: [bereich], goal, roles, qualification: "berufsausbildung" as const, offeredRoleIds };
@@ -4354,6 +4353,7 @@ async function runDemoAnalysis() {
                     bereicheOptions={bereicheInPortfolio}
                     rolesInPortfolio={rolesInPortfolio}
                     offeredRoleIds={offeredRoleIds}
+                    offerIndex={offerIndex}
                     onConfirm={v2ApplyDirection}
                     onBack={() => setCurrent(stepIndex("v2herkunft"))}
                     initialFocus={v2Schwerpunkte}
@@ -5081,6 +5081,7 @@ function V2RichtungStep({
   bereicheOptions,
   rolesInPortfolio,
   offeredRoleIds,
+  offerIndex,
   onConfirm,
   onBack,
   initialFocus = [],
@@ -5098,6 +5099,8 @@ function V2RichtungStep({
   bereicheOptions: BereichOption[];
   rolesInPortfolio: CatalogRole[];
   offeredRoleIds: ReadonlySet<string>;
+  /** Angebots-Index: Kurszahlen je Bereich/Schwerpunkt (courseOffer.ts). */
+  offerIndex?: CourseOfferIndex;
   onConfirm: (bereichKeys: string[], schwerpunktKeys: string[]) => void;
   onBack: () => void;
 }) {
@@ -5110,10 +5113,14 @@ function V2RichtungStep({
       selected
         .map((key) => ({
           bereich: bereicheOptions.find((b) => b.key === key),
-          options: schwerpunkteFor(key, rolesInPortfolio, { activityIds, offeredRoleIds }),
+          options: schwerpunkteFor(key, rolesInPortfolio, {
+            activityIds,
+            offeredRoleIds,
+            courseCountFor: offerIndex ? (ids) => courseCountForRoles(offerIndex, ids) : undefined,
+          }),
         }))
         .filter((g) => g.bereich && g.options.length >= 2),
-    [selected, bereicheOptions, rolesInPortfolio, activityIds, offeredRoleIds]
+    [selected, bereicheOptions, rolesInPortfolio, activityIds, offeredRoleIds, offerIndex]
   );
   // Rundgang (28.09.2026): Stufe von aussen setzen (Bereich/Schwerpunkt).
   useEffect(() => {
@@ -5161,14 +5168,19 @@ function V2RichtungStep({
                 {BEREICH_ICONS[g.bereich!.key] ?? "🧭"} {g.bereich!.label}
               </div>
             )}
-            <div className="v2-focus-grid">
-              {g.options.map((o) => {
+            {(() => {
+              // "Nie ohne Kurs" (29.09.2026): Schwerpunkte mit Kursangebot
+              // oben mit Kurszahl; ohne Angebot darunter, klar als
+              // persoenliche Beratung gekennzeichnet (weiterhin waehlbar).
+              const withOffer = g.options.filter((o) => o.hasOffer);
+              const withoutOffer = g.options.filter((o) => !o.hasOffer);
+              const focusCard = (o: (typeof g.options)[number]) => {
                 const isSel = focus.includes(o.key);
                 return (
                   <button
                     key={o.key}
                     type="button"
-                    className={`v2-focus-card ${isSel ? "selected" : ""}`}
+                    className={`v2-focus-card ${isSel ? "selected" : ""} ${o.hasOffer ? "has-offer" : "no-offer"}`}
                     aria-pressed={isSel}
                     onClick={() => toggleFocus(o.key)}
                   >
@@ -5182,16 +5194,36 @@ function V2RichtungStep({
                     </span>
                     <span className="v2-focus-label">{o.label}</span>
                     <span className="v2-focus-hint">{o.hint}</span>
-                    {(o.experience >= SCHWERPUNKT_EXPERIENCE_MIN || o.hasOffer) && (
-                      <span className="v2-focus-tags">
-                        {o.experience >= SCHWERPUNKT_EXPERIENCE_MIN && <span className="v2-focus-tag exp">✓ Erfahrung vorhanden</span>}
-                        {o.hasOffer && <span className="v2-focus-tag offer">Passende Kurse</span>}
-                      </span>
-                    )}
+                    <span className="v2-focus-tags">
+                      {o.hasOffer ? (
+                        <span className="v2-focus-tag offer">
+                          📚{" "}
+                          {o.courseCount != null
+                            ? `${o.courseCount} passende${o.courseCount === 1 ? "r Kurs" : " Kurse"}`
+                            : "Passende Kurse"}
+                        </span>
+                      ) : (
+                        <span className="v2-focus-tag consult">💬 Persönliche Beratung</span>
+                      )}
+                      {o.experience >= SCHWERPUNKT_EXPERIENCE_MIN && <span className="v2-focus-tag exp">✓ Erfahrung vorhanden</span>}
+                    </span>
                   </button>
                 );
-              })}
-            </div>
+              };
+              return (
+                <>
+                  {withOffer.length > 0 && <div className="v2-focus-grid">{withOffer.map(focusCard)}</div>}
+                  {withoutOffer.length > 0 && (
+                    <>
+                      <div className="v2-focus-subtitle">
+                        {withOffer.length > 0 ? "Ohne festen Kurs – wir beraten dich persönlich" : "Wir beraten dich persönlich zu deinem Weg"}
+                      </div>
+                      <div className="v2-focus-grid">{withoutOffer.map(focusCard)}</div>
+                    </>
+                  )}
+                </>
+              );
+            })()}
           </div>
         ))}
         <button type="button" className="v2-focus-open" onClick={() => onConfirm(selected, [])}>
@@ -5222,6 +5254,11 @@ function V2RichtungStep({
         {isSel && <span className="role-card-check" aria-hidden="true">✓</span>}
         <div className="role-card-icon" aria-hidden="true">{BEREICH_ICONS[b.key] ?? "🧭"}</div>
         <div className="role-card-name">{b.label}</div>
+        {offerIndex && courseCountForBereich(offerIndex, b.key) > 0 && (
+          <div className="v2-bereich-count">
+            📚 {courseCountForBereich(offerIndex, b.key)} {courseCountForBereich(offerIndex, b.key) === 1 ? "Kurs" : "Kurse"}
+          </div>
+        )}
         {f && (
           <div className="hint" style={{ fontSize: "11.5px", marginTop: "5px", lineHeight: 1.4 }}>
             <span style={{ fontWeight: 800 }}>✓ Erfahrung vorhanden</span>

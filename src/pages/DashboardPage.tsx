@@ -52,6 +52,8 @@ import {
   startCatalogCrawl,
   stepCatalogCrawl,
   upsertCourse,
+  courseToUpsertPayload,
+  type CourseUpsertRequest,
   type CatalogCrawlOutcome,
   type CatalogOverview,
   type CatalogProposalSummary,
@@ -77,6 +79,7 @@ import { guessExperienceLevel } from "../lib/skillLevel";
 import { matchSkills } from "../data/skillMatcher";
 import { listBereiche } from "../data/gapAnalysis";
 import { ROLES_CATALOG, SKILLS_CATALOG } from "../data/rolesCatalog";
+import { analyzeDemandGaps, findUnmappedCourses, type DemandGapRow, type UnmappedCourseRow } from "../data/offerGaps";
 import { BrandingModal } from "../components/BrandingModal";
 import { classifyCourse, splitLearningGoals, suggestBereiche, type Confidence as SuggestionConfidence } from "../data/courseClassifier";
 import { BereichBadges, CourseBadgeRow } from "../data/courseBadges";
@@ -1567,6 +1570,58 @@ export function DashboardPage({
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
   const [courseFormOpen, setCourseFormOpen] = useState(false);
   const courseFormRef = useRef<HTMLDetailsElement>(null);
+  // Angebots-Check (29.09.2026, siehe src/data/offerGaps.ts): Nachfrage ohne
+  // passenden Kurs + Kurse ohne Zuordnung. Gerechnet wird nur bei offenem
+  // Bereich - die automatische Kurs-Zuordnung kostet ca. 25 ms je Kurs.
+  const [offerCheckOpen, setOfferCheckOpen] = useState(false);
+  const [offerAdoptBusyId, setOfferAdoptBusyId] = useState<string | null>(null);
+  const [offerAdoptMsg, setOfferAdoptMsg] = useState<{ id: string; msg: string; kind: "ok" | "err" } | null>(null);
+  const unmappedCourseCount = useMemo(
+    () => courses.filter((c) => !c.target_role_id && !(c.target_role_ids?.length ?? 0) && !(c.covered_skill_uris?.length ?? 0)).length,
+    [courses]
+  );
+  const demandGaps: DemandGapRow[] = useMemo(
+    () => (offerCheckOpen ? analyzeDemandGaps(leads, courses, { sinceDays: 90 }) : []),
+    [offerCheckOpen, leads, courses]
+  );
+  const unmappedCourses: UnmappedCourseRow[] = useMemo(
+    () => (offerCheckOpen ? findUnmappedCourses(courses) : []),
+    [offerCheckOpen, courses]
+  );
+  /** "Kurs dafuer anlegen": leeres Formular mit Bereich und Berufen des Schwerpunkts. */
+  function startCourseForDemand(row: DemandGapRow) {
+    resetCourseForm();
+    setCourseForm((f) => ({ ...f, bereichKeys: [row.bereichKey], targetRoleIds: row.roleIds.slice(0, 2) }));
+    setCourseFormOpen(true);
+    window.setTimeout(() => courseFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
+  /** Uebernimmt die Erkennung der Journey fest in den Kurs (nur nach Klick). */
+  async function handleAdoptCourseMapping(row: UnmappedCourseRow) {
+    if (!row.suggestion) return;
+    const { course, suggestion } = row;
+    setOfferAdoptBusyId(course.course_id);
+    setOfferAdoptMsg(null);
+    try {
+      const patch: Partial<CourseUpsertRequest> = {};
+      if (suggestion.roleIds.length > 0) {
+        patch.target_role_ids = suggestion.roleIds;
+        patch.target_role_names = suggestion.roleNames;
+        patch.target_role_id = suggestion.roleIds[0];
+        patch.target_role_name = suggestion.roleNames[0];
+      }
+      if (suggestion.skillIds.length > 0) {
+        patch.covered_skill_uris = suggestion.skillIds;
+        patch.covered_skills = suggestion.skillIds.map((uri) => ({ esco_uri: uri, experience_level: null }));
+      }
+      const updated = await upsertCourse(baseUrl, apiKey, { ...courseToUpsertPayload(course), ...patch });
+      setCourses((prev) => prev.map((c) => (c.course_id === updated.course_id ? updated : c)));
+      setOfferAdoptMsg({ id: course.course_id, msg: "Übernommen – im Kurs jederzeit änderbar.", kind: "ok" });
+    } catch (err) {
+      setOfferAdoptMsg({ id: course.course_id, msg: `Fehler: ${err instanceof Error ? err.message : String(err)}`, kind: "err" });
+    } finally {
+      setOfferAdoptBusyId(null);
+    }
+  }
   // Session-lokale Klick-Zählung ("welcher Kurs wird am meisten angesehen"). Nicht
   // dauerhaft gespeichert und nicht tenant-übergreifend — siehe Hinweis im Reports-Tab
   // und die Empfehlung, das analog zum bestehenden Test-Tracking im Backend nachzubauen.
@@ -2107,55 +2162,12 @@ export function DashboardPage({
     setBannerBusyId(course.course_id);
     setBannerError(null);
     try {
+      // Vollstaendiger Datensatz aus einer Stelle (courseToUpsertPayload in
+      // orbit.ts) - vorher fehlten hier booking_url, sessions,
+      // course_category und die Voraussetzungen, jeder Banner-Klick hat sie
+      // geloescht (upsertCourse ersetzt den kompletten Kurs).
       const updated = await upsertCourse(baseUrl, apiKey, {
-        course_id: course.course_id,
-        course_name: course.course_name,
-        provider: course.provider,
-        duration_weeks: course.duration_weeks,
-        covered_skill_uris: course.covered_skill_uris,
-        covered_skills: course.covered_skills,
-        is_featured: course.is_featured,
-        description: course.description,
-        target_role_id: course.target_role_id,
-        target_role_name: course.target_role_name,
-        target_role_ids: course.target_role_ids,
-        target_role_names: course.target_role_names,
-        location: course.location,
-        is_remote: course.is_remote,
-        location_mode: course.location_mode,
-        // Muss hier genau wie location_mode mitgeschickt werden — upsertCourse
-        // ersetzt den kompletten Kurs, ohne dieses Feld würde jeder Banner-
-        // Quick-Pick/Top-Toggle die einmal gesetzte Beschäftigungsart wieder
-        // stillschweigend löschen (siehe employment_mode in orbit.ts).
-        employment_mode: course.employment_mode,
-        starts_at: course.starts_at,
-        seats_remaining: course.seats_remaining,
-        custom_banner: course.custom_banner,
-        // Bug-Fix (15.09., "ich kann im Kursprogramm die Bereiche nicht
-        // hinterlegen, das wird immer noch nicht gespeichert"): bereich_key(s)
-        // fehlten hier komplett — genau derselbe Fehlertyp wie beim
-        // CSV-Import-Bugfix oben (handleRunImport). upsertCourse ersetzt den
-        // kompletten Kurs; ohne diese Felder hat jeder Klick auf die
-        // Banner-Schnellbearbeitung (Startdatum/Plätze/Banner-Text direkt von
-        // der Kachel aus, ohne "✎ Bearbeiten" zu öffnen) einen zuvor im
-        // Formular gesetzten Bereich stillschweigend geloescht.
-        bereich_key: course.bereich_key,
-        bereich_label: course.bereich_label,
-        bereich_keys: course.bereich_keys,
-        bereich_labels: course.bereich_labels,
-        // Version 32 — dieselbe Begruendung wie bei employment_mode oben:
-        // ohne diese Felder wuerde ein Banner-Quick-Pick jeden im Formular
-        // gepflegten Preis/Förderung/Abschluss wieder stillschweigend
-        // loeschen (upsertCourse ersetzt den kompletten Kurs).
-        price_eur: course.price_eur,
-        price_vat_exempt: course.price_vat_exempt,
-        exam_fee_eur: course.exam_fee_eur,
-        teaching_units: course.teaching_units,
-        funding_types: course.funding_types,
-        funding_measure_number: course.funding_measure_number,
-        qualification_type: course.qualification_type,
-        dqr_level: course.dqr_level,
-        target_group: course.target_group,
+        ...courseToUpsertPayload(course),
         ...patch,
       });
       setCourses((prev) => prev.map((c) => (c.course_id === updated.course_id ? updated : c)));
@@ -5386,6 +5398,115 @@ export function DashboardPage({
                   </section>
                 );
               })()}
+              <details
+                className="app-card collapsible-card offer-check"
+                open={offerCheckOpen}
+                onToggle={(e) => setOfferCheckOpen(e.currentTarget.open)}
+                data-tour="kurse-offer-check"
+              >
+                <summary>
+                  <span>🧭 Angebots-Check</span>
+                  <span className="collapsible-hint">
+                    Nachfrage ohne passenden Kurs{unmappedCourseCount > 0 ? ` · ${unmappedCourseCount} ${unmappedCourseCount === 1 ? "Kurs" : "Kurse"} ohne Zuordnung` : ""}
+                  </span>
+                </summary>
+                <div className="app-card-body">
+                  <p className="offer-check-intro">
+                    Wo fragen Interessenten nach Wegen, für die Sie noch keinen Kurs haben – und welche Kurse kann die Journey nur automatisch
+                    zuordnen?
+                  </p>
+                  <h4 className="offer-check-title">Nachfrage der letzten 90 Tage</h4>
+                  {demandGaps.length === 0 ? (
+                    <div className="offer-check-empty">Noch keine Anfragen mit Wunschberuf in diesem Zeitraum.</div>
+                  ) : (
+                    <ul className="offer-check-list">
+                      {demandGaps.slice(0, 10).map((row) => (
+                        <li key={row.key} className={`offer-check-row ${row.courseCount === 0 ? "gap" : "covered"}`}>
+                          <div className="offer-check-main">
+                            <strong>{row.label}</strong>
+                            <span className="offer-check-sub">
+                              {row.bereichLabel} · gewünscht: {row.roleNames.slice(0, 3).join(", ")}
+                            </span>
+                          </div>
+                          <span className="offer-check-leads">
+                            {row.leads} {row.leads === 1 ? "Anfrage" : "Anfragen"}
+                          </span>
+                          {row.courseCount === 0 ? (
+                            <button type="button" className="btn-ghost offer-check-btn" onClick={() => startCourseForDemand(row)}>
+                              ＋ Kurs dafür anlegen
+                            </button>
+                          ) : (
+                            <span className="offer-check-ok">
+                              ✓ {row.courseCount} {row.courseCount === 1 ? "Kurs" : "Kurse"} im Angebot
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <h4 className="offer-check-title">Kurse ohne Zuordnung</h4>
+                  {offerAdoptMsg?.kind === "ok" && !unmappedCourses.some((r) => r.course.course_id === offerAdoptMsg.id) && (
+                    <div className="offer-check-msg ok" role="status">
+                      ✓ {courses.find((c) => c.course_id === offerAdoptMsg.id)?.course_name ?? "Kurs"}: {offerAdoptMsg.msg}
+                    </div>
+                  )}
+                  {unmappedCourses.length === 0 ? (
+                    <div className="offer-check-empty">✓ Alle Kurse haben Berufe oder Skills hinterlegt.</div>
+                  ) : (
+                    <>
+                      <p className="offer-check-note">
+                        Die Journey erkennt diese Kurse bereits automatisch. Mit „Übernehmen“ speichern Sie die Erkennung fest im Kurs – dann ist
+                        sie sichtbar und jederzeit anpassbar.
+                      </p>
+                      <ul className="offer-check-list">
+                        {unmappedCourses.map((row) => {
+                          const sg = row.suggestion;
+                          const text = !sg
+                            ? "Keine sichere Erkennung – bitte Berufe oder Skills selbst hinterlegen."
+                            : sg.roleNames.length > 0
+                              ? `Aus dem Titel erkannt: führt zu ${sg.roleNames.join(", ")}`
+                              : sg.derivedRoleNames.length > 0
+                                ? `Aus ${sg.skillIds.length} erkannten Inhalten: bereitet vor auf ${sg.derivedRoleNames.join(", ")}`
+                                : `${sg.skillIds.length} Inhalte erkannt, aber noch keinem Beruf klar zuzuordnen`;
+                          return (
+                            <li key={row.course.course_id} className={`offer-check-row ${sg ? "suggest" : "gap"}`}>
+                              <div className="offer-check-main">
+                                <strong>{row.course.course_name}</strong>
+                                <span className="offer-check-sub">{text}</span>
+                                {sg && sg.skillIds.length > 0 && (
+                                  <span className="offer-check-skills">
+                                    {sg.skillIds
+                                      .slice(0, 5)
+                                      .map((id) => CATALOG_SKILL_NAMES.get(id) ?? id)
+                                      .join(" · ")}
+                                    {sg.skillIds.length > 5 ? " …" : ""}
+                                  </span>
+                                )}
+                                {offerAdoptMsg?.id === row.course.course_id && (
+                                  <span className={`offer-check-msg ${offerAdoptMsg.kind}`}>{offerAdoptMsg.msg}</span>
+                                )}
+                              </div>
+                              {sg && (
+                                <button
+                                  type="button"
+                                  className="btn-primary offer-check-btn"
+                                  disabled={offerAdoptBusyId === row.course.course_id}
+                                  onClick={() => void handleAdoptCourseMapping(row)}
+                                >
+                                  {offerAdoptBusyId === row.course.course_id ? "Speichert…" : "✓ Übernehmen"}
+                                </button>
+                              )}
+                              <button type="button" className="btn-ghost offer-check-btn" onClick={() => startEditCourse(row.course)}>
+                                ✎ Selbst zuordnen
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </>
+                  )}
+                </div>
+              </details>
               <details
                 className="app-card collapsible-card"
                 ref={courseFormRef}

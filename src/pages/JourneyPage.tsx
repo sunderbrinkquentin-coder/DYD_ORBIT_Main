@@ -916,6 +916,72 @@ function skillQuestionContext(skill: RoleSkillStatus, targetRoleName: string | n
   };
 }
 
+/** Journey v2: Gap-Ergebnis aus Kurz-Check (reine Funktion, auch fuer die
+ *  Rundgang-Vorschau). Belegte Taetigkeiten zaehlen als vorhanden, Antworten
+ *  "Ja"/"Ein bisschen" als (teilweise) vorhanden, der Rest als Luecke. */
+function computeV2Gap(
+  role: CatalogRole,
+  roleId: string,
+  roleName: string,
+  plan: { questions: QuickCheckItem[]; evidence: ActivityEvidence[] },
+  answers: ReadonlyMap<string, QuickAnswer>,
+): { result: GapAnalysisResponse; depthMap: Map<string, SkillDepth> } {
+  const bySkill = new Map(role.skills.map((sk) => [sk.skill_id, sk]));
+  const covered: RoleSkillStatus[] = [];
+  const gapKern: RoleSkillStatus[] = [];
+  const gapRest: RoleSkillStatus[] = [];
+  const depthMap = new Map<string, SkillDepth>();
+  let total = 0;
+  let got = 0;
+  const handled = new Set<string>();
+  for (const e of plan.evidence) {
+    const sk = bySkill.get(e.skill_id);
+    if (!sk) continue;
+    const depth: SkillDepth = { proficiency: EVIDENCE_DEPTH.proficiency, recency: EVIDENCE_DEPTH.recency };
+    const score = quizSkillScore(depth);
+    depthMap.set(sk.skill_id, depth);
+    total += sk.weight;
+    got += sk.weight * (score / 100);
+    covered.push({ esco_uri: sk.skill_id, preferred_label: sk.name, weight: sk.weight, covered: true, matched_score: score });
+    handled.add(sk.skill_id);
+  }
+  for (const q of plan.questions) {
+    const sk = bySkill.get(q.skill_id);
+    if (!sk || handled.has(sk.skill_id)) continue;
+    handled.add(sk.skill_id);
+    const a = answers.get(sk.skill_id) ?? "nein";
+    const d = quickAnswerToDepth(a);
+    total += sk.weight;
+    if (d) {
+      const depth: SkillDepth = { proficiency: d.proficiency, recency: d.recency };
+      const score = quizSkillScore(depth);
+      depthMap.set(sk.skill_id, depth);
+      got += sk.weight * (score / 100);
+      covered.push({ esco_uri: sk.skill_id, preferred_label: sk.name, weight: sk.weight, covered: true, matched_score: score });
+      // "Ein bisschen" bleibt zusaetzlich ein Vertiefungs-Thema fuer die Kurse.
+      if (a === "etwas") gapKern.push({ esco_uri: sk.skill_id, preferred_label: sk.name, weight: sk.weight * 0.5, covered: false, matched_score: null });
+    } else {
+      gapKern.push({ esco_uri: sk.skill_id, preferred_label: sk.name, weight: sk.weight, covered: false, matched_score: null });
+    }
+  }
+  for (const sk of role.skills) {
+    if (handled.has(sk.skill_id)) continue;
+    gapRest.push({ esco_uri: sk.skill_id, preferred_label: sk.name, weight: sk.weight * 0.5, covered: false, matched_score: null });
+  }
+  gapKern.sort((a, b) => b.weight - a.weight);
+  gapRest.sort((a, b) => b.weight - a.weight);
+  return {
+    result: {
+      tenant_id: "",
+      target_role_id: roleId,
+      target_role_name: roleName,
+      match_percentage: total > 0 ? Math.round((got / total) * 1000) / 10 : 0,
+      covered_skills: covered,
+      gap_skills: [...gapKern, ...gapRest],
+    },
+    depthMap,
+  };
+}
 function quizSkillScore(depth: SkillDepth | undefined | null): number {
   // Fallback (sollte in der neuen UI praktisch nie eintreten - jedes "Ja"
   // setzt depth im selben Tap): entspricht in etwa "Fortgeschritten,
@@ -1773,8 +1839,7 @@ async function runDemoAnalysis() {
     demoRunIdRef.current++; // eine noch laufende Demo-Anfrage als ueberholt markieren
     if (!demoDataActiveRef.current) return;
     demoDataActiveRef.current = false;
-    setKnowsRole(null);
-    setInterestArea(null);
+    setKnowsRole(isV2 ? false : null);
     setCareerGoal(null);
     setEmploymentType(null);
     setWorkLocation(null);
@@ -1800,9 +1865,18 @@ async function runDemoAnalysis() {
     setAdditionalCourseIds(new Set());
     setDesiredStart(null);
     setTestId(null);
-    setConsultationBusy(false);
-    setConsultationError(null);
-    setConsultationSent(false);
+    // Journey v2 (28.09.2026): auch die v2-Zustaende der Vorschau zuruecksetzen
+    // und auf Bildschirm 1 statt der v1-Einstiegsfrage landen.
+    setV2DemoGap(null);
+    setV2KnowsTarget(false);
+    setV2Qualification(null);
+    setQualificationLevel(null);
+    setV2Direction([]);
+    setV2Schwerpunkte([]);
+    setV2Answers(new Map());
+    setV2EvidenceRemoved(new Set());
+    setBereichRole(null);
+    if (isV2) setCurrent(0);
   }
   // Zielrollen
   const [roles, setRoles] = useState<TargetRole[]>([]);
@@ -2014,6 +2088,9 @@ async function runDemoAnalysis() {
   // Schwerpunkte (Unterbereiche) aus Bildschirm 3, z. B. "IT-Projektmanagement"
   // statt ganz "IT & Technik". Leer = "Noch offen – alles zeigen".
   const [v2Schwerpunkte, setV2Schwerpunkte] = useState<string[]>([]);
+  // Rundgang-Vorschau (v2): vorbereitetes Gap-Ergebnis, fuer das goToKurs()
+  // laufen soll, sobald targetRoleId/bereichRole im State angekommen sind.
+  const [v2DemoGap, setV2DemoGap] = useState<GapAnalysisResponse | null>(null);
   const v2SchwerpunktRoleIds = useMemo(
     () => new Set(SCHWERPUNKTE.filter((sp) => v2Schwerpunkte.includes(sp.key)).flatMap((sp) => sp.role_ids)),
     [v2Schwerpunkte]
@@ -2284,6 +2361,87 @@ async function runDemoAnalysis() {
     setMethod(keepCv ? "cv" : null);
     setCurrent(stepIndex("v2check"));
   }
+  /** Rundgang-Vorschau fuer Journey v2 (28.09.2026): baut aus dem echten
+   *  Katalog des Traegers einen plausiblen Beispiel-Durchlauf (Bereich mit
+   *  eigenem Kursangebot, passender Schwerpunkt, 3 passende Taetigkeiten,
+   *  Beispiel-Antworten im Kurz-Check) — rein im Browser, ohne createTest,
+   *  also ohne Eintrag in den Reports. Die Kurse im Ergebnis sind echte Kurse
+   *  aus dem Katalog, gerankt wie bei einem echten Durchlauf. tourClose()
+   *  raeumt alles wieder weg, solange niemand selbst weitergeklickt hat. */
+  function runV2Demo() {
+    if (gapResult && courseResult) return;
+    const offeredBereich = allCourses
+      .flatMap((c) => [...(c.bereich_keys ?? []), ...(c.bereich_key ? [c.bereich_key] : [])])
+      .find((k) => bereicheInPortfolio.some((b) => b.key === k));
+    const bereich = offeredBereich ?? bereicheInPortfolio[0]?.key;
+    if (!bereich) {
+      void runDemoAnalysis();
+      return;
+    }
+    const goal = careerGoal ?? "weiterkommen";
+    const focus = schwerpunkteFor(bereich, rolesInPortfolio, { offeredRoleIds })[0];
+    const spKeys = focus ? [focus.key] : [];
+    const roles = rolesForSchwerpunkte(rolesInPortfolio, [bereich], spKeys);
+    const base = { bereichKeys: [bereich], goal, roles, qualification: "berufsausbildung" as const, offeredRoleIds };
+    const first = narrowDirection({ ...base, activityIds: [] });
+    // Taetigkeiten, die am meisten Skills des besten Berufs abdecken.
+    let acts = activityIds;
+    if (acts.length === 0 && first[0]) {
+      const roleSkills = new Set(first[0].role.skills.map((sk) => sk.skill_id));
+      acts = ACTIVITY_FIELDS.flatMap((f) => f.activities)
+        .map((act) => ({ id: act.activity_id, hits: act.skills.filter((l) => roleSkills.has(l.skill_id)).length }))
+        .filter((x) => x.hits > 0)
+        .sort((x, y) => y.hits - x.hits || x.id.localeCompare(y.id))
+        .slice(0, 3)
+        .map((x) => x.id);
+    }
+    const narrowed = narrowDirection({ ...base, activityIds: acts });
+    if (narrowed.length === 0) {
+      void runDemoAnalysis();
+      return;
+    }
+    const role = buildDirectionRole([bereich], narrowed, goal);
+    const plan = planQuickCheck(role, acts, 5, skillQuestionFor);
+    const sample: QuickAnswer[] = ["ja", "etwas", "nein"];
+    const answers = new Map(plan.questions.map((q, i) => [q.skill_id, sample[i % sample.length]] as const));
+    const built = computeV2Gap(role, role.role_id, role.role_name, plan, answers);
+
+    demoRunIdRef.current++;
+    demoDataActiveRef.current = true;
+    setCareerGoal(goal);
+    setV2Qualification("berufsausbildung");
+    setQualificationLevel("berufsausbildung");
+    setActivityIds(acts);
+    setV2KnowsTarget(false);
+    setV2Schwerpunkte(spKeys);
+    setV2Direction(narrowed);
+    setBereichRole(role);
+    setTargetRoleId(role.role_id);
+    setTargetRoleName(role.role_name);
+    setV2Answers(answers);
+    setV2EvidenceRemoved(new Set());
+    setCheckedSkills(new Set(built.result.covered_skills.map((c) => c.esco_uri)));
+    setSkillDepthByUri(built.depthMap);
+    setGapResult(built.result);
+    setTestId(null);
+    setCourseResult(null);
+    setV2DemoGap(built.result);
+  }
+
+  // Rundgang-Vorschau v2: Kursempfehlung erst rechnen, wenn die Demo-Rolle im
+  // State angekommen ist (goToKurs liest targetRoleId/effectiveRoles).
+  useEffect(() => {
+    if (!v2DemoGap || targetRoleId !== v2DemoGap.target_role_id) return;
+    const gap = v2DemoGap;
+    setV2DemoGap(null);
+    const runId = demoRunIdRef.current;
+    void goToKurs(gap).then(() => {
+      if (demoRunIdRef.current !== runId) return;
+      demoDataActiveRef.current = true;
+      setCurrent(0);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v2DemoGap, targetRoleId]);
 
   // ---------------- Journey v2 – Handler (Teil 2/3, 25.09.2026) ----------------
   /** Rolle, gegen die der Kurz-Check laeuft: Richtungs-Rolle (unsicherer
@@ -2385,60 +2543,10 @@ async function runDemoAnalysis() {
    *  zaehlt wie im Fragebogen nur, was tatsaechlich beantwortet/belegt ist). */
   function v2BuildGapResult(): GapAnalysisResponse | null {
     if (!v2Role || !targetRoleId) return null;
-    const bySkill = new Map(v2Role.skills.map((sk) => [sk.skill_id, sk]));
-    const covered: RoleSkillStatus[] = [];
-    const gapKern: RoleSkillStatus[] = [];
-    const gapRest: RoleSkillStatus[] = [];
-    const depthMap = new Map<string, SkillDepth>();
-    let total = 0;
-    let got = 0;
-    const handled = new Set<string>();
-    for (const e of v2Plan.evidence) {
-      const sk = bySkill.get(e.skill_id);
-      if (!sk) continue;
-      const depth: SkillDepth = { proficiency: EVIDENCE_DEPTH.proficiency, recency: EVIDENCE_DEPTH.recency };
-      const score = quizSkillScore(depth);
-      depthMap.set(sk.skill_id, depth);
-      total += sk.weight;
-      got += sk.weight * (score / 100);
-      covered.push({ esco_uri: sk.skill_id, preferred_label: sk.name, weight: sk.weight, covered: true, matched_score: score });
-      handled.add(sk.skill_id);
-    }
-    for (const q of v2Plan.questions) {
-      const sk = bySkill.get(q.skill_id);
-      if (!sk || handled.has(sk.skill_id)) continue;
-      handled.add(sk.skill_id);
-      const a = v2Answers.get(sk.skill_id) ?? "nein";
-      const d = quickAnswerToDepth(a);
-      total += sk.weight;
-      if (d) {
-        const depth: SkillDepth = { proficiency: d.proficiency, recency: d.recency };
-        const score = quizSkillScore(depth);
-        depthMap.set(sk.skill_id, depth);
-        got += sk.weight * (score / 100);
-        covered.push({ esco_uri: sk.skill_id, preferred_label: sk.name, weight: sk.weight, covered: true, matched_score: score });
-        // "Ein bisschen" bleibt zusaetzlich ein Vertiefungs-Thema fuer die Kurse.
-        if (a === "etwas") gapKern.push({ esco_uri: sk.skill_id, preferred_label: sk.name, weight: sk.weight * 0.5, covered: false, matched_score: null });
-      } else {
-        gapKern.push({ esco_uri: sk.skill_id, preferred_label: sk.name, weight: sk.weight, covered: false, matched_score: null });
-      }
-    }
-    for (const sk of v2Role.skills) {
-      if (handled.has(sk.skill_id)) continue;
-      gapRest.push({ esco_uri: sk.skill_id, preferred_label: sk.name, weight: sk.weight * 0.5, covered: false, matched_score: null });
-    }
-    gapKern.sort((a, b) => b.weight - a.weight);
-    gapRest.sort((a, b) => b.weight - a.weight);
-    setCheckedSkills(new Set(covered.map((c) => c.esco_uri)));
-    setSkillDepthByUri(depthMap);
-    return {
-      tenant_id: "",
-      target_role_id: targetRoleId,
-      target_role_name: targetRoleName ?? v2Role.role_name,
-      match_percentage: total > 0 ? Math.round((got / total) * 1000) / 10 : 0,
-      covered_skills: covered,
-      gap_skills: [...gapKern, ...gapRest],
-    };
+    const built = computeV2Gap(v2Role, targetRoleId, targetRoleName ?? v2Role.role_name, v2Plan, v2Answers);
+    setCheckedSkills(new Set(built.result.covered_skills.map((c) => c.esco_uri)));
+    setSkillDepthByUri(built.depthMap);
+    return built.result;
   }
 
   /** Bildschirm 4 -> 5. */
@@ -4313,22 +4421,23 @@ async function runDemoAnalysis() {
           </div>
         </div>
       </div>
-      {showTour && !isV2 && (
+      {showTour && (
         <button className="tour-trigger-btn" onClick={() => setTourOpen(true)} type="button">
           <span aria-hidden="true">🧭</span>
           <span className="tour-trigger-label">Rundgang starten</span>
         </button>
       )}
-      {showTour && !isV2 && (
+      {showTour && (
         <JourneyTour
           open={tourOpen}
           onClose={tourClose}
           currentKey={knowsRole === null ? "intro" : (stepKey as JourneyStepKey) ?? "intro"}
-          availableKeys={steps.map((s) => s.key).filter((k) => !k.startsWith("v2")) as JourneyStepKey[]}
+          availableKeys={(isV2 ? steps.map((s) => s.key) : steps.map((s) => s.key).filter((k) => !k.startsWith("v2"))) as JourneyStepKey[]}
           hasGapResult={Boolean(gapResult)}
           hasCourseResult={Boolean(courseResult)}
           onNavigate={(key) => tourNavigate(key as StepKey)}
-          onEnsureDemoResults={runDemoAnalysis}
+          onEnsureDemoResults={isV2 ? runV2Demo : runDemoAnalysis}
+          version={isV2 ? "v2" : "v1"}
         />
       )}
       {showConnectionPanel && (
@@ -5431,7 +5540,12 @@ function V2ErgebnisStep({
     const open = top || expanded === course.course_id;
     const ladder = pitch.ladder;
     return (
-      <article key={course.course_id} id={`v2-course-${course.course_id}`} className={`v2-course ${top ? "is-top" : ""}`}>
+      <article
+        key={course.course_id}
+        id={`v2-course-${course.course_id}`}
+        className={`v2-course ${top ? "is-top" : ""}`}
+        data-tour={top ? "v2-top-course" : undefined}
+      >
         {top && <div className="v2-course-badge">⭐ Deine Top-Empfehlung</div>}
         <div className="v2-course-headline">
           {openDirection
@@ -5574,7 +5688,7 @@ function V2ErgebnisStep({
         <div className="v2-transparency">Empfehlungen aus dem Kursangebot von {cards[0].course.provider}.</div>
       )}
       {openDirection && (
-        <section className="v2-options" aria-label="Deine Möglichkeiten">
+        <section className="v2-options" aria-label="Deine Möglichkeiten" data-tour="v2-options">
           <div className="v2-options-title">Deine Möglichkeiten{bereichLabel ? ` in ${bereichLabel}` : ""}</div>
           <div className="v2-options-sub">Diese Berufe sind mit deinem Profil realistisch – tippe auf einen, um den passenden Weg zu sehen.</div>
           <div className="v2-options-grid">
@@ -5649,7 +5763,7 @@ function V2ErgebnisStep({
             <div className="v2-alt-title">{cards.slice(1).every((c) => c.fromDirection) ? "Ebenfalls in deiner Richtung" : "Ebenfalls passend"}</div>
           )}
           {cards.slice(1).map((c) => card(c.course, c.pitch, false))}
-          <section className="v2-consult" id="v2-consult" aria-label="Persönliche Beratung">
+          <section className="v2-consult" id="v2-consult" aria-label="Persönliche Beratung" data-tour="v2-consult">
             <div className="v2-consult-head">
               <span className="v2-consult-icon" aria-hidden="true">
                 📞

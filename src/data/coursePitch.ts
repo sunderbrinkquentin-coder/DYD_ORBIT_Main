@@ -303,12 +303,42 @@ function fundingLine(course: PitchCourse, situation: Situation | null): string |
   return null;
 }
 
+/**
+ * Passt ein Kurs zum Rahmen der Person? (29.09.2026, Baustein 4 "Nie ohne
+ * Kurs" - gemeinsam genutzt von der Kurskarte (fitLines) und dem
+ * mitlaufenden Kurs-Zaehler in der Journey.) Je Kriterium: true = passt,
+ * false = passt nicht, null = keine Angabe (Person egal/offen oder Feld am
+ * Kurs nicht gepflegt) - null schliesst nie aus.
+ */
+export function rahmenFit(
+  course: Pick<PitchCourse, "employment_mode" | "starts_at" | "location_mode">,
+  prefs: {
+    employmentPref?: "vollzeit" | "teilzeit" | "egal" | null;
+    startPref?: "asap" | "4-wochen" | "1-3-monate" | "offen" | null;
+    locationPref?: string | null;
+  },
+  now: Date = new Date(),
+): { employment: boolean | null; start: boolean | null; location: boolean | null } {
+  const em = course.employment_mode;
+  const employment = em && prefs.employmentPref && prefs.employmentPref !== "egal" ? em === "beides" || em === prefs.employmentPref : null;
+  const days = daysUntil(course.starts_at, now);
+  const maxDays = prefs.startPref === "asap" ? 30 : prefs.startPref === "4-wochen" ? 35 : prefs.startPref === "1-3-monate" ? 100 : null;
+  const start = maxDays !== null && days !== null && days >= 0 ? days <= maxDays : null;
+  const lm = course.location_mode;
+  const lp = prefs.locationPref;
+  const location =
+    lm && (lp === "remote" || lp === "vor-ort")
+      ? lm === "hybrid" || (lp === "remote" ? lm === "remote" : lm === "vor_ort")
+      : null;
+  return { employment, start, location };
+}
+
 function fitLines(course: PitchCourse, ctx: PitchContext): string[] {
   const out: string[] = [];
   const now = ctx.now ?? new Date();
   const em = course.employment_mode;
   if (em && ctx.employmentPref && ctx.employmentPref !== "egal") {
-    const ok = em === "beides" || em === ctx.employmentPref;
+    const ok = rahmenFit(course, { employmentPref: ctx.employmentPref }, now).employment === true;
     const wish = ctx.employmentPref === "vollzeit" ? "Vollzeit" : "Teilzeit / berufsbegleitend";
     out.push(ok ? `${wish} – wie du es wolltest` : `Wird nur in ${em === "vollzeit" ? "Vollzeit" : "Teilzeit"} angeboten`);
   } else if (em) {

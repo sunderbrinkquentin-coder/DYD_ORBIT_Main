@@ -76,7 +76,7 @@ import {
   type QuickAnswer,
   type QuickCheckItem,
 } from "../data/journeyFlow";
-import { buildCoursePitchV2, NIVEAU_LABELS, type CoursePitch, type PitchCourse, type Situation } from "../data/coursePitch";
+import { buildCoursePitchV2, NIVEAU_LABELS, rahmenFit, type CoursePitch, type PitchCourse, type Situation } from "../data/coursePitch";
 import { skillQuestionFor } from "../data/skillQuestions";
 import { rolesForSchwerpunkte, SCHWERPUNKT_EXPERIENCE_MIN, SCHWERPUNKTE, schwerpunkteFor, schwerpunktLabel } from "../data/schwerpunkte";
 import {
@@ -2630,6 +2630,63 @@ async function runDemoAnalysis() {
   const v2WayLabel = v2KnowsTarget
     ? targetRoleName
     : [targetBereichLabel, v2SchwerpunktText || null].filter(Boolean).join(" · ") || null;
+  /**
+   * Mitlaufender Kurs-Zaehler (29.09.2026, Baustein 4 "Nie ohne Kurs"):
+   * zeigt ab dem Kurz-Check, wie viele Kurse des Traegers es fuer die
+   * gewaehlte Richtung gibt, und im Rahmen-Schritt live, wie viele davon zu
+   * den Angaben passen. Quelle ist derselbe Angebots-Index wie im
+   * Richtungs-Schritt; die Rahmen-Pruefung ist rahmenFit() aus
+   * coursePitch.ts (auch von den Kurskarten genutzt). Kein Angebot in der
+   * Richtung -> Kurse im Bereich ("Einstieg"); gar keins -> kein Zaehler.
+   */
+  const v2Counter = useMemo(() => {
+    if (!isV2) return null;
+    const roleIds =
+      v2SchwerpunktRoleIds.size > 0
+        ? [...v2SchwerpunktRoleIds]
+        : v2KnowsTarget && targetRoleId
+          ? [targetRoleId]
+          : v2Direction.map((d) => d.role.role_id);
+    const direct = new Set<string>();
+    for (const r of roleIds) for (const id of offerIndex.byRole.get(r) ?? []) direct.add(id);
+    let kind: "direct" | "bereich" = "direct";
+    let ids = direct;
+    if (ids.size === 0) {
+      const keys = new Set([...v2Direction.map((d) => d.role.bereich_key), bereichRole?.bereich_key].filter((k): k is string => Boolean(k)));
+      // Nur Kurse, die zu einem Beruf des Bereichs fuehren - reine
+      // Bereichs-Tags ohne fachlichen Bezug werden nie empfohlen und
+      // zaehlen deshalb auch hier nicht.
+      ids = new Set<string>();
+      for (const r of ROLES_CATALOG) if (keys.has(r.bereich_key)) for (const id of offerIndex.byRole.get(r.role_id) ?? []) ids.add(id);
+      kind = "bereich";
+    }
+    if (ids.size === 0) return null;
+    const pool = allCourses.filter((c) => ids.has(c.course_id));
+    const prefs = {
+      employmentPref: (employmentType === "vollzeit" || employmentType === "teilzeit" || employmentType === "egal" ? employmentType : null) as
+        | "vollzeit"
+        | "teilzeit"
+        | "egal"
+        | null,
+      startPref: (desiredStart === "asap" || desiredStart === "4-wochen" || desiredStart === "1-3-monate" || desiredStart === "offen"
+        ? desiredStart
+        : null) as "asap" | "4-wochen" | "1-3-monate" | "offen" | null,
+      locationPref: workLocation,
+    };
+    const anyPref =
+      (prefs.employmentPref && prefs.employmentPref !== "egal") ||
+      (prefs.startPref && prefs.startPref !== "offen") ||
+      prefs.locationPref === "remote" ||
+      prefs.locationPref === "vor-ort";
+    const fitting = anyPref
+      ? pool.filter((c) => {
+          const f = rahmenFit(c as unknown as PitchCourse, prefs);
+          return f.employment !== false && f.start !== false && f.location !== false;
+        }).length
+      : null;
+    const label = kind === "direct" ? (v2KnowsTarget ? targetRoleName : v2SchwerpunktText || targetBereichLabel) : targetBereichLabel;
+    return { kind, total: pool.length, fitting, label: label || null };
+  }, [isV2, v2SchwerpunktRoleIds, v2KnowsTarget, targetRoleId, targetRoleName, v2Direction, bereichRole, offerIndex, allCourses, employmentType, desiredStart, workLocation, v2SchwerpunktText, targetBereichLabel]);
   /** Rahmen-Fragen nur, wenn der Katalog in der Richtung eine echte Wahl
    *  bietet (alle Kurse online -> Frage nach dem Ort entfaellt). */
   const v2RahmenVisibility = useMemo(() => {
@@ -4421,6 +4478,9 @@ async function runDemoAnalysis() {
                     forceNonce={v2TourView?.n ?? 0}
                   />
                 )}
+                {(stepKey === "v2rahmen" || (stepKey === "v2check" && v2Role && method !== "cv")) && v2Counter && (
+                  <V2CourseCounter counter={v2Counter} showRahmen={stepKey === "v2rahmen"} />
+                )}
                 {stepKey === "v2check" &&
                   (v2Role && method !== "cv" ? (
                     <V2CheckStep
@@ -5134,6 +5194,50 @@ function V2HerkunftStep({
  *  Taetigkeiten schon Erfahrung belegen, stehen oben mit Begruendung in den
  *  Worten der Person. Keine Rollentitel, keine Skill-Chips (die Eingrenzung
  *  auf konkrete Berufe passiert unsichtbar in v2ApplyDirection). */
+/** Mitlaufender Kurs-Zaehler ueber Kurz-Check und Rahmen (siehe v2Counter). */
+function V2CourseCounter({
+  counter,
+  showRahmen,
+}: {
+  counter: { kind: "direct" | "bereich"; total: number; fitting: number | null; label: string | null };
+  showRahmen: boolean;
+}) {
+  const { kind, total, fitting, label } = counter;
+  const kurse = (n: number) => `${n} ${n === 1 ? "Kurs" : "Kurse"}`;
+  return (
+    <div className={`v2-counter ${kind}`} role="status" aria-live="polite">
+      <span className="v2-counter-num" aria-hidden="true" key={showRahmen && fitting != null ? `f${fitting}` : `t${total}`}>
+        {showRahmen && fitting != null ? fitting : total}
+      </span>
+      <span className="v2-counter-text">
+        <span className="v2-counter-main">
+          {kind === "direct" ? (
+            <>
+              <strong>{kurse(total)}</strong> {label ? <>für {label}</> : "für deine Richtung"} im Angebot
+            </>
+          ) : (
+            <>
+              <strong>{kurse(total)}</strong> im Bereich {label ?? "deiner Wahl"} – wir finden deinen Einstieg
+            </>
+          )}
+        </span>
+        {showRahmen && fitting != null && (
+          <span className="v2-counter-sub">
+            {fitting > 0
+              ? fitting === total
+                ? total === 1
+                  ? "✓ passt zu deinem Rahmen"
+                  : "✓ alle passen zu deinem Rahmen"
+                : `✓ davon ${fitting} passend zu deinem Rahmen`
+              : "Termine und Rahmen klärt ihr gemeinsam in der Beratung"}
+          </span>
+        )}
+        {showRahmen && fitting == null && <span className="v2-counter-sub">Deine Angaben unten grenzen die Auswahl live ein</span>}
+      </span>
+    </div>
+  );
+}
+
 function V2RichtungStep({
   initialSelected = [],
   goal,
@@ -5980,6 +6084,9 @@ function V2ErgebnisStep({
     })
     .filter((c): c is { course: OrbitCourse; pitch: CoursePitch | null } => Boolean(c));
   const requested = new Set(requestedIds);
+  // Kurs, an dem der Kurs-Check haengt: die erste Empfehlung, sonst der
+  // erste hervorgehobene Kurs aus dem Spotlight.
+  const topCourse: OrbitCourse | null = cards[0]?.course ?? spotlight[0]?.course ?? null;
 
   function scrollTop() {
     window.setTimeout(() => {
@@ -6105,8 +6212,8 @@ function V2ErgebnisStep({
               {wantsConsult ? "✓" : ""}
             </span>
             <span className="v2-contact-consult-text">
-              <strong>📞 Ich möchte ein kostenloses persönliches Beratungsgespräch</strong>
-              <span>Gemeinsam klärt ihr Förderung, Start und ob der Weg wirklich zu dir passt. Deine Antworten liegen der Beratung schon vor.</span>
+              <strong>📞 Ja, ich möchte einen kostenlosen Kurs-Check mit Förderberatung</strong>
+              <span>Gemeinsam klärt ihr, ob der Kurs zu deinem Ziel passt, welche Förderung infrage kommt und wann du starten kannst.</span>
             </span>
           </label>
           <label className="consent-row v2-consent">
@@ -6441,15 +6548,30 @@ function V2ErgebnisStep({
                 📞
               </span>
               <div>
-                <div className="v2-consult-title">Lieber erst persönlich sprechen?</div>
+                {/* Baustein 4 "Nie ohne Kurs" (29.09.2026): die Beratung ist
+                    kein Ausweg, sondern der Kurs-Check zum empfohlenen Kurs -
+                    der Top-Kurs wird mit angefragt, damit auch jede
+                    Beratungsanfrage im Dashboard an einem Kurs haengt. */}
+                <div className="v2-consult-title">Kostenloser Kurs-Check mit Förderberatung</div>
                 <div className="v2-consult-sub">
-                  Im kostenlosen Beratungsgespräch klärst du Förderung, Start und welcher Weg wirklich zu dir passt. Deine Antworten liegen der Beratung
-                  schon vor – du musst nichts doppelt erzählen.
+                  {topCourse ? (
+                    <>
+                      Bevor du dich festlegst: Im kurzen Gespräch zu <strong>{topCourse.course_name}</strong> klärt ihr gemeinsam
+                    </>
+                  ) : (
+                    "Im kurzen Gespräch klärt ihr gemeinsam"
+                  )}
                 </div>
+                <ul className="v2-consult-list">
+                  <li>✓ ob der Kurs wirklich zu deinem Ziel passt</li>
+                  <li>✓ welche Förderung für dich infrage kommt</li>
+                  <li>✓ den nächsten passenden Starttermin</li>
+                </ul>
+                <div className="v2-consult-note">Deine Antworten liegen schon vor – du musst nichts doppelt erzählen.</div>
               </div>
             </div>
-            <button type="button" className="v2-consult-cta" onClick={() => goContact(null, true)}>
-              Kostenloses Beratungsgespräch anfragen <span className="arrow">→</span>
+            <button type="button" className="v2-consult-cta" onClick={() => goContact(requested.size === 0 ? topCourse?.course_id ?? null : null, true)}>
+              Kurs-Check kostenlos anfragen <span className="arrow">→</span>
             </button>
           </section>
       </>

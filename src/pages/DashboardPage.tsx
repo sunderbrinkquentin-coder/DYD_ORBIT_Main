@@ -4000,6 +4000,11 @@ export function DashboardPage({
     // der Kachel"-Schritt unten (lead-list) auch wirklich einen zweiten,
     // zusätzlichen Kurs neben recommended_course zeigt.
     linked_course_ids: ["tour-demo-communication"],
+    // Rundgang (28.09.2026): Beratungswunsch + Journey-Notiz, damit der
+    // Leads-Schritt das Feld "Beratungsgespräch angefragt" wirklich zeigt.
+    consultation_requested: true,
+    message:
+      "[Journey] Situation: beschäftigt · Wichtig: Anerkannter Abschluss · Mögliche Hürden: Zeit neben Job oder Familie · Erfahrung: Projekte koordiniert; Termine und Abläufe geplant",
   } as LeadResponse;
   const tourDemoCourses: OrbitCourse[] = [
     {
@@ -4009,6 +4014,11 @@ export function DashboardPage({
       duration_weeks: 4,
       covered_skill_uris: ["demo:project-management"],
       is_featured: true,
+      // Rundgang (28.09.2026): Bereich + Buchungslink, damit die Demo-Kacheln
+      // keine "Kein Bereich zugeordnet"-/"Kein Buchungslink"-Warnungen zeigen.
+      bereich_key: "wirtschaft",
+      bereich_keys: ["wirtschaft"],
+      booking_url: "https://www.beispiel-akademie.de/projektmanagement",
     },
     {
       course_id: "tour-demo-data",
@@ -4017,6 +4027,9 @@ export function DashboardPage({
       duration_weeks: 6,
       covered_skill_uris: ["demo:data-analysis"],
       is_featured: true,
+      bereich_key: "it-tech",
+      bereich_keys: ["it-tech"],
+      booking_url: "https://www.beispiel-akademie.de/data-analytics",
       // Rein fürs Demo-Bild im Rundgang (siehe Banner-Quick-Picker-Schritt
       // unten): echtes nahes Datum + niedrige Platzzahl, damit im Rundgang
       // tatsächlich "Startet in Kürze" UND "Nur noch X Plätze" zu sehen sind,
@@ -4031,6 +4044,9 @@ export function DashboardPage({
       duration_weeks: 3,
       covered_skill_uris: ["demo:communication"],
       is_featured: false,
+      bereich_key: "wirtschaft",
+      bereich_keys: ["wirtschaft"],
+      booking_url: "https://www.beispiel-akademie.de/kommunikation",
     },
   ] as OrbitCourse[];
   const tourDemoSkillGaps = [

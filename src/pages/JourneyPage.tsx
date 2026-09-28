@@ -35,7 +35,11 @@ import {
   type CourseSession,
   type DepthSkillAssessment,
   type OrbitCourse,
+  fetchTenantBranding,
+  type TenantBranding,
+  tenantBrandingBaseUrl,
 } from "../api/orbit";
+import { brandThemeVars } from "../data/brandTheme";
 import {
   analyzeGap,
   buildBereichRole,
@@ -2213,6 +2217,28 @@ async function runDemoAnalysis() {
     loadFeaturedCourses();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Branding des Bildungstraegers (28.09.2026): Logo + Corporate-Farben aus
+  // der Edge Function "tenant-branding". Fehlt sie oder ist nichts gepflegt,
+  // bleibt die Journey in den DYD-Farben — nie ein Fehler fuer Nutzer.
+  const [journeyBranding, setJourneyBranding] = useState<TenantBranding | null>(null);
+  useEffect(() => {
+    if (!apiKey || !baseUrl) {
+      setJourneyBranding(null);
+      return;
+    }
+    let cancelled = false;
+    fetchTenantBranding(tenantBrandingBaseUrl(baseUrl), apiKey)
+      .then((res) => {
+        if (!cancelled) setJourneyBranding(res.branding);
+      })
+      .catch(() => {
+        if (!cancelled) setJourneyBranding(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [baseUrl, apiKey]);
+  const brandVars = useMemo(() => brandThemeVars(journeyBranding) as CSSProperties, [journeyBranding]);
   // Smoother Übergang zwischen den Schritten: springt beim Schrittwechsel an
   // den Anfang des Widgets, statt den Nutzer mitten im vorherigen Inhalt
   // (z.B. nach dem Scrollen durch eine lange Fragebogen-Liste) stehen zu
@@ -4015,18 +4041,24 @@ async function runDemoAnalysis() {
         </div>
       )}
 
-      <div className="host-chrome">
-        <div className="host-logo-placeholder">
-          <span className="box">?</span> Ihr Website-Logo hier
-        </div>
+      <div className="host-chrome" style={brandVars}>
+        {journeyBranding?.logo_url ? (
+          <div className="host-logo-placeholder has-logo">
+            <img className="host-logo-img" src={journeyBranding.logo_url} alt="Logo" />
+          </div>
+        ) : (
+          <div className="host-logo-placeholder">
+            <span className="box">?</span> Ihr Website-Logo hier
+          </div>
+        )}
         <div className="host-nav">
           <span>Kurse</span>
           <span>Über uns</span>
           <span>Kontakt</span>
         </div>
       </div>
-      <div className="stage">
-        <div className="widget">
+      <div className="stage" style={brandVars}>
+        <div className={`widget ${journeyBranding ? "is-branded" : ""}`}>
           <div
             className="powered-badge"
             title="Ingredient Branding: DYD bleibt sichtbar, während die Website drumherum dem Bildungsträger gehört."
@@ -4035,6 +4067,7 @@ async function runDemoAnalysis() {
             Powered by DYD ORBIT
           </div>
           <div className="widget-head">
+            {journeyBranding?.logo_url && <img className="widget-brand-logo" src={journeyBranding.logo_url} alt="Logo des Bildungsträgers" />}
             <div className="widget-eyebrow">Berufsberatung &amp; Weiterbildungs-Finder · ca. 2 Minuten</div>
             <h1 className="display">Finde die Weiterbildung, die dich wirklich weiterbringt</h1>
             <div className="sub">
@@ -4832,7 +4865,7 @@ function V2HerkunftStep({
       {strengths > 0 && (
         <div
           aria-live="polite"
-          style={{ marginTop: "12px", padding: "11px 13px", borderRadius: "12px", background: "rgba(95,220,153,.10)", fontSize: "13px", fontWeight: 700 }}
+          style={{ marginTop: "12px", padding: "11px 13px", borderRadius: "12px", background: "rgba(var(--dyd-mint-2-rgb), .10)", fontSize: "13px", fontWeight: 700 }}
         >
           ✓ Stark! Daraus erkennen wir schon {strengths} Stärke{strengths === 1 ? "" : "n"} – das fließt direkt in deine Empfehlung ein.
         </div>
@@ -6177,10 +6210,10 @@ function RoleSuggestStep({
             onClick={() => setDiscoveryMode(true)}
             style={{
               width: "100%",
-              border: "1px solid rgba(47,143,214,.22)",
+              border: "1px solid rgba(var(--dyd-blue-rgb), .22)",
               borderRadius: "18px",
               padding: "18px",
-              background: "linear-gradient(135deg, rgba(95,220,153,.10), rgba(47,143,214,.08))",
+              background: "linear-gradient(135deg, rgba(var(--dyd-mint-2-rgb), .10), rgba(var(--dyd-blue-rgb), .08))",
               cursor: "pointer",
               textAlign: "left",
               marginBottom: "18px",
@@ -6232,10 +6265,10 @@ function RoleSuggestStep({
                   onClick={() => toggleInterest(interest.key)}
                   aria-pressed={active}
                   style={{
-                    border: active ? "1.5px solid rgba(47,143,214,.55)" : "1px solid var(--border-soft)",
+                    border: active ? "1.5px solid rgba(var(--dyd-blue-rgb), .55)" : "1px solid var(--border-soft)",
                     borderRadius: "16px",
                     padding: "15px",
-                    background: active ? "linear-gradient(135deg, rgba(95,220,153,.11), rgba(47,143,214,.08))" : "var(--surface, #fff)",
+                    background: active ? "linear-gradient(135deg, rgba(var(--dyd-mint-2-rgb), .11), rgba(var(--dyd-blue-rgb), .08))" : "var(--surface, #fff)",
                     cursor: "pointer",
                     textAlign: "left",
                   }}
@@ -6255,7 +6288,7 @@ function RoleSuggestStep({
               type="button"
               onClick={() => setActivitiesOpen((o) => !o)}
               aria-expanded={activitiesOpen}
-              style={{ width: "100%", border: 0, padding: "14px 15px", background: activitiesOpen ? "rgba(95,220,153,.07)" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", gap: "12px", textAlign: "left" }}
+              style={{ width: "100%", border: 0, padding: "14px 15px", background: activitiesOpen ? "rgba(var(--dyd-mint-2-rgb), .07)" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", gap: "12px", textAlign: "left" }}
             >
               <span style={{ fontSize: "21px" }} aria-hidden="true">👆</span>
               <span style={{ flex: 1 }}>
@@ -6295,12 +6328,12 @@ function RoleSuggestStep({
                       <div className="role-card-name">{bereich.label}</div>
                       <div style={{ display: "flex", gap: "5px", flexWrap: "wrap", marginTop: "6px" }}>
                         {fit && (
-                          <span style={{ fontSize: "10.5px", fontWeight: 800, padding: "3px 7px", borderRadius: "999px", background: "rgba(95,220,153,.14)" }}>
+                          <span style={{ fontSize: "10.5px", fontWeight: 800, padding: "3px 7px", borderRadius: "999px", background: "rgba(var(--dyd-mint-2-rgb), .14)" }}>
                             ✓ Erfahrung vorhanden
                           </span>
                         )}
                         {byInterest && (
-                          <span style={{ fontSize: "10.5px", fontWeight: 800, padding: "3px 7px", borderRadius: "999px", background: "rgba(47,143,214,.10)" }}>
+                          <span style={{ fontSize: "10.5px", fontWeight: 800, padding: "3px 7px", borderRadius: "999px", background: "rgba(var(--dyd-blue-rgb), .10)" }}>
                             Passt zu deinem Interesse
                           </span>
                         )}
@@ -6320,7 +6353,7 @@ function RoleSuggestStep({
         </div>
       ) : (
         <div>
-          <div style={{ marginBottom: "16px", padding: "13px 15px", borderRadius: "16px", background: "rgba(95,220,153,.07)", border: "1px solid rgba(95,220,153,.18)" }}>
+          <div style={{ marginBottom: "16px", padding: "13px 15px", borderRadius: "16px", background: "rgba(var(--dyd-mint-2-rgb), .07)", border: "1px solid rgba(var(--dyd-mint-2-rgb), .18)" }}>
             <strong style={{ fontSize: "14px" }}>Deine Richtung: {selectedLabels}</strong>
             <div className="hint" style={{ marginTop: "4px" }}>Jetzt wird es konkreter: Wähle die Skills aus, die du wirklich entwickeln möchtest.</div>
           </div>
@@ -6339,7 +6372,7 @@ function RoleSuggestStep({
                   <button
                     type="button"
                     onClick={() => setSkillAreaOpen(open ? null : areaKey)}
-                    style={{ width: "100%", border: 0, padding: "16px", background: open ? "rgba(95,220,153,.07)" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", gap: "12px", textAlign: "left" }}
+                    style={{ width: "100%", border: 0, padding: "16px", background: open ? "rgba(var(--dyd-mint-2-rgb), .07)" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", gap: "12px", textAlign: "left" }}
                   >
                     <span style={{ fontSize: "22px" }}>{BEREICH_ICONS[[...effectiveSelectedBereich][0]] ?? "✦"}</span>
                     <span style={{ flex: 1 }}>
@@ -6358,7 +6391,7 @@ function RoleSuggestStep({
                             type="button"
                             onClick={() => onToggleSkill(skill.skill_id)}
                             aria-pressed={active}
-                            style={{ width: "100%", border: active ? "1.5px solid rgba(47,143,214,.55)" : "1px solid var(--border-soft)", borderRadius: "14px", padding: "12px 13px", background: active ? "rgba(47,143,214,.07)" : "var(--surface, #fff)", cursor: "pointer", display: "flex", alignItems: "center", gap: "11px", textAlign: "left" }}
+                            style={{ width: "100%", border: active ? "1.5px solid rgba(var(--dyd-blue-rgb), .55)" : "1px solid var(--border-soft)", borderRadius: "14px", padding: "12px 13px", background: active ? "rgba(var(--dyd-blue-rgb), .07)" : "var(--surface, #fff)", cursor: "pointer", display: "flex", alignItems: "center", gap: "11px", textAlign: "left" }}
                           >
                             <span style={{ width: "24px", height: "24px", borderRadius: "7px", display: "grid", placeItems: "center", border: active ? "0" : "1px solid var(--border-soft)", background: active ? "var(--accent, #2f8fd6)" : "transparent", color: active ? "#fff" : "inherit", fontWeight: 850, flex: "0 0 auto" }}>{active ? "✓" : ""}</span>
                             <span style={{ flex: 1 }}>
@@ -6375,7 +6408,7 @@ function RoleSuggestStep({
             })}
           </div>
 
-          <div style={{ marginTop: "14px", padding: "14px 15px", borderRadius: "16px", background: selectedSkillIds.size > 0 ? "rgba(47,143,214,.06)" : "rgba(127,127,127,.035)", border: "1px solid var(--border-soft)" }}>
+          <div style={{ marginTop: "14px", padding: "14px 15px", borderRadius: "16px", background: selectedSkillIds.size > 0 ? "rgba(var(--dyd-blue-rgb), .06)" : "rgba(127,127,127,.035)", border: "1px solid var(--border-soft)" }}>
             <strong style={{ display: "block", fontSize: "14px" }}>{selectedSkillIds.size > 0 ? `${selectedSkillIds.size} Entwicklungsziel${selectedSkillIds.size === 1 ? "" : "e"} ausgewählt` : "Noch keine konkreten Skills ausgewählt"}</strong>
             <span className="hint" style={{ display: "block", marginTop: "4px" }}>
               {selectedSkillIds.size > 0 ? `${selectedLearningLabels.slice(0, 5).join(" · ")}${selectedLearningLabels.length > 5 ? ` +${selectedLearningLabels.length - 5}` : ""}` : "Kein Problem. Im nächsten Schritt prüfen wir trotzdem dein vorhandenes Skill-Profil."}
@@ -7410,10 +7443,10 @@ function FragebogenMethod({
                   <div key={s.esco_uri} style={{ padding: "12px 13px", borderRadius: "14px", border: "1px solid var(--border-soft)", background: "var(--surface, #fff)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                       <span style={{ flex: 1, fontWeight: 800, fontSize: "13px" }}>{s.preferred_label}</span>
-                      {isGoal && <span style={{ fontSize: "10px", fontWeight: 800, padding: "4px 7px", borderRadius: "999px", background: "rgba(47,143,214,.09)" }}>ENTWICKLUNGSZIEL</span>}
+                      {isGoal && <span style={{ fontSize: "10px", fontWeight: 800, padding: "4px 7px", borderRadius: "999px", background: "rgba(var(--dyd-blue-rgb), .09)" }}>ENTWICKLUNGSZIEL</span>}
                     </div>
                     <div style={{ display: "flex", gap: "7px", flexWrap: "wrap", marginTop: "7px" }}>
-                      <span style={{ fontSize: "11px", fontWeight: 750, padding: "5px 8px", borderRadius: "999px", background: answer === "no" ? "rgba(127,127,127,.08)" : "rgba(95,220,153,.10)" }}>{levelLabel}</span>
+                      <span style={{ fontSize: "11px", fontWeight: 750, padding: "5px 8px", borderRadius: "999px", background: answer === "no" ? "rgba(127,127,127,.08)" : "rgba(var(--dyd-mint-2-rgb), .10)" }}>{levelLabel}</span>
                       {recencyLabel && <span style={{ fontSize: "11px", padding: "5px 8px", borderRadius: "999px", background: "rgba(127,127,127,.06)" }}>{recencyLabel}</span>}
                     </div>
                   </div>
@@ -7527,7 +7560,7 @@ function FragebogenMethod({
                 <div className="quiz-depth-card-kicker">SKILL {safeIndex + 1} · DEIN PROFIL</div>
                 <div className="quiz-depth-card-title" style={{ fontSize: "28px", lineHeight: 1.12 }}>{skill.preferred_label}</div>
               </div>
-              <div style={{ fontSize: "12px", fontWeight: 750, padding: "8px 11px", borderRadius: "999px", background: "rgba(47,143,214,.08)", whiteSpace: "nowrap" }}>
+              <div style={{ fontSize: "12px", fontWeight: 750, padding: "8px 11px", borderRadius: "999px", background: "rgba(var(--dyd-blue-rgb), .08)", whiteSpace: "nowrap" }}>
                 {Math.round(skill.weight * 100)}% Relevanz
               </div>
             </div>
@@ -7538,7 +7571,7 @@ function FragebogenMethod({
 
             {suggestion && (
               <div
-                style={{ marginBottom: "12px", padding: "10px 12px", borderRadius: "12px", background: "rgba(47,143,214,.07)", fontSize: "13px", lineHeight: 1.5 }}
+                style={{ marginBottom: "12px", padding: "10px 12px", borderRadius: "12px", background: "rgba(var(--dyd-blue-rgb), .07)", fontSize: "13px", lineHeight: 1.5 }}
               >
                 💡 Du hast angegeben: „{suggestion.sourceLabels.join("“, „")}“. Deshalb schlagen wir{" "}
                 <b>{suggestedOptionKey === "solid" ? "„Ich habe damit gearbeitet“" : "„Ich kenne die Grundlagen“"}</b> vor —
@@ -7573,7 +7606,7 @@ function FragebogenMethod({
                         : isSuggested
                           ? "2px dashed var(--accent, #2f8fd6)"
                           : "1px solid var(--border-soft)",
-                      background: selected ? "rgba(47,143,214,.07)" : "var(--surface, #fff)",
+                      background: selected ? "rgba(var(--dyd-blue-rgb), .07)" : "var(--surface, #fff)",
                       cursor: "pointer",
                       transition: "transform .16s ease, border-color .16s ease, background .16s ease",
                     }}
@@ -7584,7 +7617,7 @@ function FragebogenMethod({
                         <span style={{ display: "block", fontWeight: 800, fontSize: "15px" }}>
                           {option.title}
                           {isSuggested && (
-                            <span style={{ marginLeft: "8px", fontSize: "10px", fontWeight: 800, padding: "3px 7px", borderRadius: "999px", background: "rgba(47,143,214,.12)", verticalAlign: "middle" }}>
+                            <span style={{ marginLeft: "8px", fontSize: "10px", fontWeight: 800, padding: "3px 7px", borderRadius: "999px", background: "rgba(var(--dyd-blue-rgb), .12)", verticalAlign: "middle" }}>
                               VORSCHLAG
                             </span>
                           )}
@@ -8052,7 +8085,7 @@ function GapStep({
             minWidth: "118px",
             padding: "14px 16px",
             borderRadius: "18px",
-            background: "linear-gradient(135deg, rgba(95,220,153,.12), rgba(47,143,214,.08))",
+            background: "linear-gradient(135deg, rgba(var(--dyd-mint-2-rgb), .12), rgba(var(--dyd-blue-rgb), .08))",
             border: "1px solid var(--border-soft)",
             display: "flex",
             flexDirection: "column",
@@ -8280,7 +8313,7 @@ function GapStep({
         {primaryGapCourses.length ? (
           <div style={{ display: "grid", gap: "10px", marginTop: "14px" }}>
             {primaryGapCourses.map(({ course, matchedGapSkills, areaMatch }) => (
-              <div key={course.course_id} style={{ padding: "14px", borderRadius: "15px", border: "1px solid var(--border-soft)", background: "rgba(47,143,214,.035)" }}>
+              <div key={course.course_id} style={{ padding: "14px", borderRadius: "15px", border: "1px solid var(--border-soft)", background: "rgba(var(--dyd-blue-rgb), .035)" }}>
                 <div style={{ fontWeight: 850 }}>{course.course_name}</div>
                 {course.provider && <div className="hint" style={{ marginTop: "3px" }}>{course.provider}</div>}
                 <div style={{ display: "flex", gap: "7px", flexWrap: "wrap", marginTop: "8px" }}>

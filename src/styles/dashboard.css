@@ -5142,3 +5142,98 @@ button.course-skill-chip:disabled {
   font-weight: 800;
   cursor: default;
 }
+
+/* Angebots-Check (29.09.2026): Nachfrage ohne Kurs + Kurse ohne Zuordnung */
+.offer-check-intro,
+.offer-check-note {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #4a5a70;
+  line-height: 1.5;
+}
+.offer-check-title {
+  margin: 16px 0 8px;
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #243447;
+}
+.offer-check-empty {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f5f7fb;
+  font-size: 13px;
+  color: #4a5a70;
+}
+.offer-check-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.offer-check-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #e3e8f0;
+  background: #fff;
+}
+.offer-check-row.gap {
+  border-color: #f3d38a;
+  background: #fffaf0;
+}
+.offer-check-row.suggest {
+  border-color: #cfe3f7;
+  background: #f7fbff;
+}
+.offer-check-main {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.offer-check-main strong {
+  font-size: 14px;
+  color: #0c1c34;
+}
+.offer-check-sub,
+.offer-check-skills {
+  font-size: 12.5px;
+  color: #4a5a70;
+}
+.offer-check-skills {
+  color: #6b7a90;
+}
+.offer-check-leads {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #eef2f8;
+  font-size: 12px;
+  font-weight: 800;
+  color: #243447;
+}
+.offer-check-row.gap .offer-check-leads {
+  background: #ffe7b3;
+  color: #6b4a00;
+}
+.offer-check-ok {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0d7a4a;
+}
+.offer-check-btn {
+  flex: 0 0 auto;
+}
+.offer-check-msg {
+  font-size: 12px;
+  font-weight: 700;
+}
+.offer-check-msg.ok { color: #0d7a4a; }
+.offer-check-msg.err { color: #b42318; }

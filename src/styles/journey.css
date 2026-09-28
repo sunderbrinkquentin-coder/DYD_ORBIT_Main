@@ -7061,3 +7061,32 @@ input.big-input:focus {
 @media (prefers-reduced-motion: reduce) {
   .v2-counter-num { animation: none; }
 }
+
+/* Kursbeschreibung als kompakte Vorschau (29.09.2026) */
+.v2-course-desc {
+  margin: 6px 0 10px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: #3b4a5e;
+}
+.v2-course-desc p {
+  margin: 0 0 4px;
+}
+.v2-course-desc-group {
+  font-size: 0.84rem;
+}
+.v2-course-desc-more {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dyd-blue-dark);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.v2-spot-text .v2-course-desc {
+  margin-top: 8px;
+  font-size: 0.84rem;
+}

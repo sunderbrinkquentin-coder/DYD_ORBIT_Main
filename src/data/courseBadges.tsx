@@ -51,10 +51,15 @@ export function courseBadges(
    *  tatsächliche algorithmische Bestempfehlung; sonst ein neutraler, wahrer
    *  Hinweis. Ohne alwaysShow (z.B. DashboardPage.tsx) unverändert: leere
    *  Leiste = kein Badge zutreffend. */
-  opts?: { alwaysShow?: boolean; isBestMatch?: boolean }
+  opts?: { alwaysShow?: boolean; isBestMatch?: boolean; showFeatured?: boolean }
 ): CourseBadge[] {
   if (!course) return [];
   const badges: CourseBadge[] = [];
+  // showFeatured (Journey v2, 29.09.2026): der im Dashboard gesetzte
+  // "Top-Kurs" steht immer vorn - auch neben Start-/Platz-/eigenem Banner.
+  if (opts?.showFeatured && course.is_featured) {
+    badges.push({ text: "★ Top-Kurs", kind: "featured" });
+  }
   const daysUntil = daysUntilCourseStart(course);
   if (daysUntil != null && daysUntil >= 0) {
     if (daysUntil <= STARTS_SOON_DAYS) {
@@ -93,7 +98,7 @@ export function courseBadges(
       badges.push({ text: "🔒 Ausgebucht", kind: "full" });
     } else if (course.seats_remaining <= FEW_SEATS_THRESHOLD) {
       badges.push({
-        text: `⚡ Nur noch ${course.seats_remaining} Platz${course.seats_remaining === 1 ? "" : "e"}`,
+        text: `⚡ Nur noch ${course.seats_remaining} ${course.seats_remaining === 1 ? "Platz" : "Plätze"}`,
         kind: "seats",
       });
     }
@@ -101,7 +106,7 @@ export function courseBadges(
   if (course.custom_banner) {
     badges.push({ text: course.custom_banner, kind: "custom" });
   }
-  if (opts?.alwaysShow && badges.length === 0) {
+  if (opts?.alwaysShow && badges.length === 0 && !opts.showFeatured) {
     if (course.is_featured) {
       badges.push({ text: "★ Top-Kurs", kind: "featured" });
     } else if (opts.isBestMatch) {
@@ -152,12 +157,14 @@ export function CourseBadgeRow({
   course,
   alwaysShow,
   isBestMatch,
+  showFeatured,
 }: {
   course: OrbitCourse | undefined | null;
   alwaysShow?: boolean;
   isBestMatch?: boolean;
+  showFeatured?: boolean;
 }) {
-  const badges = courseBadges(course, { alwaysShow, isBestMatch });
+  const badges = courseBadges(course, { alwaysShow, isBestMatch, showFeatured });
   if (badges.length === 0) return null;
   return (
     <div className="course-banner-row">

@@ -5827,6 +5827,37 @@ interface V2SpotlightItem {
 }
 
 /**
+ * Kursbeschreibung als kompakte Vorschau (29.09.2026, "bei den Kursen immer
+ * die Beschreibung sehen - kompakter Ueberblick"): auf allen Kurskarten der
+ * v2-Ergebnisseite und im Spotlight, gekuerzt an einer Wortgrenze, per
+ * "Mehr lesen" ausklappbar. Nur der gepflegte Text - fehlt er, erscheint
+ * nichts (kein Platzhalter). Die Zielgruppe kommt beim Ausklappen dazu.
+ */
+function CourseDescription({ course, max = 170 }: { course: Pick<OrbitCourse, "description" | "target_group">; max?: number }) {
+  const [open, setOpen] = useState(false);
+  const text = course.description?.replace(/\s+/g, " ").trim() ?? "";
+  const group = course.target_group?.replace(/\s+/g, " ").trim() ?? "";
+  if (!text && !group) return null;
+  const preview = text ? truncateAtWord(text, max) : "";
+  const canExpand = (text && preview.length < text.length) || Boolean(group);
+  return (
+    <div className="v2-course-desc">
+      {text && <p>{open ? text : preview}</p>}
+      {open && group && (
+        <p className="v2-course-desc-group">
+          <strong>Für wen:</strong> {group}
+        </p>
+      )}
+      {canExpand && (
+        <button type="button" className="v2-course-desc-more" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? "Weniger anzeigen" : "Mehr lesen"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
  * Der "Aufmacher"-Banner eines Spotlight-Kurses (29.09.2026, "die einzelnen
  * Banner sollen vorgestellt werden"): der eigene Banner-Text des
  * Bildungstraegers hat Vorrang, dann Top-Kurs, dann knappe Plaetze, dann der
@@ -5935,6 +5966,7 @@ function V2SpotlightRail({
                 </div>
               )}
               {item.personal && item.personal !== item.hook && <div className="v2-spot-personal">✓ {item.personal}</div>}
+              <CourseDescription course={c} max={120} key={c.course_id} />
             </div>
             {item.daysUntilStart != null && (
               <div
@@ -6295,6 +6327,7 @@ function V2ErgebnisStep({
         </div>
         <h3 className="v2-course-name">{course.course_name}</h3>
         {course.provider && <div className="v2-course-provider">{course.provider}</div>}
+        <CourseDescription course={course} />
         {ladder.reach && !bridgeForeign && (
           <div className="v2-ladder">
             <div className="v2-ladder-step now">

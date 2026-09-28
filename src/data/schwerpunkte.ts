@@ -476,17 +476,22 @@ export interface SchwerpunktOption extends Schwerpunkt {
   experience: number;
   /** Der Traeger hat Kurse, die zu einem Beruf dieses Schwerpunkts fuehren. */
   hasOffer: boolean;
+  /** Anzahl dieser Kurse (null = nicht ermittelt, z. B. ohne Angebots-Index). */
+  courseCount: number | null;
 }
 
 /**
  * Schwerpunkte eines Bereichs, die im Portfolio mindestens einen Beruf haben.
- * Reihenfolge: erst mit Kursangebot, dann nach Erfahrung, dann Katalog-
- * Reihenfolge (deterministisch).
+ * Reihenfolge: erst mit Kursangebot, dann nach Erfahrung, dann nach Anzahl
+ * Kurse, dann Katalog-Reihenfolge (deterministisch).
+ * courseCountFor (29.09.2026, "Nie ohne Kurs"): liefert die Kurszahl fuer die
+ * Berufe eines Schwerpunkts (siehe courseOffer.ts); ohne ihn bleibt es beim
+ * reinen hasOffer aus offeredRoleIds.
  */
 export function schwerpunkteFor(
   bereichKey: string,
   roles: CatalogRole[],
-  opts: { activityIds?: string[]; offeredRoleIds?: ReadonlySet<string> } = {},
+  opts: { activityIds?: string[]; offeredRoleIds?: ReadonlySet<string>; courseCountFor?: (roleIds: string[]) => number } = {},
 ): SchwerpunktOption[] {
   const byId = new Map(roles.map((r) => [r.role_id, r] as const));
   const derived = deriveSkillsFromActivities(opts.activityIds ?? []);
@@ -499,10 +504,18 @@ export function schwerpunkteFor(
         skillIds.size > 0 && own.length > 0
           ? Math.max(0, ...suggestRolesForSkillIds(skillIds, { roles: own, limit: own.length, minMatchPercentage: 0.1 }).map((m) => m.match_percentage))
           : 0;
-      return { opt: { ...s, roles: own, experience: Math.round(experience), hasOffer: own.some((r) => offered.has(r.role_id)) }, idx };
+      const courseCount = opts.courseCountFor ? opts.courseCountFor(own.map((r) => r.role_id)) : null;
+      const hasOffer = courseCount != null ? courseCount > 0 : own.some((r) => offered.has(r.role_id));
+      return { opt: { ...s, roles: own, experience: Math.round(experience), hasOffer, courseCount }, idx };
     })
     .filter((x) => x.opt.roles.length > 0);
-  list.sort((a, b) => Number(b.opt.hasOffer) - Number(a.opt.hasOffer) || b.opt.experience - a.opt.experience || a.idx - b.idx);
+  list.sort(
+    (a, b) =>
+      Number(b.opt.hasOffer) - Number(a.opt.hasOffer) ||
+      b.opt.experience - a.opt.experience ||
+      (b.opt.courseCount ?? 0) - (a.opt.courseCount ?? 0) ||
+      a.idx - b.idx,
+  );
   return list.map((x) => x.opt);
 }
 

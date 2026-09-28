@@ -6948,3 +6948,48 @@ input.big-input:focus {
   background: #fafbfd;
   border-style: dashed;
 }
+
+/* Baustein 3 "Nie ohne Kurs": Einstiegs-Kurse (29.09.2026) */
+.v2-bridge-intro {
+  margin: 0 0 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(var(--dyd-mint-rgb), 0.28), rgba(var(--dyd-blue-rgb), 0.14));
+  border: 1px solid rgba(var(--dyd-blue-rgb), 0.25);
+}
+.v2-bridge-intro-title {
+  font-weight: 800;
+  font-size: 1rem;
+  color: var(--dyd-navy, #0c1c34);
+  margin-bottom: 4px;
+}
+.v2-bridge-intro p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: #334155;
+}
+.v2-course-badge.bridge {
+  background: linear-gradient(90deg, var(--dyd-mint-2), var(--dyd-blue));
+}
+.v2-bridge-skills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 4px;
+}
+.v2-bridge-skills-label {
+  width: 100%;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--dyd-blue-dark);
+}
+.v2-bridge-skill {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(var(--dyd-mint-rgb), 0.3);
+  color: #0d5a36;
+  font-size: 0.78rem;
+  font-weight: 700;
+}

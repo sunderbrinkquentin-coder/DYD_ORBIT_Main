@@ -68,12 +68,16 @@ import {
   type QualificationLevel,
   type QualificationType,
   type CourseDurationVariant,
+  fetchTenantBranding,
+  type TenantBranding,
+  tenantBrandingBaseUrl,
   type CourseUrlExtractDraft,
 } from "../api/orbit";
 import { guessExperienceLevel } from "../lib/skillLevel";
 import { matchSkills } from "../data/skillMatcher";
 import { listBereiche } from "../data/gapAnalysis";
 import { ROLES_CATALOG, SKILLS_CATALOG } from "../data/rolesCatalog";
+import { BrandingModal } from "../components/BrandingModal";
 import { classifyCourse, splitLearningGoals, suggestBereiche, type Confidence as SuggestionConfidence } from "../data/courseClassifier";
 import { BereichBadges, CourseBadgeRow } from "../data/courseBadges";
 import { AnimatedNumber } from "../components/AnimatedNumber";
@@ -1242,8 +1246,14 @@ export function DashboardPage({
     writeStoredDashboardLogo(null);
     setLogoStatus({ msg: "", kind: "" });
   }
-  // Selbst hochgeladen hat Vorrang vor dem per Prop mitgegebenen Default.
-  const effectiveLogoUrl = customLogoDataUrl ?? tenantLogoUrl;
+  // ---------- Branding je Bildungstraeger (28.09.2026) ----------
+  // Serverseitig gespeichert (Edge Function "tenant-branding") und damit auf
+  // jedem Geraet UND in der Journey sichtbar. Hat Vorrang vor dem nur lokal
+  // gespeicherten Logo (customLogoDataUrl), das als Rueckfall bleibt, solange
+  // die Function noch nicht deployt ist.
+  const [tenantBranding, setTenantBranding] = useState<TenantBranding | null>(null);
+  const [showBrandingModal, setShowBrandingModal] = useState(false);
+  const effectiveLogoUrl = tenantBranding?.logo_url ?? customLogoDataUrl ?? tenantLogoUrl;
   // ---------- Mandanten-Name aus Supabase (Version 42, 17.09.) ----------
   // tenantName (Prop) war bisher IMMER der statische Default ("Beispiel
   // Bildungsträger GmbH") — kein Aufruf im Repo befüllt diesen Prop mit
@@ -1801,6 +1811,11 @@ export function DashboardPage({
       .catch(() => {
         // Endpunkt existiert (noch) nicht oder Anfrage fehlgeschlagen.
       });
+    // Branding (28.09.2026) — genauso unkritisch: fehlt die Function noch,
+    // bleibt es bei den DYD-Farben und dem lokalen Logo.
+    fetchTenantBranding(tenantBrandingBaseUrl(baseUrl), apiKey)
+      .then((res) => setTenantBranding(res.branding))
+      .catch(() => setTenantBranding(null));
     try {
       const [rolesRes, leadsRes, reportRes, coursesRes] = await Promise.allSettled([
         fetchTargetRoles(baseUrl, apiKey),
@@ -4441,9 +4456,9 @@ export function DashboardPage({
               <button
                 type="button"
                 className="tenant-logo-edit-btn"
-                onClick={() => logoInputRef.current?.click()}
-                title={effectiveLogoUrl ? "Logo ändern" : "Eigenes Logo hochladen"}
-                aria-label={effectiveLogoUrl ? "Logo ändern" : "Eigenes Logo hochladen"}
+                onClick={() => (live ? setShowBrandingModal(true) : logoInputRef.current?.click())}
+                title={live ? "Logo und Farben festlegen" : effectiveLogoUrl ? "Logo ändern" : "Eigenes Logo hochladen"}
+                aria-label={live ? "Logo und Farben festlegen" : effectiveLogoUrl ? "Logo ändern" : "Eigenes Logo hochladen"}
               >
                 ✎
               </button>
@@ -4452,7 +4467,12 @@ export function DashboardPage({
             <div>
               <div className="tenant-label">Angemeldet als</div>
               <div className="tenant-name">{effectiveTenantName}</div>
-              {customLogoDataUrl && (
+              {live && (
+                <button type="button" className="tenant-branding-btn" onClick={() => setShowBrandingModal(true)}>
+                  🎨 {tenantBranding ? "Branding bearbeiten" : "Logo & Farben festlegen"}
+                </button>
+              )}
+              {customLogoDataUrl && !tenantBranding?.logo_url && (
                 <button type="button" className="tenant-logo-remove-btn" onClick={handleRemoveLogo}>
                   Eigenes Logo entfernen
                 </button>
@@ -8278,6 +8298,17 @@ export function DashboardPage({
             </div>
           );
         })()}
+      {showBrandingModal && (
+        <BrandingModal
+          apiBase={baseUrl}
+          apiKey={apiKey}
+          branding={tenantBranding}
+          defaultWebsite={catalogOverview?.source?.start_url ?? ""}
+          tenantName={effectiveTenantName}
+          onSaved={setTenantBranding}
+          onClose={() => setShowBrandingModal(false)}
+        />
+      )}
       {showFeedbackModal && (
         <div className="lead-modal-overlay" onClick={() => setShowFeedbackModal(false)}>
           <div

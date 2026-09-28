@@ -67,6 +67,8 @@ import {
   type OrbitReportResponse,
   type QualificationLevel,
   type QualificationType,
+  type CourseDurationVariant,
+  type CourseUrlExtractDraft,
 } from "../api/orbit";
 import { guessExperienceLevel } from "../lib/skillLevel";
 import { matchSkills } from "../data/skillMatcher";
@@ -541,6 +543,27 @@ function suggestBereicheForText(title: string, description = ""): string[] {
   if (`${title} ${description}`.trim().length < MIN_DESCRIPTION_FOR_SKILL_DETECT) return [];
   return suggestBereiche(classifyCourse({ title, description, learningGoals: splitLearningGoals(description) }));
 }
+/** Dauer-Felder des Kursformulars aus einem URL-Import (28.09.2026).
+ *  Kein Wert gefunden -> leeres Feld (Pflichteingabe) statt Standardwert.
+ *  Monate/Jahre werden als Monate angezeigt, alles andere in Wochen. */
+function durationFieldsFromImport(d: Pick<CourseUrlExtractDraft, "duration_weeks" | "duration_variants">): {
+  durationWeeks: string;
+  durationUnit: "weeks" | "months";
+} {
+  if (d.duration_weeks == null) return { durationWeeks: "", durationUnit: "weeks" };
+  const first = d.duration_variants?.[0];
+  return first ? durationFieldsFromVariant(first) : { durationWeeks: String(Math.max(1, Math.round(d.duration_weeks))), durationUnit: "weeks" };
+}
+function durationFieldsFromVariant(v: CourseDurationVariant): { durationWeeks: string; durationUnit: "weeks" | "months" } {
+  if (v.unit === "monate") return { durationWeeks: String(v.amount), durationUnit: "months" };
+  if (v.unit === "jahre") return { durationWeeks: String(Math.round(v.amount * 12 * 10) / 10), durationUnit: "months" };
+  return { durationWeeks: String(Math.max(1, v.weeks)), durationUnit: "weeks" };
+}
+function durationVariantText(v: CourseDurationVariant): string {
+  const unit = { tage: v.amount === 1 ? "Tag" : "Tage", wochen: v.amount === 1 ? "Woche" : "Wochen", monate: v.amount === 1 ? "Monat" : "Monate", jahre: v.amount === 1 ? "Jahr" : "Jahre" }[v.unit];
+  return `${String(v.amount).replace(".", ",")} ${unit}`;
+}
+
 const DEFAULT_COURSE_FORM: CourseFormState = {
   courseId: "",
   courseName: "",
@@ -1580,6 +1603,12 @@ export function DashboardPage({
   // automatisch in teachingUnits umgerechnet (1 Stunde != 1 UE), sondern nur
   // als Hinweis direkt am UE-Feld angezeigt, damit der Mensch selbst entscheidet.
   const [urlImportDurationHint, setUrlImportDurationHint] = useState<string | null>(null);
+  // Version 5 des URL-Imports (28.09.2026): alle Dauer-Varianten der Seite
+  // (z.B. Teilzeit/Vollzeit) zum Anklicken; null = kein Import aktiv.
+  // urlImportDurationMissing: Import hat KEINE Dauer gefunden — dann bleibt
+  // das Feld leer (statt still auf 4 Wochen zu stehen) und wird markiert.
+  const [urlImportDurationVariants, setUrlImportDurationVariants] = useState<CourseDurationVariant[]>([]);
+  const [urlImportDurationMissing, setUrlImportDurationMissing] = useState(false);
   // Lerninhalte und Voraussetzungen aus dem URL-Import (course-url-import
   // Version 4, 25.09.2026) - nur fuer die Skill-/Zielrollen-Erkennung, nicht
   // gespeichert. Voraussetzungen dienen dabei ausschliesslich dem Ausschluss.
@@ -2125,6 +2154,13 @@ export function DashboardPage({
     }
     // Einmal berechnet, unten sowohl fuers Senden als auch fuer den
     // Mismatch-Check nach dem Speichern wiederverwendet (sentSessions).
+    // Dauer ist Pflicht (28.09.2026): vorher wurde ein leeres Feld still als
+    // "1 Woche" gespeichert. Leer kann es nach einem URL-Import ohne
+    // gefundene Dauer sein (siehe durationFieldsFromImport).
+    if (!(Number(courseForm.durationWeeks) > 0)) {
+      setCourseFormStatus({ msg: "Bitte die Kursdauer eintragen (in Wochen oder Monaten).", kind: "err" });
+      return;
+    }
     const sentSessions = buildCourseSessionsPayload(courseForm);
     setSavingCourse(true);
     setCourseFormStatus({ msg: editingCourseId ? "Aktualisiere Kurs…" : "Speichere Kurs…", kind: "" });
@@ -2310,6 +2346,8 @@ export function DashboardPage({
     setCourseForm({ ...DEFAULT_COURSE_FORM, provider: effectiveTenantName });
     setUrlImportVerifiedFields([]);
     setUrlImportDurationHint(null);
+    setUrlImportDurationVariants([]);
+    setUrlImportDurationMissing(false);
     setImportLearningGoals([]);
     setImportPrerequisites("");
     setCourseSkillUris(new Set());
@@ -2910,8 +2948,11 @@ export function DashboardPage({
       // resetCourseForm()/das leere Formular per Default nutzt.
       provider: d.provider?.trim() || effectiveTenantName,
       description: d.description?.trim() ?? "",
-      durationWeeks: d.duration_weeks != null ? String(Math.max(1, Math.round(d.duration_weeks))) : DEFAULT_COURSE_FORM.durationWeeks,
-      durationUnit: "weeks",
+      // Dauer (28.09.2026): Fand der Import keine Dauer, bleibt das Feld LEER
+      // statt auf dem Formular-Standard (4 Wochen) zu stehen — sonst sah ein
+      // fehlender Wert genauso aus wie ein erkannter. Nennt die Seite die
+      // Dauer in Monaten/Jahren, wird sie auch so angezeigt.
+      ...durationFieldsFromImport(d),
       // locationMode/employmentMode sind echte Pflichtfelder ohne leeren
       // Zustand (siehe CourseFormState-Kommentar) — nur ueberschreiben, wenn
       // die Extraktion wirklich etwas gefunden hat, sonst beim Default
@@ -2945,6 +2986,8 @@ export function DashboardPage({
     }));
     setUrlImportVerifiedFields(res.verified_fields);
     setUrlImportDurationHint(d.duration_hint?.trim() || null);
+    setUrlImportDurationVariants(d.duration_variants ?? []);
+    setUrlImportDurationMissing(d.duration_weeks == null);
     setImportLearningGoals([...new Set([...(d.learning_goals ?? []), ...(res.content_topics ?? [])].map((g) => g.trim()).filter(Boolean))]);
     setImportPrerequisites(d.prerequisites_text?.trim() ?? "");
     setCourseFormOpen(true);
@@ -5343,6 +5386,35 @@ export function DashboardPage({
                         </div>
                         {courseForm.durationUnit === "months" && Number(courseForm.durationWeeks) > 0 && (
                           <div className="hint">≈ {Math.round(Number(courseForm.durationWeeks) * 4.345)} Wochen</div>
+                        )}
+                        {/* URL-Import (28.09.2026): Varianten der Seite zum Anklicken bzw.
+                            deutlicher Hinweis, wenn keine Dauer gefunden wurde. */}
+                        {urlImportDurationMissing && !courseForm.durationWeeks.trim() && (
+                          <div className="hint warn url-import-duration-missing">
+                            Auf der Seite wurde keine Kursdauer gefunden – bitte selbst eintragen.
+                          </div>
+                        )}
+                        {urlImportDurationVariants.length > 1 && (
+                          <div className="url-import-duration-variants">
+                            <div className="hint">Die Seite nennt mehrere Varianten – bitte die passende wählen:</div>
+                            <div className="url-import-duration-chips">
+                              {urlImportDurationVariants.map((v) => {
+                                const fields = durationFieldsFromVariant(v);
+                                const active = courseForm.durationWeeks === fields.durationWeeks && courseForm.durationUnit === fields.durationUnit;
+                                return (
+                                  <button
+                                    key={`${v.label}-${v.weeks}`}
+                                    type="button"
+                                    className={`url-import-duration-chip ${active ? "active" : ""}`}
+                                    onClick={() => setCourseForm((f) => ({ ...f, ...fields }))}
+                                    title={`Laut Seite: „${v.evidence_snippet}“`}
+                                  >
+                                    <strong>{v.label}</strong> · {durationVariantText(v)}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
                         )}
                       </div>
                     </div>

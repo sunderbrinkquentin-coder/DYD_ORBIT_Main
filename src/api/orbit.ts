@@ -1183,6 +1183,14 @@ export interface CourseUrlExtractRequest {
  *  das bleibt wie beim manuellen Anlegen Sache des Bildungstraegers im
  *  Formular (Skills werden stattdessen automatisch aus der uebernommenen
  *  description erkannt, siehe applyCourseUrlDraftToForm in DashboardPage.tsx). */
+export interface CourseDurationVariant {
+  label: string;
+  amount: number;
+  unit: "tage" | "wochen" | "monate" | "jahre";
+  weeks: number;
+  evidence_snippet: string;
+}
+
 export interface CourseUrlExtractDraft {
   course_name: string | null;
   provider: string | null;
@@ -1205,6 +1213,12 @@ export interface CourseUrlExtractDraft {
    *  macht - siehe ausfuehrlichen Kommentar im Backend (course-url-import-
    *  index.ts). Rein informativ, wird nirgends automatisch verrechnet. */
   duration_hint: string | null;
+  /** Version 5 der Function (28.09.2026): alle auf der Seite genannten
+   *  Varianten mit eigener Dauer (z.B. Teilzeit 12 Monate, Vollzeit 12
+   *  Wochen), jeweils serverseitig gegen den Seitentext geprueft. weeks ist
+   *  vom Server aus dem Zitat berechnet. duration_weeks entspricht der
+   *  ersten Variante. Optional - aeltere Deployments liefern das Feld nicht. */
+  duration_variants?: CourseDurationVariant[];
   /** Version 4 der Function (25.09.2026): Inhalte/Module/Lernziele, jeweils
    *  woertlich von der Seite und serverseitig gegen den Seitentext geprueft.
    *  Optional - aeltere Deployments liefern das Feld nicht. */

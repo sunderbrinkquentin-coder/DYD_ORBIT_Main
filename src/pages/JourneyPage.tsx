@@ -2737,6 +2737,33 @@ async function runDemoAnalysis() {
     }
     setSelectedCourseId(courseId);
   }
+  /** Journey v2 (25.09.2026): mehrere Kurse gleichzeitig anfragen. Nutzt die
+   *  bestehende Mehrfach-Anfrage (selectedCourseId = Hauptkurs,
+   *  additionalCourseIds -> linked_course_ids am selben Lead). Entfernt man
+   *  den Hauptkurs, rueckt der naechste gewaehlte nach. */
+  function v2ToggleRequest(courseId: string) {
+    if (courseId === selectedCourseId) {
+      const rest = Array.from(additionalCourseIds).filter((id) => id !== courseId);
+      setSelectedCourseId(rest[0] ?? null);
+      setAdditionalCourseIds(new Set(rest.slice(1)));
+      return;
+    }
+    if (additionalCourseIds.has(courseId)) {
+      setAdditionalCourseIds((prev) => {
+        const next = new Set(prev);
+        next.delete(courseId);
+        return next;
+      });
+      return;
+    }
+    if (!selectedCourseId) setSelectedCourseId(courseId);
+    else
+      setAdditionalCourseIds((prev) => {
+        const next = new Set(prev);
+        next.add(courseId);
+        return next;
+      });
+  }
   /** KI-Tiefenanalyse (Version 19): NACH dem schnellen Fuzzy-Gap-Ergebnis
    * aufgerufen, nie davor/anstelle. Bewusst fire-and-forget wie createTest
    * oben - dauert der OpenAI-Call laenger oder schlaegt er fehl (z.B. Modell
@@ -3285,7 +3312,9 @@ async function runDemoAnalysis() {
       });
 
       setCurrent(stepIndex(isV2 ? "v2ergebnis" : "kurs"));
-      setSelectedCourseId(personalizedCourses[0]?.course_id ?? null);
+      // v2: nichts vorauswaehlen — die Person legt selbst fest, welche Kurse
+      // in die Anfrage kommen (Mehrfach-Anfrage, 25.09.2026).
+      setSelectedCourseId(isV2 ? null : personalizedCourses[0]?.course_id ?? null);
       setAdditionalCourseIds(new Set());
 
       const bestCourse = personalizedCourses[0];
@@ -3902,7 +3931,7 @@ async function runDemoAnalysis() {
               <V2PlanScreen
                 leadName={leadName}
                 goalLabel={GOAL_OPTIONS.find((g) => g.key === careerGoal)?.label ?? null}
-                card={v2ResultCards.find((c) => c.course.course_id === selectedCourseId) ?? v2ResultCards[0] ?? null}
+                card={v2ResultCards.find((c) => c.course.course_id === selectedCourseId) ?? null}
                 situation={v2Situation}
                 hurdles={v2Hurdles}
                 consultation={wantsConsultation}
@@ -4047,8 +4076,8 @@ async function runDemoAnalysis() {
                     cards={v2ResultCards}
                     evidence={v2Plan.evidence}
                     confirmedSkills={v2Plan.questions.filter((q) => v2Answers.get(q.skill_id) === "ja").map((q) => q.name)}
-                    selectedCourseId={selectedCourseId}
-                    onSelectCourse={setSelectedCourseId}
+                    requestedIds={[...(selectedCourseId ? [selectedCourseId] : []), ...Array.from(additionalCourseIds).filter((id) => id !== selectedCourseId)]}
+                    onToggleRequest={v2ToggleRequest}
                     leadName={leadName}
                     setLeadName={setLeadName}
                     leadEmail={leadEmail}
@@ -5155,8 +5184,8 @@ function V2ErgebnisStep({
   cards,
   evidence,
   confirmedSkills,
-  selectedCourseId,
-  onSelectCourse,
+  requestedIds,
+  onToggleRequest,
   leadName,
   setLeadName,
   leadEmail,
@@ -5182,8 +5211,9 @@ function V2ErgebnisStep({
   cards: { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean }[];
   evidence: ActivityEvidence[];
   confirmedSkills: string[];
-  selectedCourseId: string | null;
-  onSelectCourse: (id: string) => void;
+  /** Alle angefragten Kurse (Hauptkurs zuerst). */
+  requestedIds: string[];
+  onToggleRequest: (id: string) => void;
   leadName: string;
   setLeadName: (v: string) => void;
   leadEmail: string;
@@ -5216,7 +5246,10 @@ function V2ErgebnisStep({
   const [expanded, setExpanded] = useState<string | null>(null);
   const emailValid = EMAIL_RE.test(leadEmail.trim());
   const strengths = [...evidence.map((e) => e.name), ...confirmedSkills].filter((v, i, a) => a.indexOf(v) === i);
-  const chosen = cards.find((c) => c.course.course_id === selectedCourseId) ?? null;
+  const chosenCards = requestedIds
+    .map((id) => cards.find((c) => c.course.course_id === id))
+    .filter((c): c is (typeof cards)[number] => Boolean(c));
+  const requested = new Set(requestedIds);
 
   function scrollTop() {
     window.setTimeout(() => {
@@ -5227,8 +5260,8 @@ function V2ErgebnisStep({
   }
   /** Zur Abschlussseite. consult=true setzt den Beratungs-Haken schon vor. */
   function goContact(courseId: string | null, consult: boolean) {
-    if (courseId) onSelectCourse(courseId);
-    else if (!selectedCourseId && cards[0]) onSelectCourse(cards[0].course.course_id);
+    // Kurs zur Anfrage hinzufuegen (bereits gewaehlte bleiben drin).
+    if (courseId && !requested.has(courseId)) onToggleRequest(courseId);
     if (consult) setWantsConsult(true);
     setView("contact");
     scrollTop();
@@ -5251,9 +5284,8 @@ function V2ErgebnisStep({
   }
 
   function contactPage() {
-    const course = chosen?.course ?? null;
-    const reach = chosen?.pitch.ladder.reach ?? null;
-    const provider = course?.provider ?? cards[0]?.course.provider ?? null;
+    const provider = chosenCards[0]?.course.provider ?? cards[0]?.course.provider ?? null;
+    const n = chosenCards.length;
     return (
       <div className="v2-result v2-contact">
         <JourneyStepHeading
@@ -5263,21 +5295,48 @@ function V2ErgebnisStep({
           description={`Nur noch deine Kontaktdaten – dann meldet sich ${provider ?? "dein Bildungsträger"} persönlich bei dir.`}
         />
         <div className="v2-contact-summary">
-          <span className="v2-contact-summary-icon" aria-hidden="true">
-            {course ? "🎓" : "💬"}
-          </span>
-          <div className="v2-contact-summary-body">
-            <div className="v2-contact-summary-label">{course ? "Deine Auswahl" : "Dein Anliegen"}</div>
-            <div className="v2-contact-summary-name">{course ? course.course_name : "Kostenlose Weiterbildungsberatung"}</div>
-            {course && (
-              <div className="v2-contact-summary-meta">
-                {[reach ? `Führt zu: ${reach.role_name}` : null, formatCourseDuration(course), courseStartText(course)].filter(Boolean).join(" · ")}
-              </div>
-            )}
+          <div className="v2-contact-summary-label">
+            {n === 0 ? "Dein Anliegen" : n === 1 ? "Deine Auswahl" : `Deine Auswahl · ${n} Kurse`}
           </div>
-          {cards.length > 0 && (
-            <button type="button" className="v2-contact-change" onClick={backToResults}>
-              Ändern
+          {n === 0 ? (
+            <div className="v2-contact-item">
+              <span className="v2-contact-summary-icon" aria-hidden="true">
+                💬
+              </span>
+              <div className="v2-contact-summary-body">
+                <div className="v2-contact-summary-name">Kostenlose Weiterbildungsberatung</div>
+                <div className="v2-contact-summary-meta">Gemeinsam findet ihr den passenden Kurs.</div>
+              </div>
+            </div>
+          ) : (
+            chosenCards.map(({ course, pitch }) => (
+              <div key={course.course_id} className="v2-contact-item">
+                <span className="v2-contact-summary-icon" aria-hidden="true">
+                  🎓
+                </span>
+                <div className="v2-contact-summary-body">
+                  <div className="v2-contact-summary-name">{course.course_name}</div>
+                  <div className="v2-contact-summary-meta">
+                    {[pitch.ladder.reach ? `Führt zu: ${pitch.ladder.reach.role_name}` : null, formatCourseDuration(course), courseStartText(course)]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="v2-contact-remove"
+                  onClick={() => onToggleRequest(course.course_id)}
+                  aria-label={`${course.course_name} aus der Anfrage entfernen`}
+                  title="Entfernen"
+                >
+                  ✕
+                </button>
+              </div>
+            ))
+          )}
+          {cards.length > n && (
+            <button type="button" className="v2-contact-add" onClick={backToResults}>
+              ＋ {n === 0 ? "Kurs auswählen" : "Weiteren Kurs hinzufügen"}
             </button>
           )}
         </div>
@@ -5323,8 +5382,8 @@ function V2ErgebnisStep({
           <label className="consent-row v2-consent">
             <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
             <span>
-              Ich stimme zu, dass meine Angaben gespeichert werden, damit der Bildungsträger mich zu dieser Weiterbildung
-              kontaktieren darf. Widerruf jederzeit möglich.
+              Ich stimme zu, dass meine Angaben gespeichert werden, damit der Bildungsträger mich zu{" "}
+              {n > 1 ? "diesen Weiterbildungen" : "dieser Weiterbildung"} kontaktieren darf. Widerruf jederzeit möglich.
               {privacyPolicyUrl ? (
                 <>
                   {" "}
@@ -5352,7 +5411,8 @@ function V2ErgebnisStep({
               </>
             ) : (
               <>
-                {wantsConsult ? "Anfrage & Beratung absenden" : "Anfrage absenden"} <span className="arrow">→</span>
+                {n > 1 ? `Anfrage für ${n} Kurse` : "Anfrage"}
+                {wantsConsult ? " & Beratung absenden" : " absenden"} <span className="arrow">→</span>
               </>
             )}
           </button>
@@ -5409,6 +5469,17 @@ function V2ErgebnisStep({
           <span>📅 {courseStartText(course)}</span>
           <span>{courseLocationText(course)}</span>
         </div>
+        <button
+          type="button"
+          className={`v2-request-toggle ${requested.has(course.course_id) ? "on" : ""}`}
+          aria-pressed={requested.has(course.course_id)}
+          onClick={() => onToggleRequest(course.course_id)}
+        >
+          <span className="v2-request-box" aria-hidden="true">
+            {requested.has(course.course_id) ? "✓" : "＋"}
+          </span>
+          {requested.has(course.course_id) ? "In deiner Anfrage" : "Zur Anfrage hinzufügen"}
+        </button>
         {open ? (
           <>
             {pitch.because && <p className="v2-because">{pitch.because}</p>}
@@ -5597,6 +5668,17 @@ function V2ErgebnisStep({
           </section>
         </>
       ) : null}
+      {requestedIds.length > 0 && (
+        <div className="v2-request-bar" role="status">
+          <span className="v2-request-bar-count">{requestedIds.length}</span>
+          <span className="v2-request-bar-text">
+            {requestedIds.length === 1 ? "Kurs in deiner Anfrage" : "Kurse in deiner Anfrage"}
+          </span>
+          <button type="button" className="v2-request-bar-cta" onClick={() => goContact(null, false)}>
+            Anfrage fertigstellen <span className="arrow">→</span>
+          </button>
+        </div>
+      )}
       <ActionsRow onBack={onBack} hideForward />
     </div>
   );

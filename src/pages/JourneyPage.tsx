@@ -4022,10 +4022,10 @@ async function runDemoAnalysis() {
   //   0 = kein erkennbarer Bezug -> wird NICHT gezeigt
   // Sortiert wird nach Stufe, dann Top-Kurs (is_featured), dann der
   // bisherigen Reihenfolge. "Top-Empfehlung" nur ab Stufe 2 - sonst ehrlich
-  // als "Kurse aus dem Bereich" (fit "bereich"). Keiner passt: leere Liste
+  // als Einstieg (fit "bridge", siehe Baustein 3 unten). Keiner passt: leere Liste
   // -> Beratungsseite (bestehendes Verhalten von V2ErgebnisStep).
   const v2ResultCards = useMemo(() => {
-    type V2Card = { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean; fit: "direct" | "bereich" };
+    type V2Card = { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean; fit: V2CardFit; bridgeSkills: string[]; foreign: boolean };
     if (!isV2 || !courseResult) return [] as V2Card[];
     const byId = new Map(allCourses.map((c) => [c.course_id, c]));
     const ctx = {
@@ -4082,6 +4082,26 @@ async function runDemoAnalysis() {
       seen.add(course.course_id);
       candidates.push({ course, fromDirection: true });
     }
+    // Baustein 3 "Nie ohne Kurs" (29.09.2026): auch Kurse aus anderen
+    // Bereichen pruefen - sie koennen als Einstieg dienen, wenn sie Skills
+    // der Zielrichtung vermitteln (z. B. Excel/Controlling-Grundlagen fuer
+    // Marketing-Management). Ohne Skill-Ueberschneidung bleiben sie draussen.
+    for (const course of allCourses) {
+      if (seen.has(course.course_id)) continue;
+      seen.add(course.course_id);
+      candidates.push({ course, fromDirection: false });
+    }
+    // Skills der Zielrichtung mit Gewicht (bei mehreren Berufen das hoechste).
+    const targetSkillWeight = new Map<string, { name: string; weight: number }>();
+    for (const r of directRoles.length > 0 ? directRoles : v2Direction.map((d) => d.role)) {
+      for (const sk of r.skills) {
+        const prev = targetSkillWeight.get(sk.skill_id);
+        if (!prev || prev.weight < sk.weight) targetSkillWeight.set(sk.skill_id, { name: sk.name, weight: sk.weight });
+      }
+    }
+    // Was die Person schon sicher kann, zaehlt nicht als Gewinn.
+    const alreadyStrong = new Set(v2Plan.evidence.map((e) => e.skill_id));
+    for (const [id, a] of v2Answers) if (a === "ja") alreadyStrong.add(id);
 
     const scored = candidates
       .map((cand, index) => {
@@ -4093,21 +4113,61 @@ async function runDemoAnalysis() {
         const descHit = !titleHit && termHit(`${cand.course.description ?? ""} ${cand.course.target_group ?? ""}`, focusTerms);
         let level = 0;
         if (reachId && directRoleIds.has(reachId)) level = 3;
-        else if (pitch.gapCoverage > 0 || (!reachId && titleHit)) level = 2;
+        // Lueckenabdeckung zaehlt nur im eigenen Bereich als direkter Treffer;
+        // ein Kurs aus einem fremden Bereich wird hoechstens Einstieg.
+        else if ((pitch.gapCoverage > 0 && inDirBereich(cand.course)) || (!reachId && titleHit)) level = 2;
         else if ((reachId && (dirBereiche.size === 0 || dirBereiche.has(bereichById.get(reachId) ?? ""))) || (!reachId && descHit)) level = 1;
         if (tooLow) level = 0;
-        return { ...cand, pitch, level, index };
-      })
-      .filter((x) => x.level > 0)
-      .sort(
-        (a, b) =>
-          b.level - a.level ||
-          Number(Boolean(b.course.is_featured)) - Number(Boolean(a.course.is_featured)) ||
-          a.index - b.index
-      );
+        // Einstiegs-Wert: Gewicht der Ziel-Skills, die der Kurs vermittelt
+        // und die die Person noch nicht sicher hat.
+        const bridge = (cand.course.covered_skill_uris ?? [])
+          .map((id) => ({ id, t: targetSkillWeight.get(id) }))
+          .filter((x): x is { id: string; t: { name: string; weight: number } } => Boolean(x.t) && !alreadyStrong.has(x.id))
+          .sort((a, b) => b.t.weight - a.t.weight);
+        const bridgeWeight = bridge.reduce((sum, x) => sum + x.t.weight, 0);
+        return { ...cand, pitch, level, index, bridgeSkills: bridge.map((x) => x.t.name), bridgeWeight, inBereich: inDirBereich(cand.course) };
+      });
 
-    return scored.slice(0, 3).map(
-      (x): V2Card => ({ course: x.course, pitch: x.pitch, fromDirection: x.fromDirection, fit: x.level >= 2 ? "direct" : "bereich" })
+    const byPriority = (a: (typeof scored)[number], b: (typeof scored)[number]) =>
+      Number(Boolean(b.course.is_featured)) - Number(Boolean(a.course.is_featured)) || a.index - b.index;
+    // 1) Direkte Treffer (Stufe 2-3), wie bisher.
+    const direct = scored.filter((x) => x.level >= 2).sort((a, b) => b.level - a.level || byPriority(a, b));
+    // 2) Einstiege: andere Berufe im Bereich (Stufe 1) oder Kurse mit
+    //    Ziel-Skills - sortiert nach Ziel-Skill-Gewicht, dann Stufe.
+    //    Ein Kurs aus einem fremden Bereich braucht mind. 2 Ziel-Skills
+    //    bzw. 15 % Skill-Gewicht, sonst ist der Bezug zu duenn.
+    const bridgeScore = (x: (typeof scored)[number]) => x.bridgeWeight + (x.level === 1 || x.inBereich ? 10 : 0);
+    const bridges = scored
+      .filter((x) => x.level < 2)
+      .filter((x) => x.level === 1 || (x.inBereich && x.bridgeWeight > 0) || x.bridgeSkills.length >= 2 || x.bridgeWeight >= 15)
+      // Kurse im eigenen Bereich bekommen einen kleinen Vorsprung (+10).
+      .sort((a, b) => bridgeScore(b) - bridgeScore(a) || b.level - a.level || byPriority(a, b));
+    // 3) Letztes Netz: ein Kurs aus dem gewaehlten Bereich, dessen Titel
+    //    erkennbar zum Fachgebiet gehoert (Fachwort irgendeines Berufs des
+    //    Bereichs, z. B. "Social Media Basics" bei Marketing). Nur als
+    //    Bereich getaggte Kurse ohne jeden fachlichen Bezug (Rueckmeldung
+    //    "Industriefachwirt bei Marketing-Management") erscheinen nie.
+    const bereichTerms =
+      direct.length === 0 && bridges.length === 0
+        ? directionTerms(
+            ROLES_CATALOG.filter((r) => dirBereiche.has(r.bereich_key)).flatMap((r) => [r.role_name, r.typische_weiterbildung ?? ""])
+          )
+        : [];
+    const bereichOnly =
+      bereichTerms.length > 0
+        ? scored.filter((x) => x.inBereich && termHit(x.course.course_name, bereichTerms)).sort(byPriority)
+        : [];
+
+    const picked = [...direct, ...bridges, ...bereichOnly].slice(0, 3);
+    return picked.map(
+      (x): V2Card => ({
+        course: x.course,
+        pitch: x.pitch,
+        fromDirection: x.fromDirection,
+        fit: x.level >= 2 ? "direct" : "bridge",
+        bridgeSkills: x.bridgeSkills.slice(0, 3),
+        foreign: !x.inBereich,
+      })
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isV2, courseResult, allCourses, careerGoal, v2Situation, employmentType, desiredStart, v2Direction, v2Plan, v2Answers, v2Role, activityIds, targetBereichLabel, rolesInPortfolio, bereichRole, v2SchwerpunktRoleIds, v2SchwerpunktText]);
@@ -5625,6 +5685,7 @@ const GENERIC_TITLE_TERMS = new Set([
   "sachbearbeiter", "sachbearbeiterin", "techniker", "technikerin", "meister", "meisterin", "betriebswirt", "betriebswirtin",
   "bachelor", "master", "online", "praesenz", "präsenz", "vollzeit", "teilzeit", "kurs", "seminar", "bereich",
   "head", "senior", "junior", "expert", "experte", "expertin", "professional", "ihk", "hwk",
+  "digital", "digitale", "digitaler", "international", "praxis", "basis", "einstieg", "aufbau",
 ]);
 /** Fachwoerter (ab 4 Buchstaben, ohne Allgemeines) aus Schwerpunkt- und Berufsnamen. */
 function directionTerms(texts: string[]): string[] {
@@ -5642,6 +5703,11 @@ function termHit(text: string, terms: string[]): boolean {
   const t = text.toLowerCase();
   return terms.some((w) => t.includes(w));
 }
+
+/** Passung einer Ergebniskarte: "direct" = fuehrt in die gewaehlte Richtung
+ *  bzw. schliesst Luecken; "bridge" = Einstieg (vermittelt Ziel-Skills oder
+ *  fuehrt zu einem Nachbarberuf im Bereich). */
+type V2CardFit = "direct" | "bridge";
 
 /** Ein Kurs im Spotlight der v2-Ergebnisseite (siehe v2Spotlight). */
 interface V2SpotlightItem {
@@ -5857,8 +5923,10 @@ function V2ErgebnisStep({
   /** Hervorgehobene Kurse des Bildungstraegers (Top-Kurs, Banner, startet bald). */
   spotlight?: V2SpotlightItem[];
   /** fit "direct": fuehrt in die gewaehlte Richtung oder schliesst Luecken;
-   *  "bereich": nur ein anderer Beruf im Bereich (keine Top-Empfehlung). */
-  cards: { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean; fit: "direct" | "bereich" }[];
+   *  "bridge": Einstieg - vermittelt Ziel-Skills (bridgeSkills) oder fuehrt
+   *  zu einem Nachbarberuf im Bereich. */
+  /** foreign: Kurs liegt ausserhalb des gewaehlten Bereichs. */
+  cards: { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean; fit: V2CardFit; bridgeSkills: string[]; foreign: boolean }[];
   /** Rundgang: Ansicht von aussen setzen (Empfehlungen/Abschlussseite). */
   forceView?: "results" | "contact";
   forceNonce?: number;
@@ -6091,6 +6159,11 @@ function V2ErgebnisStep({
 
   function card(course: OrbitCourse, pitch: CoursePitch, top: boolean) {
     const first = course.course_id === cards[0]?.course.course_id;
+    const meta = cards.find((c) => c.course.course_id === course.course_id);
+    const isBridge = meta?.fit === "bridge";
+    // Einstieg aus einem fremden Bereich: Berufsleiter ("Fuehrt zu
+    // Controller/in") wuerde vom Ziel ablenken -> weglassen.
+    const bridgeForeign = isBridge && Boolean(meta?.foreign);
     const open = first || expanded === course.course_id;
     const ladder = pitch.ladder;
     return (
@@ -6101,10 +6174,13 @@ function V2ErgebnisStep({
         data-tour={first ? "v2-top-course" : undefined}
       >
         {top && <div className="v2-course-badge">⭐ Deine Top-Empfehlung</div>}
+        {!top && first && isBridge && <div className="v2-course-badge bridge">🚀 Dein Einstieg</div>}
         {/* Banner aus dem Dashboard (Top-Kurs, eigener Banner-Text, Start, Restplaetze). */}
         <CourseBadgeRow course={course} showFeatured />
         <div className="v2-course-headline">
-          {openDirection
+          {isBridge
+            ? `Dein Einstieg Richtung ${bereichLabel ?? "deines Ziels"}`
+            : openDirection
             ? ladder.reach
               ? `Dein Weg zu: ${ladder.reach.role_name}`
               : `Dein nächster Schritt${bereichLabel ? ` in ${bereichLabel}` : ""}`
@@ -6112,7 +6188,7 @@ function V2ErgebnisStep({
         </div>
         <h3 className="v2-course-name">{course.course_name}</h3>
         {course.provider && <div className="v2-course-provider">{course.provider}</div>}
-        {ladder.reach && (
+        {ladder.reach && !bridgeForeign && (
           <div className="v2-ladder">
             <div className="v2-ladder-step now">
               <span className="v2-ladder-label">{ladder.reachSource === "skills" ? "Bereitet vor auf" : "Führt zu"}</span>
@@ -6139,6 +6215,16 @@ function V2ErgebnisStep({
           <span>📅 {courseStartText(course)}</span>
           <span>{courseLocationText(course)}</span>
         </div>
+        {isBridge && meta && meta.bridgeSkills.length > 0 && (
+          <div className="v2-bridge-skills">
+            <span className="v2-bridge-skills-label">Bringt dich Richtung {bereichLabel ?? "Ziel"} weiter:</span>
+            {meta.bridgeSkills.map((sk) => (
+              <span key={sk} className="v2-bridge-skill">
+                ＋ {sk}
+              </span>
+            ))}
+          </div>
+        )}
         <button
           type="button"
           className={`v2-request-toggle ${requested.has(course.course_id) ? "on" : ""}`}
@@ -6153,7 +6239,7 @@ function V2ErgebnisStep({
         {open ? (
           <>
             {pitch.because && <p className="v2-because">{pitch.because}</p>}
-            {pitch.closes && (
+            {pitch.closes && !isBridge && (
               <div className="v2-closes">
                 <div className="v2-closes-line">{pitch.closes.line}</div>
                 <div className="v2-closes-chips">
@@ -6316,16 +6402,26 @@ function V2ErgebnisStep({
       )}
       {cards.length > 0 && (
         <>
-          {cards[0].fit === "bereich" && (
-            <div className="v2-no-direct">
-              <strong>Für {bereichLabel ?? "deine Richtung"} gibt es gerade keinen passgenauen Kurs.</strong>
-              <span>Diese Weiterbildungen aus dem Bereich kommen trotzdem infrage – in der Beratung klärt ihr, ob sie zu deinem Ziel führen.</span>
+          {cards[0].fit === "bridge" && (
+            // Baustein 3 "Nie ohne Kurs": kein Kurs bildet direkt zum Ziel
+            // aus -> der beste Einstieg fuehrt die Empfehlung an, ehrlich
+            // benannt, mit der Beratung als naechstem Schritt.
+            <div className="v2-bridge-intro">
+              <div className="v2-bridge-intro-title">🚀 Dein Einstieg Richtung {bereichLabel ?? "deines Ziels"}</div>
+              <p>
+                Für {bereichLabel ?? "dein Ziel"} gibt es gerade keinen Kurs, der direkt dorthin ausbildet. Dieser Kurs bringt dich trotzdem ein gutes
+                Stück voran – den weiteren Weg plant ihr gemeinsam in der kostenlosen Beratung.
+              </p>
             </div>
           )}
           {card(cards[0].course, cards[0].pitch, cards[0].fit === "direct")}
           {cards.length > 1 && (
             <div className="v2-alt-title">
-              {cards.slice(1).every((c) => c.fit === "bereich") ? "Ebenfalls aus dem Bereich" : "Ebenfalls passend"}
+              {cards.slice(1).every((c) => c.fit === "bridge")
+                ? cards[0].fit === "direct"
+                  ? "Auch ein guter Einstieg"
+                  : "Weitere Einstiege"
+                : "Ebenfalls passend"}
             </div>
           )}
           {cards.slice(1).map((c) => card(c.course, c.pitch, false))}

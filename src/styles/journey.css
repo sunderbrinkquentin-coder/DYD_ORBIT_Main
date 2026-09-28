@@ -6993,3 +6993,71 @@ input.big-input:focus {
   font-size: 0.78rem;
   font-weight: 700;
 }
+
+/* Baustein 4 "Nie ohne Kurs": Kurs-Zaehler & Kurs-Check (29.09.2026) */
+.v2-counter {
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid rgba(var(--dyd-mint-2-rgb), 0.6);
+  box-shadow: 0 6px 18px rgba(12, 28, 52, 0.08);
+}
+.v2-counter.bereich {
+  border-color: rgba(var(--dyd-blue-rgb), 0.35);
+}
+.v2-counter-num {
+  flex: 0 0 auto;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 8px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--dyd-navy, #0c1c34);
+  background: linear-gradient(135deg, var(--dyd-mint), var(--dyd-mint-2));
+  animation: v2-counter-pop 0.35s ease-out;
+}
+.v2-counter.bereich .v2-counter-num {
+  background: linear-gradient(135deg, rgba(var(--dyd-blue-rgb), 0.25), rgba(var(--dyd-mint-rgb), 0.5));
+}
+@keyframes v2-counter-pop {
+  from { transform: scale(0.85); }
+  to { transform: scale(1); }
+}
+.v2-counter-text {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  color: #243447;
+}
+.v2-counter-sub {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #0d5a36;
+}
+.v2-consult-list {
+  list-style: none;
+  margin: 8px 0 6px;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+  font-size: 0.9rem;
+}
+.v2-consult-note {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2-counter-num { animation: none; }
+}

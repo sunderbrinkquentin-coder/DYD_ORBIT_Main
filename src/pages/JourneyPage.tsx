@@ -61,6 +61,7 @@ import {
   QUALIFICATION_LABELS,
 } from "../data/courseMatcher";
 import { BereichBadges, CourseBadgeRow, courseBadges, daysUntilCourseStart, type CourseBadge } from "../data/courseBadges";
+import { mapCatalogAsync, type MappedCourse } from "../data/courseMap";
 import { ACTIVITY_FIELDS, deriveSkillsFromActivities, getActivity, suggestedProficiency } from "../data/activitiesCatalog";
 import {
   buildDirectionRole,
@@ -2346,10 +2347,20 @@ async function runDemoAnalysis() {
       // Ein Kurs ohne jede Terminangabe gilt weiterhin als dauerhaft aktiv.
       const catalog = rawCatalog.filter((c) => isCourseActive(c));
 
+      // Kurs-Landkarte (29.09.2026, siehe src/data/courseMap.ts): Kurse ohne
+      // Beruf/Skills bekommen eine Zuordnung aus derselben Logik wie im
+      // Dashboard - sonst waeren sie fuer Richtung und Matching unsichtbar.
+      // Laeuft in kleinen Portionen, damit die Seite fluessig bleibt; der
+      // unveraenderte Katalog steht bis dahin schon zur Verfuegung.
       setFeaturedCourses(catalog.filter((c) => c.is_featured));
       setAllCourses(catalog);
+      const mappedCatalog: OrbitCourse[] = await mapCatalogAsync(catalog, { chunkSize: 2 });
+      setAllCourses(mappedCatalog);
+      setFeaturedCourses(mappedCatalog.filter((c) => c.is_featured));
       setCourseCatalogLoadedAt(Date.now());
-      courseCatalogLoadedAtRef.current = catalog.length > 0 ? Date.now() : null;
+      courseCatalogLoadedAtRef.current = mappedCatalog.length > 0 ? Date.now() : null;
+      const inferredCount = mappedCatalog.filter((c) => (c as MappedCourse).course_map_inferred).length;
+      if (inferredCount > 0) console.info("[JourneyPage] course_map_inferred", { count: inferredCount });
 
       console.info("[JourneyPage] course_catalog_loaded", {
         course_count: catalog.length,
@@ -2362,7 +2373,7 @@ async function runDemoAnalysis() {
           "Der Kurskatalog hat keine veröffentlichten Weiterbildungen zurückgegeben."
         );
       }
-      return catalog;
+      return mappedCatalog;
     } catch (err) {
       console.error("[JourneyPage] course_catalog_failed:", err);
       // Einen bereits geladenen Katalog bei einem fehlgeschlagenen

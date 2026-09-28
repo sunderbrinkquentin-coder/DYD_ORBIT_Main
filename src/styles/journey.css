@@ -6859,3 +6859,63 @@ input.big-input:focus {
 @media (prefers-reduced-motion: reduce) {
   .v2-spot-card, .v2-spot-pulse { animation: none; }
 }
+
+/* Spotlight: Banner als Aufmacher (29.09.2026) */
+.v2-spot-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: -14px -14px 10px;
+  padding: 12px 14px;
+  border-radius: 16px 16px 0 0;
+  background: linear-gradient(90deg, var(--dyd-mint-2), var(--dyd-blue));
+  color: var(--dyd-navy, #0c1c34);
+}
+.v2-spot-banner.kind-featured {
+  background: linear-gradient(90deg, #ffd66b, #ffb347);
+}
+.v2-spot-banner.kind-seats {
+  background: linear-gradient(90deg, #ffe08a, #ffc46b);
+}
+.v2-spot-banner.kind-soon,
+.v2-spot-banner.kind-upcoming {
+  background: linear-gradient(90deg, rgba(var(--dyd-mint-rgb), 0.9), rgba(var(--dyd-blue-rgb), 0.55));
+}
+.v2-spot-banner-text {
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.v2-spot-banner-note {
+  font-size: 0.8rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
+.v2-spot-card-top .course-banner {
+  font-size: 0.72rem;
+}
+.v2-spot-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  border-radius: 12px;
+  text-align: left;
+  line-height: 1.2;
+}
+.v2-spot-chip-banner {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--dyd-blue-dark);
+}
+.v2-spot-chip.active .v2-spot-chip-banner {
+  color: var(--dyd-mint);
+}
+.v2-spot-chip-name {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.76rem;
+}

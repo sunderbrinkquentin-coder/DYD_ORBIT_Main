@@ -3934,8 +3934,23 @@ async function runDemoAnalysis() {
     [additionalCourseIds, selectedCourseId, allCourseById]
   );
   // Journey v2, Bildschirm 6: Top-Kurs + 2 Alternativen mit Pitch.
+  //
+  // Passung (29.09.2026, Rueckmeldung "Industriefachwirt bei
+  // Marketing-Management passt hinten und vorne nicht"): Bisher landete jeder
+  // Kurs aus dem Bereich als "Top-Empfehlung" oben - auch der Notfall-Kurs
+  // aus dem Katalog-Fallback, der weder zu einem Beruf der Richtung fuehrt
+  // noch eine Luecke schliesst. Jetzt bekommt jeder Kurs eine Passungsstufe:
+  //   3 = fuehrt zu einem Beruf im gewaehlten Schwerpunkt / der Richtung
+  //   2 = schliesst nachweislich Luecken (gapCoverage > 0)
+  //   1 = fuehrt zu einem anderen Beruf im Bereich
+  //   0 = kein erkennbarer Bezug -> wird NICHT gezeigt
+  // Sortiert wird nach Stufe, dann Top-Kurs (is_featured), dann der
+  // bisherigen Reihenfolge. "Top-Empfehlung" nur ab Stufe 2 - sonst ehrlich
+  // als "Kurse aus dem Bereich" (fit "bereich"). Keiner passt: leere Liste
+  // -> Beratungsseite (bestehendes Verhalten von V2ErgebnisStep).
   const v2ResultCards = useMemo(() => {
-    if (!isV2 || !courseResult) return [] as { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean }[];
+    type V2Card = { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean; fit: "direct" | "bereich" };
+    if (!isV2 || !courseResult) return [] as V2Card[];
     const byId = new Map(allCourses.map((c) => [c.course_id, c]));
     const ctx = {
       goal: careerGoal,
@@ -3956,44 +3971,124 @@ async function runDemoAnalysis() {
       bereichLabel: targetBereichLabel ?? null,
       roles: rolesInPortfolio.length > 0 ? rolesInPortfolio : ROLES_CATALOG,
     };
-    const out: { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean }[] = [];
+    const dirBereiche = new Set(
+      [...v2Direction.map((d) => d.role.bereich_key), bereichRole?.bereich_key].filter((k): k is string => Boolean(k))
+    );
+    const directRoleIds = new Set<string>(v2SchwerpunktRoleIds.size > 0 ? v2SchwerpunktRoleIds : v2Direction.map((d) => d.role.role_id));
+    // Kein Rueckschritt: Kurse, die zu einem Beruf mehr als eine Stufe
+    // UNTER der eingegrenzten Richtung fuehren, werden nicht gezeigt.
+    const targetNiveau = v2Direction[0]?.role.anforderungsniveau ?? 0;
+    const niveauById = new Map(ROLES_CATALOG.map((r) => [r.role_id, r.anforderungsniveau ?? 0]));
+    const bereichById = new Map(ROLES_CATALOG.map((r) => [r.role_id, r.bereich_key]));
+    const inDirBereich = (c: OrbitCourse) =>
+      dirBereiche.size === 0 || [...(c.bereich_keys ?? []), ...(c.bereich_key ? [c.bereich_key] : [])].some((k) => dirBereiche.has(k));
+
+    const candidates: { course: OrbitCourse; fromDirection: boolean }[] = [];
+    const seen = new Set<string>();
     for (const rec of courseResult.recommended_courses ?? []) {
       const course = byId.get(rec.course_id);
-      if (!course || out.some((o) => o.course.course_id === course.course_id)) continue;
-      out.push({ course, pitch: buildCoursePitchV2(course as unknown as PitchCourse, ctx), fromDirection: false });
-      if (out.length >= 3) break;
+      if (!course || seen.has(course.course_id)) continue;
+      seen.add(course.course_id);
+      candidates.push({ course, fromDirection: false });
     }
-    // Alternativen auffuellen (Konzept: 1 Top-Kurs + 2 Alternativen): nur
-    // echte Kurse aus derselben Richtung (Bereich der eingegrenzten Berufe),
-    // ehrlich als "Ebenfalls in deiner Richtung" gekennzeichnet — keine
-    // behauptete Luecken-Abdeckung.
-    if (out.length > 0 && out.length < 3) {
-      const dirBereiche = new Set(
-        [...v2Direction.map((d) => d.role.bereich_key), bereichRole?.bereich_key].filter((k): k is string => Boolean(k))
+    // Kurse derselben Richtung (Bereich der eingegrenzten Berufe) als
+    // Ergaenzung - sie muessen dieselbe Passungspruefung bestehen.
+    for (const course of allCourses) {
+      if (seen.has(course.course_id) || !inDirBereich(course)) continue;
+      seen.add(course.course_id);
+      candidates.push({ course, fromDirection: true });
+    }
+
+    const scored = candidates
+      .map((cand, index) => {
+        const pitch = buildCoursePitchV2(cand.course as unknown as PitchCourse, ctx);
+        const reachId = pitch.ladder.reach?.role_id;
+        const reachNiveau = reachId ? niveauById.get(reachId) ?? 0 : 0;
+        const tooLow = Boolean(reachId) && targetNiveau > 0 && reachNiveau > 0 && reachNiveau < targetNiveau - 1;
+        let level = 0;
+        if (reachId && directRoleIds.has(reachId)) level = 3;
+        else if (pitch.gapCoverage > 0) level = 2;
+        else if (reachId && (dirBereiche.size === 0 || dirBereiche.has(bereichById.get(reachId) ?? ""))) level = 1;
+        if (tooLow) level = 0;
+        return { ...cand, pitch, level, index };
+      })
+      .filter((x) => x.level > 0)
+      .sort(
+        (a, b) =>
+          b.level - a.level ||
+          Number(Boolean(b.course.is_featured)) - Number(Boolean(a.course.is_featured)) ||
+          a.index - b.index
       );
-      const extras = allCourses
-        .filter((c) => !out.some((o) => o.course.course_id === c.course_id))
-        .filter((c) => [...(c.bereich_keys ?? []), ...(c.bereich_key ? [c.bereich_key] : [])].some((k) => dirBereiche.has(k)))
-        .sort((a, b) => courseRichnessScore(b) - courseRichnessScore(a));
-      // Kein Rueckschritt: Kurse, die zu einem Beruf mehr als eine Stufe
-      // UNTER der eingegrenzten Richtung fuehren, werden nicht aufgefuellt.
-      const targetNiveau = v2Direction[0]?.role.anforderungsniveau ?? 0;
-      const niveauById = new Map(ROLES_CATALOG.map((r) => [r.role_id, r.anforderungsniveau ?? 0]));
-      // Gewaehlter Schwerpunkt zuerst: Kurse, die zu einem Beruf dieses
-      // Schwerpunkts fuehren, vor allen anderen des Bereichs.
-      const pitched = extras.map((course) => ({ course, pitch: buildCoursePitchV2(course as unknown as PitchCourse, ctx) }));
-      const spRank = (reachId: string | undefined) => (v2SchwerpunktRoleIds.size === 0 ? 0 : reachId && v2SchwerpunktRoleIds.has(reachId) ? 0 : reachId ? 2 : 1);
-      pitched.sort((a, b) => spRank(a.pitch.ladder.reach?.role_id) - spRank(b.pitch.ladder.reach?.role_id));
-      for (const { course, pitch } of pitched) {
-        const reachNiveau = pitch.ladder.reach ? niveauById.get(pitch.ladder.reach.role_id) ?? 0 : 0;
-        if (pitch.ladder.reach && targetNiveau > 0 && reachNiveau < targetNiveau - 1) continue;
-        out.push({ course, pitch, fromDirection: true });
-        if (out.length >= 3) break;
-      }
-    }
-    return out;
+
+    return scored.slice(0, 3).map(
+      (x): V2Card => ({ course: x.course, pitch: x.pitch, fromDirection: x.fromDirection, fit: x.level >= 2 ? "direct" : "bereich" })
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isV2, courseResult, allCourses, careerGoal, v2Situation, employmentType, desiredStart, v2Direction, v2Plan, v2Answers, v2Role, activityIds, targetBereichLabel, rolesInPortfolio, bereichRole, v2SchwerpunktRoleIds]);
+
+  /**
+   * Spotlight (29.09.2026, Rueckmeldung "vorher gab es ein dynamisches Feld
+   * mit den Top-Kursen und den Kursen mit Bannern"): der v1-Karussell-Block
+   * fuer v2 neu gedacht. Aus dem VOLLEN Katalog kommen alle Kurse, die der
+   * Bildungstraeger im Dashboard hervorgehoben hat (is_featured,
+   * custom_banner) oder die bald starten - ausser denen, die oben schon als
+   * Empfehlung stehen. Jeder Kurs bekommt eine persoenliche Zeile ("hook")
+   * aus demselben Pitch wie die Empfehlungen (nur echte Daten: Zielberuf,
+   * Rahmen-Treffer wie "Vollzeit – wie du es wolltest", Start). Kurse aus der
+   * eigenen Richtung stehen vorn und sind so gekennzeichnet; alle anderen
+   * ehrlich als "Beliebt bei <Anbieter>".
+   */
+  const v2Spotlight = useMemo(() => {
+    if (!isV2 || !courseResult) return [] as V2SpotlightItem[];
+    const shown = new Set(v2ResultCards.map((c) => c.course.course_id));
+    const ctx = {
+      goal: careerGoal,
+      situation: v2Situation,
+      employmentPref: (employmentType === "vollzeit" || employmentType === "teilzeit" || employmentType === "egal" ? employmentType : null) as
+        | "vollzeit"
+        | "teilzeit"
+        | "egal"
+        | null,
+      startPref: (desiredStart === "asap" || desiredStart === "4-wochen" || desiredStart === "1-3-monate" || desiredStart === "offen"
+        ? desiredStart
+        : null) as "asap" | "4-wochen" | "1-3-monate" | "offen" | null,
+      direction: v2Direction,
+      evidence: v2Plan.evidence,
+      answers: v2Answers,
+      directionSkills: (v2Role?.skills ?? []).map((sk) => ({ skill_id: sk.skill_id, name: sk.name, weight: sk.weight })),
+      activityIds,
+      bereichLabel: targetBereichLabel ?? null,
+      roles: rolesInPortfolio.length > 0 ? rolesInPortfolio : ROLES_CATALOG,
+    };
+    const dirBereiche = new Set(
+      [...v2Direction.map((d) => d.role.bereich_key), bereichRole?.bereich_key].filter((k): k is string => Boolean(k))
+    );
+    const items: (V2SpotlightItem & { rank: number })[] = [];
+    for (const course of allCourses) {
+      if (shown.has(course.course_id) || !course.course_id || !course.course_name) continue;
+      const days = daysUntilCourseStart(course);
+      const soon = days != null && days >= 0 && days <= POPULAR_SOON_START_DAYS;
+      const highlighted = Boolean(course.is_featured) || Boolean(course.custom_banner);
+      if (!highlighted && !soon) continue;
+      if (course.seats_remaining != null && course.seats_remaining <= 0) continue;
+      const inDirection = [...(course.bereich_keys ?? []), ...(course.bereich_key ? [course.bereich_key] : [])].some((k) => dirBereiche.has(k));
+      const pitch = buildCoursePitchV2(course as unknown as PitchCourse, ctx);
+      const personal = pitch.fit.find((f) => /wie du es wolltest|Start schon in/.test(f)) ?? null;
+      const hook = inDirection && pitch.ladder.reach ? `Führt zu ${pitch.ladder.reach.role_name}` : personal ?? pitch.fit[0] ?? null;
+      items.push({
+        course,
+        hook,
+        personal,
+        inDirection,
+        daysUntilStart: soon ? days : null,
+        // Reihenfolge: eigene Richtung vor fremdem Bereich, dann Top-Kurs,
+        // dann eigener Banner, dann frueherer Start.
+        rank: (inDirection ? 0 : 1000) + (course.is_featured ? 0 : 100) + (course.custom_banner ? 0 : 50) + Math.min(days ?? 49, 49),
+      });
+    }
+    return items.sort((a, b) => a.rank - b.rank).slice(0, 8).map(({ rank: _rank, ...rest }) => rest);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isV2, courseResult, v2ResultCards, allCourses, careerGoal, v2Situation, employmentType, desiredStart, v2Direction, v2Plan, v2Answers, v2Role, activityIds, targetBereichLabel, rolesInPortfolio, bereichRole]);
 
   /** Ergebnis, Weg ueber die Branche: realistische Berufe (Richtung) plus
    *  die Berufe, zu denen die empfohlenen Kurse fuehren — als Moeglichkeiten. */
@@ -4286,6 +4381,7 @@ async function runDemoAnalysis() {
                     situation={v2Situation}
                     qualificationLevel={qualificationLevel}
                     options={v2Options}
+                    spotlight={v2Spotlight}
                     bereichLabel={v2SchwerpunktText || targetBereichLabel || null}
                     onAdjust={() => setCurrent(stepIndex("v2check"))}
                     forceView={v2TourView?.ergebnis}
@@ -5395,6 +5491,147 @@ function V2RahmenStep({
  *  Karriereleiter, max. 3 Luecken, Rahmendaten, Foerderung. Die Anfrage
  *  passiert direkt an der Karte: Vorname + E-Mail (+ Telefon optional) +
  *  Einwilligung. Das Ergebnis ist ohne Daten-Eingabe sichtbar. */
+/** Ein Kurs im Spotlight der v2-Ergebnisseite (siehe v2Spotlight). */
+interface V2SpotlightItem {
+  course: OrbitCourse;
+  /** Persoenliche Zeile aus echten Daten (Zielberuf, Rahmen-Treffer, Start). */
+  hook: string | null;
+  /** Rahmen-Treffer ("... wie du es wolltest"), falls vorhanden. */
+  personal: string | null;
+  /** Liegt im Bereich der eigenen Richtung. */
+  inDirection: boolean;
+  /** Tage bis Start, nur wenn innerhalb von 30 Tagen. */
+  daysUntilStart: number | null;
+}
+
+/**
+ * Spotlight-Leiste der v2-Ergebnisseite: eine grosse, automatisch
+ * wechselnde Buehne (7 s, pausiert bei Hover/Fokus, keine Animation bei
+ * "reduzierte Bewegung") plus eine Reihe klickbarer Kurs-Chips. Jeder Kurs
+ * laesst sich direkt "mit anfragen" - dieselbe Mehrfach-Anfrage wie auf den
+ * Empfehlungskarten (onToggle).
+ */
+function V2SpotlightRail({
+  items,
+  requested,
+  onToggle,
+}: {
+  items: V2SpotlightItem[];
+  requested: ReadonlySet<string>;
+  onToggle: (courseId: string) => void;
+}) {
+  const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const reduceMotion = typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+  const count = items.length;
+  const safe = count > 0 ? index % count : 0;
+  useEffect(() => {
+    if (count <= 1 || paused || reduceMotion) return;
+    const t = window.setTimeout(() => setIndex((i) => (i + 1) % count), 7000);
+    return () => window.clearTimeout(t);
+  }, [count, paused, reduceMotion, safe]);
+  if (count === 0) return null;
+  const item = items[safe];
+  const c = item.course;
+  const provider = c.provider || "deinem Bildungsträger";
+  const isOn = requested.has(c.course_id);
+  const icon = (it: V2SpotlightItem) => (it.course.is_featured ? "★" : it.course.custom_banner ? "✦" : "🚀");
+  return (
+    <section
+      className="v2-spot"
+      aria-label="Hervorgehobene Kurse"
+      data-tour="v2-spotlight"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
+    >
+      <div className="v2-spot-head">
+        <div className="v2-spot-eyebrow">
+          <span className="v2-spot-pulse" aria-hidden="true" /> Gerade im Rampenlicht
+        </div>
+        <h3 className="v2-spot-title">Das hebt {provider} gerade hervor</h3>
+        <p className="v2-spot-sub">Mit deinem Profil abgeglichen – du kannst mehrere Kurse gemeinsam anfragen.</p>
+      </div>
+      <div className="v2-spot-stage" aria-live={paused ? "polite" : "off"}>
+        {count > 1 && (
+          <button type="button" className="v2-spot-nav prev" aria-label="Vorheriger Kurs" onClick={() => setIndex((safe - 1 + count) % count)}>
+            ‹
+          </button>
+        )}
+        <article className={`v2-spot-card ${item.inDirection ? "in-direction" : ""}`} key={c.course_id}>
+          <div className="v2-spot-card-top">
+            <CourseBadgeRow course={c} showFeatured />
+            <span className={`v2-spot-tag ${item.inDirection ? "dir" : ""}`}>
+              {item.inDirection ? "🧭 In deiner Richtung" : `🔥 Beliebt bei ${provider}`}
+            </span>
+          </div>
+          <div className="v2-spot-main">
+            <div className="v2-spot-text">
+              <h4 className="v2-spot-name">{c.course_name}</h4>
+              {item.hook && (
+                <div className="v2-spot-hook">
+                  <span aria-hidden="true">✨</span> {item.hook}
+                </div>
+              )}
+              {item.personal && item.personal !== item.hook && <div className="v2-spot-personal">✓ {item.personal}</div>}
+            </div>
+            {item.daysUntilStart != null && (
+              <div
+                className="v2-spot-countdown"
+                style={{ ["--p" as string]: `${Math.max(6, 100 - (item.daysUntilStart / POPULAR_SOON_START_DAYS) * 100)}%` }}
+                aria-label={item.daysUntilStart === 0 ? "Startet heute" : `Startet in ${item.daysUntilStart} Tagen`}
+              >
+                <strong>{item.daysUntilStart}</strong>
+                <span>{item.daysUntilStart === 1 ? "Tag" : "Tage"}</span>
+              </div>
+            )}
+          </div>
+          <div className="v2-facts">
+            <span>⏱ {formatCourseDuration(c)}</span>
+            <span>💶 {courseCostText(c)}</span>
+            <span>📅 {courseStartText(c)}</span>
+            <span>{courseLocationText(c)}</span>
+          </div>
+          <button type="button" className={`v2-request-toggle ${isOn ? "on" : ""}`} aria-pressed={isOn} onClick={() => onToggle(c.course_id)}>
+            <span className="v2-request-box" aria-hidden="true">
+              {isOn ? "✓" : "＋"}
+            </span>
+            {isOn ? "In deiner Anfrage" : "Mit anfragen"}
+          </button>
+        </article>
+        {count > 1 && (
+          <button type="button" className="v2-spot-nav next" aria-label="Nächster Kurs" onClick={() => setIndex((safe + 1) % count)}>
+            ›
+          </button>
+        )}
+      </div>
+      {count > 1 && !reduceMotion && (
+        <div className="v2-spot-progress" aria-hidden="true">
+          <span key={`${safe}-${paused}`} className={paused ? "paused" : ""} />
+        </div>
+      )}
+      {count > 1 && (
+        <div className="v2-spot-rail" role="tablist" aria-label="Hervorgehobenen Kurs wählen">
+          {items.map((it, i) => (
+            <button
+              key={it.course.course_id}
+              type="button"
+              role="tab"
+              aria-selected={i === safe}
+              className={`v2-spot-chip ${i === safe ? "active" : ""} ${requested.has(it.course.course_id) ? "requested" : ""}`}
+              onClick={() => setIndex(i)}
+              title={it.course.course_name}
+            >
+              <span aria-hidden="true">{requested.has(it.course.course_id) ? "✓" : icon(it)}</span> {it.course.course_name}
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function V2ErgebnisStep({
   cards,
   evidence,
@@ -5424,8 +5661,13 @@ function V2ErgebnisStep({
   onBack,
   forceView,
   forceNonce = 0,
+  spotlight = [],
 }: {
-  cards: { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean }[];
+  /** Hervorgehobene Kurse des Bildungstraegers (Top-Kurs, Banner, startet bald). */
+  spotlight?: V2SpotlightItem[];
+  /** fit "direct": fuehrt in die gewaehlte Richtung oder schliesst Luecken;
+   *  "bereich": nur ein anderer Beruf im Bereich (keine Top-Empfehlung). */
+  cards: { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean; fit: "direct" | "bereich" }[];
   /** Rundgang: Ansicht von aussen setzen (Empfehlungen/Abschlussseite). */
   forceView?: "results" | "contact";
   forceNonce?: number;
@@ -5469,9 +5711,15 @@ function V2ErgebnisStep({
   const [expanded, setExpanded] = useState<string | null>(null);
   const emailValid = EMAIL_RE.test(leadEmail.trim());
   const strengths = [...evidence.map((e) => e.name), ...confirmedSkills].filter((v, i, a) => a.indexOf(v) === i);
+  // Angefragt werden koennen Empfehlungen UND Spotlight-Kurse.
   const chosenCards = requestedIds
-    .map((id) => cards.find((c) => c.course.course_id === id))
-    .filter((c): c is (typeof cards)[number] => Boolean(c));
+    .map((id): { course: OrbitCourse; pitch: CoursePitch | null } | null => {
+      const fromCards = cards.find((c) => c.course.course_id === id);
+      if (fromCards) return fromCards;
+      const fromSpot = spotlight.find((sp) => sp.course.course_id === id);
+      return fromSpot ? { course: fromSpot.course, pitch: null } : null;
+    })
+    .filter((c): c is { course: OrbitCourse; pitch: CoursePitch | null } => Boolean(c));
   const requested = new Set(requestedIds);
 
   function scrollTop() {
@@ -5540,7 +5788,7 @@ function V2ErgebnisStep({
                 <div className="v2-contact-summary-body">
                   <div className="v2-contact-summary-name">{course.course_name}</div>
                   <div className="v2-contact-summary-meta">
-                    {[pitch.ladder.reach ? `Führt zu: ${pitch.ladder.reach.role_name}` : null, formatCourseDuration(course), courseStartText(course)]
+                    {[pitch?.ladder.reach ? `Führt zu: ${pitch.ladder.reach.role_name}` : null, formatCourseDuration(course), courseStartText(course)]
                       .filter(Boolean)
                       .join(" · ")}
                   </div>
@@ -5557,7 +5805,7 @@ function V2ErgebnisStep({
               </div>
             ))
           )}
-          {cards.length > n && (
+          {cards.length + spotlight.length > n && (
             <button type="button" className="v2-contact-add" onClick={backToResults}>
               ＋ {n === 0 ? "Kurs auswählen" : "Weiteren Kurs hinzufügen"}
             </button>
@@ -5651,16 +5899,19 @@ function V2ErgebnisStep({
   }
 
   function card(course: OrbitCourse, pitch: CoursePitch, top: boolean) {
-    const open = top || expanded === course.course_id;
+    const first = course.course_id === cards[0]?.course.course_id;
+    const open = first || expanded === course.course_id;
     const ladder = pitch.ladder;
     return (
       <article
         key={course.course_id}
         id={`v2-course-${course.course_id}`}
         className={`v2-course ${top ? "is-top" : ""}`}
-        data-tour={top ? "v2-top-course" : undefined}
+        data-tour={first ? "v2-top-course" : undefined}
       >
         {top && <div className="v2-course-badge">⭐ Deine Top-Empfehlung</div>}
+        {/* Banner aus dem Dashboard (Top-Kurs, eigener Banner-Text, Start, Restplaetze). */}
+        <CourseBadgeRow course={course} showFeatured />
         <div className="v2-course-headline">
           {openDirection
             ? ladder.reach
@@ -5872,11 +6123,20 @@ function V2ErgebnisStep({
       )}
       {cards.length > 0 ? (
         <>
-          {card(cards[0].course, cards[0].pitch, true)}
+          {cards[0].fit === "bereich" && (
+            <div className="v2-no-direct">
+              <strong>Für {bereichLabel ?? "deine Richtung"} gibt es gerade keinen passgenauen Kurs.</strong>
+              <span>Diese Weiterbildungen aus dem Bereich kommen trotzdem infrage – in der Beratung klärt ihr, ob sie zu deinem Ziel führen.</span>
+            </div>
+          )}
+          {card(cards[0].course, cards[0].pitch, cards[0].fit === "direct")}
           {cards.length > 1 && (
-            <div className="v2-alt-title">{cards.slice(1).every((c) => c.fromDirection) ? "Ebenfalls in deiner Richtung" : "Ebenfalls passend"}</div>
+            <div className="v2-alt-title">
+              {cards.slice(1).every((c) => c.fit === "bereich") ? "Ebenfalls aus dem Bereich" : "Ebenfalls passend"}
+            </div>
           )}
           {cards.slice(1).map((c) => card(c.course, c.pitch, false))}
+          <V2SpotlightRail items={spotlight} requested={requested} onToggle={onToggleRequest} />
           <section className="v2-consult" id="v2-consult" aria-label="Persönliche Beratung" data-tour="v2-consult">
             <div className="v2-consult-head">
               <span className="v2-consult-icon" aria-hidden="true">

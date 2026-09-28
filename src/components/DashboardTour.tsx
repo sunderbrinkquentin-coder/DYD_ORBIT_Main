@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { readingDurationMs, TourAutoplayBar, TourAutoplayToggle, TourDemoToast, TourStepDots, useTourAutoplay } from "./tourAutoplay";
+import { useTourSpotlight } from "./tourSpotlight";
 
 /**
  * Gefuehrter Rundgang durch das Dashboard, ueber den Button "🎓 Rundgang
@@ -9,23 +10,34 @@ import { readingDurationMs, TourAutoplayBar, TourAutoplayToggle, TourDemoToast, 
  * erscheint eine Karte mit kurzer Erklaerung. Wechselt bei Bedarf selbst
  * den Tab (z.B. fuer die Kurse/Reports-Schritte).
  *
- * Bewusst ohne externe Tour-Bibliothek (Intro.js o.ae.) gebaut, um keine
- * zusaetzliche Abhaengigkeit ins schlanke Frontend (nur react/react-dom)
- * zu ziehen.
+ * Ueberarbeitung 28.09.2026:
+ *  - Lesbarkeit: Das hervorgehobene Element wird nicht mehr abgedunkelt
+ *    (gemeinsame Spotlight-Logik in tourSpotlight.ts, siehe Kommentar dort).
+ *  - Texte gekuerzt und auf den aktuellen Stand gebracht (Website-Suche,
+ *    Kurs per Link, Beratungswunsch, mehrere Kurse je Lead); je Schritt ein
+ *    eigener Nutzen-Satz wie in der Journey-Tour.
+ *  - Ein Klick auf die abgedunkelte Flaeche beendet die Tour nicht mehr
+ *    versehentlich (Beenden ueber ×, "Beenden" oder Esc).
+ *
+ * WICHTIG: Die Selektoren '[data-tour="kurse-manual-form"]',
+ * '[data-tour="kurse-csv-import"]' und '[data-tour="kurse-url-import"]'
+ * steuern in DashboardPage.tsx das Einblenden der Beispieldaten
+ * (tourStepSelector) — sie muessen als erster Selektor exakt so bleiben.
  */
 
 export type DashboardTab = "leads" | "kurse" | "reports";
 
 interface TourStep {
   tab: DashboardTab;
-  /** CSS-Selector fuer das hervorzuhebende Element, oder null fuer einen
-   *  zentrierten Schritt ohne Spotlight (Intro/Abschluss). */
-  selector: string | null;
+  /** Ziel-Selektoren in Prioritaet (erster sichtbarer Treffer), oder null
+   *  fuer einen zentrierten Schritt ohne Spotlight (Intro/Abschluss). */
+  selector: string[] | null;
   title: string;
   description: string;
-  /** Optionaler, rein simulierter "Live-Hinweis" (siehe tourAutoplay.tsx) —
-   *  blendet kurz ein, waehrend die automatische Wiedergabe diesen Schritt
-   *  zeigt. Erzeugt nichts Echtes, nur fuers Bild bei einer Aufzeichnung. */
+  /** Nutzen fuer den Bildungstraeger, optisch abgesetzt (.tour-benefit). */
+  benefit?: string;
+  /** Optionaler, rein simulierter "Live-Hinweis" waehrend der automatischen
+   *  Wiedergabe (siehe tourAutoplay.tsx). Erzeugt nichts Echtes. */
   demoEvent?: string;
 }
 
@@ -35,168 +47,159 @@ const STEPS: TourStep[] = [
     selector: null,
     title: "Willkommen im DYD ORBIT Dashboard",
     description:
-      "Ein ausführlicherer Rundgang durch alle Abschnitte des Dashboards — mit den Hintergründen, nicht nur den Klicks. Du kannst jederzeit mit „Beenden“ aussteigen und über den Button oben rechts wieder einsteigen. Tipp für eine Bildschirmaufzeichnung: „▶ Automatisch abspielen“ oben rechts in dieser Karte lässt den Rundgang von selbst weiterlaufen, ganz ohne eigenes Klicken.",
+      "In gut zwei Minuten durch Leads, Kurse und Reports. Mit „Weiter“ oder den Pfeiltasten blättern, mit „Beenden“ oder Esc jederzeit aussteigen.",
+    benefit: "Für eine Bildschirmaufnahme: „▶ Automatisch abspielen“ lässt den Rundgang von selbst laufen.",
   },
   {
     tab: "leads",
-    selector: '[data-tour="tenant-block"]',
-    title: "Whitelabel-Branding",
+    selector: ['[data-tour="tenant-block"]'],
+    title: "Deine Marke im Dashboard",
     description:
-      "DYD bleibt als Hauptmarke sichtbar, das Logo und der Name des jeweiligen Bildungsträgers erscheinen direkt darunter — „Ingredient Branding“. Hintergrund: jeder Mandant bekommt so ein eigenes, auf ihn zugeschnittenes Dashboard, ohne dass DYD dafür eine eigene Instanz pro Kunde betreiben muss — Mandanten-Trennung läuft komplett über den API-Key.",
+      "Logo und Name deines Hauses stehen direkt unter DYD ORBIT. Jeder Bildungsträger sieht ausschließlich seine eigenen Daten – getrennt über den eigenen API-Key.",
+    benefit: "Whitelabel ohne eigene Instanz: du startest sofort mit deinem Branding.",
   },
   {
     tab: "leads",
-    selector: '[data-tour="nav"]',
-    title: "Drei Tabs",
+    selector: ['[data-tour="nav"]'],
+    title: "Leads, Kurse, Reports",
     description:
-      "Leads zeigt eingehende Interessenten, Kurse verwaltet den eigenen Kurskatalog (inkl. drei verschiedener Wege, Kurse anzulegen), Reports fasst alle Kennzahlen zusammen. „Matching“ ist bewusst als vierter Tab schon sichtbar, aber noch nicht aktiv — folgt später.",
+      "Leads zeigt die Anfragen aus der Journey, Kurse deinen Katalog, Reports die Auswertungen. „Matching“ ist bereits sichtbar und folgt später.",
   },
   {
     tab: "leads",
-    selector: '[data-tour="tile-row-leads"]',
+    selector: ['[data-tour="tile-row-leads"]'],
     title: "Kennzahlen auf einen Blick",
     description:
-      "Anzahl der Tests, identifizierte Skill-Gaps, ausgesprochene Kursempfehlungen und tatsächlich gebuchte Weiterbildungen. Wichtig: „Tests“ zählt JEDEN abgeschlossenen Skill-Check aus der Journey mit, auch wenn die Person danach abspringt und nie ein Kontaktformular abschickt — so siehst du auch die Abbrecher, nicht nur die fertigen Leads.",
-    demoEvent: "🆕 Neuer Lead eingegangen — Sofia K., Zielrolle: Data Analyst",
+      "Abgeschlossene Tests, erkannte Skill-Gaps, vorgeschlagene und gebuchte Weiterbildungen. „Tests“ zählt auch Personen, die danach keine Anfrage abgeschickt haben.",
+    benefit: "So siehst du nicht nur fertige Leads, sondern auch, wie viele unterwegs abspringen.",
+    demoEvent: "🆕 Neuer Lead eingegangen — Zielrolle: Fachkraft für Lagerlogistik",
   },
   {
     tab: "leads",
-    selector: '[data-tour="lead-list"]',
-    title: "Qualifizierte Leads",
+    selector: ['[data-tour="lead-list"]'],
+    title: "Deine Leads",
     description:
-      "Jeder Lead zeigt Zielrolle, Match-Status und Kontaktdaten — alle verlinkten Weiterbildungen direkt auf der Kachel, nicht erst nach dem Öffnen. Ein Klick auf die Kachel zeigt weitere Details: Bearbeiter zuweisen, Beratungsgespräch anfragen, Kurse nachträglich ändern, die im Journey-„Präferenzen“-Schritt genannten Rahmenbedingungen (Beschäftigungsart/Arbeitsort/Wunschstart/Förderung) sowie einen eigenen „Datenschutz“-Bereich: dort steht der DSGVO-Einwilligungsnachweis (wann/welcher Text) und ein „Lead endgültig löschen“-Button für das Recht auf Löschung (Art. 17 DSGVO). Sobald die Buchung im eigenen System erfolgt ist, markierst du sie hier manuell — das speist die Kennzahl „Gebuchte Weiterbildungen“. Über den Bereich/die Branche des empfohlenen Kurses lässt sich die Liste außerdem gezielt filtern (siehe Filterleiste oben) — praktisch, um z.B. nur Leads für „IT“ oder „Wirtschaft & Verwaltung“ zu sehen.",
-    demoEvent: "✅ Lead automatisch qualifiziert — Match 88 %",
+      "Jede Kachel zeigt Ziel, Match, Kontakt und alle angefragten Kurse. „Beratungsgespräch angefragt“ erscheint, wenn die Person den Beratungs-Haken gesetzt hat – mit „Vereinbart“ und „Durchgeführt“ zum Abhaken. Filter nach Zeitraum, Kategorie und Bereich stehen oben.",
+    benefit: "Die Notiz aus der Journey (Situation, Prioritäten, Hürden) liegt direkt am Lead – dein Rückruf startet nicht bei null.",
+    demoEvent: "📞 Beratungsgespräch angefragt",
   },
   {
     tab: "leads",
-    selector: '[data-tour="leads-manual-form"]',
+    selector: ['[data-tour="leads-manual-form"]'],
     title: "Lead manuell anlegen",
     description:
-      "Für Tests/Demos, ohne die Journey selbst durchzuklicken: Profil-Text und Zielrolle reichen für den Match. Zusätzlich lassen sich hier gleich alle interessanten oder bereits gebuchten Weiterbildungen als Kacheln auswählen (mit Suche ab 6+ Kursen) und der Lead optional direkt als „bereits gebucht“ markieren.",
+      "Für Anfragen per Telefon oder Messe: Profiltext und Zielrolle reichen für den Match. Interessante oder bereits gebuchte Kurse lassen sich direkt verknüpfen.",
   },
   {
     tab: "kurse",
-    selector: '[data-tour="kurse-manual-form"]',
-    title: "Kurse anlegen — drei Wege",
+    selector: [".catalog-hero"],
+    title: "Neue Kurse auf Ihrer Website finden",
     description:
-      // Round 24: die ausführliche Bereichs-Erklärung, die hier vorher stand,
-      // ist jetzt beim eigenen "Bereich"-Schritt weiter unten (siehe dort) —
-      // dieser Schritt bleibt bewusst kurz gefasst als reiner Überblick über
-      // die drei Anlage-Wege, statt den Bereich hier schon vorwegzunehmen,
-      // ohne ihn an dieser Stelle hell hervorzuheben.
-      "Drei Wege zum selben Ziel, gleich unten im Detail: von Hand eintragen, per CSV-Liste importieren, oder direkt von der eigenen Website importieren. Gemeinsamer Kern aller drei: ohne Skill-Zuordnung erscheint ein Kurs NIE als persönliche Empfehlung in der Journey — das Matching kennt nur Skills, keine Kurstitel. Hier zunächst die manuelle Eingabe: Kurs-ID, Name, Anbieter, Dauer, Zielrolle(n).",
+      "Einmal die Adresse deiner Kursübersicht hinterlegen, danach reicht ein Klick: ORBIT durchsucht deine Website und zeigt neue Kurse als Vorschläge. Gespeichert wird nichts automatisch – du prüfst jeden Kurs selbst.",
+    benefit: "Dein Katalog bleibt aktuell, ohne jeden neuen Kurs von Hand abzutippen.",
+    demoEvent: "🔎 2 neue Kurse auf der Website gefunden",
   },
   {
     tab: "kurse",
-    selector: '[data-tour="kurse-pricing-fields"]',
+    selector: ['[data-tour="kurse-manual-form"]'],
+    title: "Kurs von Hand anlegen",
+    description:
+      "Name, Anbieter, Dauer, Beschreibung und Buchungslink. Entscheidend sind die Skills: Ohne Skill-Zuordnung erscheint ein Kurs nie als persönliche Empfehlung.",
+  },
+  {
+    tab: "kurse",
+    selector: ['[data-tour="kurse-pricing-fields"]'],
     title: "Preis, Förderung & Abschluss",
     description:
-      "Orientiert an den echten Datenmodellen deutscher IHK-Bildungszentren (Unterrichtseinheiten à 45 Min. statt Stunden, AZAV-Maßnahmenummer als Förderfähigkeits-Nachweis, die vier üblichen Abschlussarten inkl. DQR-Niveau, mehrere gleichzeitig mögliche Förderkanäle wie Bildungsgutschein oder Aufstiegs-BAföG). Alles optional — aber jedes ausgefüllte Feld erscheint direkt auf der Kurskarte in der Journey und fließt zusätzlich als eigene Präferenz-Dimension ins Matching ein (wer „Förderung wichtig“ angibt, bekommt geförderte Kurse bevorzugt einsortiert).",
+      "Preis, Unterrichtseinheiten, AZAV-Maßnahmenummer, Förderwege (z. B. Bildungsgutschein, Aufstiegs-BAföG) und Abschlussart. Alles optional – jedes Feld erscheint auf der Kurskarte in der Journey.",
+    benefit: "Mit gepflegter Förderung zeigt die Journey Interessierten konkret, wie sie an den Bildungsgutschein kommen.",
   },
   {
     tab: "kurse",
-    selector: '[data-tour="kurse-skill-suggest"]',
+    selector: ['[data-tour="kurse-skill-suggest"]'],
     title: "Skills automatisch erkennen",
     description:
-      "Zwei Erkennungs-Stufen aus derselben Kursbeschreibung: die schnelle, kostenlose Fuzzy-Erkennung läuft automatisch im Hintergrund; „🤖 Skills per KI vertiefen“ liest zusätzlich inhaltlich gegen die Kern-Skills der ausgewählten Zielrolle(n) — findet auch umschriebene Skills, die die schnelle Erkennung verpasst, braucht dafür aber eine gewählte Zielrolle. Beides liefert nur Vorschläge zum Prüfen („Alle übernehmen“ oder einzeln per „✓“/„×“) — nichts wird automatisch als Skill gesetzt.",
-    demoEvent: "🤖 3 Skills automatisch erkannt: SQL, Power BI, Excel",
+      "Aus der Kursbeschreibung schlägt ORBIT passende Skills vor; die KI-Vertiefung findet auch umschriebene Inhalte. du übernimmst jeden Vorschlag selbst mit ✓ oder verwirfst ihn mit ×.",
+    demoEvent: "🤖 3 Skills erkannt: Lagerorganisation, SAP, Bestandsmanagement",
   },
   {
     tab: "kurse",
-    selector: '[data-tour="kurse-handbook-upload"]',
-    title: "Modulhandbuch statt Beschreibung",
+    selector: ['[data-tour="kurse-handbook-upload"]'],
+    title: "Modulhandbuch hochladen",
     description:
-      "Alternative zur kurzen Kursbeschreibung: ein ganzes Modulhandbuch oder Kursplan als PDF/DOCX/TXT hochladen. Auch bei sehr großen Dateien vollständig ausgewertet — die Skill-Erkennung durchsucht das komplette Dokument parallel in Abschnitten statt nur einen gekürzten Ausschnitt zu lesen. Praktisch, wenn ein Kurs bereits eine ausführliche offizielle Beschreibung hat, die nicht nochmal von Hand zusammengefasst werden soll.",
+      "Statt einer Kurzbeschreibung ein ganzes Modulhandbuch als PDF, DOCX oder TXT hochladen. Die Skill-Erkennung liest das komplette Dokument.",
   },
   {
-    // Round 24 ("wenn Bereich vorgestellt werden, müssen die auch so hell
-    // sein wie die anderen — das klappt in der Dashboardtour noch nicht
-    // ganz"): dieses Feld wurde bisher NIE gespotlightet, obwohl der
-    // "Kurse anlegen"-Schritt es textlich als besonders wichtig hervorhob —
-    // jetzt ein eigener, ebenso hell hervorgehobener Schritt wie Preis/
-    // Skill-Erkennung/Modulhandbuch davor.
     tab: "kurse",
-    selector: '[data-tour="kurse-bereich-picker"]',
+    selector: ['[data-tour="kurse-bereich-picker"]'],
     title: "Bereich zuordnen",
     description:
-      "Genauso wichtig wie die Skills: der Bereich/die Branche (z.B. „IT“, „Wirtschaft & Verwaltung“, „Handwerk“) — ein Pflichtfeld, weil er direkt entscheidet, ob dieser Kurs auch Personen erreicht, die ihre Zielrolle noch nicht kennen und in der Journey stattdessen nur einen Bereich auswählen (siehe „Passende Rolle vorschlagen“ in der Journey-Tour). Mehrere Bereiche pro Kurs sind möglich. Ohne Bereich verpasst du genau diese Zielgruppe — die Kachel bleibt für sie in der Bereichsauswahl unsichtbar.",
-    demoEvent: "🧭 Bereich zugeordnet: Wirtschaft & Verwaltung",
+      "Pflichtfeld: Der Bereich (z. B. IT & Technik oder Logistik & Verkehr) entscheidet, ob ein Kurs Personen erreicht, die in der Journey nur eine Branche statt eines Berufs wählen. Mehrere Bereiche sind möglich.",
+    benefit: "Ohne Bereich bleibt ein Kurs für genau diese Zielgruppe unsichtbar.",
+    demoEvent: "🧭 Bereich zugeordnet: Logistik & Verkehr",
   },
   {
     tab: "kurse",
-    selector: '[data-tour="kurse-csv-import"]',
-    title: "Kurse per CSV importieren",
+    selector: ['[data-tour="kurse-csv-import"]'],
+    title: "Viele Kurse per CSV",
     description:
-      "Mehrere Kurse auf einmal aus einer Excel-/CSV-Liste anlegen — Spalten werden per Dropdown den eigenen Feldern zugeordnet, es wird also kein festes Format vorausgesetzt. Bringt die Datei eine Beschreibungs-Spalte mit, ermittelt derselbe automatische Abgleich passende Skills je Kurs — als Vorschläge, die du vor dem eigentlichen Import noch prüfst und bei Bedarf per „×“ entfernst. Fehlende Skills lassen sich jederzeit später über „✎ Bearbeiten“ ergänzen.",
+      "Eine Excel- oder CSV-Liste hochladen und die Spalten per Auswahl zuordnen – kein festes Format nötig. Aus der Beschreibungs-Spalte werden Skills vorgeschlagen, die du vor dem Import prüfst.",
   },
   {
     tab: "kurse",
-    selector: '[data-tour="kurse-url-import"]',
-    title: "Kurse per URL importieren",
+    selector: ['[data-tour="kurse-url-import"]'],
+    title: "Kurs per Link importieren",
     description:
-      "Dritter Weg, wenn Kurse schon auf der eigenen Website stehen: entweder die Domain eingeben (durchsucht automatisch die sitemap.xml nach Kurs-Seiten) oder direkt eine einzelne Kurs-URL einfügen. Eine KI liest Preis, Förderung, Dauer, Abschlussart und Co. aus der echten Seite heraus — mit eingebauter Absicherung gegen Halluzination: kritische Felder werden nur übernommen, wenn die KI ein wörtliches Belegzitat von der Seite liefert, sonst bleibt das Feld leer. Nichts wird automatisch gespeichert: jeder gefundene Kurs landet als Entwurf im Formular oben, den du vor „Kurs speichern“ selbst prüfst.",
+      "Eine einzelne Kursseite einfügen: Eine KI liest Preis, Förderung, Dauer und Abschluss aus. Kritische Angaben werden nur mit wörtlichem Beleg von der Seite übernommen, sonst bleibt das Feld leer.",
+    benefit: "Du prüfst den Entwurf im Formular und speicherst erst dann – nichts landet ungeprüft im Katalog.",
   },
   {
     tab: "kurse",
-    selector: '[data-tour="kurse-catalog"]',
-    title: "Kurskatalog pflegen",
+    selector: ['[data-tour="kurse-catalog"]'],
+    title: "Dein Kurskatalog",
     description:
-      "Hier siehst du alle angelegten Kurse — egal auf welchem der drei Wege angelegt — inklusive Preis/UE/Förderfähig-Badges, und markierst einzelne als „Top“: die erscheinen dann zusätzlich zur individuellen Empfehlung in der Endnutzer-Journey, unabhängig vom persönlichen Skill-Match. Skills lassen sich hier jederzeit über „✎ Bearbeiten“ nachträglich prüfen oder ergänzen. Der Bereich steht bei jedem Kurs bewusst ganz oben auf der Kachel als eigene, farbige Kennzeichnung — nicht als beiläufige Randnotiz — damit auf einen Blick klar ist, welcher Branche ein Kurs zugeordnet ist, und Altkurse ohne Bereich sofort als nachpflegebedürftig auffallen.",
+      "Alle Kurse mit Bereich, Preis und Förderhinweisen. Hinweise wie „Kein Bereich zugeordnet“ zeigen sofort, wo nachgepflegt werden sollte. „Top“ markiert Kurse, die in der Journey zusätzlich hervorgehoben werden.",
     demoEvent: "⭐ Kurs als Top-Empfehlung markiert",
   },
   {
-    // Bugfix (18.09.): war ".banner-quickpick" (Klassen-Selektor, traf
-    // irgendein Vorkommen im DOM — im schlechtesten Fall eine ausgegraute
-    // ".past"-Kurskachel). Jetzt ein eigener data-tour-Anker, den
-    // DashboardPage.tsx bewusst nur auf die ERSTE Kachel setzt, die dank
-    // courseCatalogSorted (aktive Kurse zuerst) zuverlässig ein aktiver,
-    // voll sichtbarer Kurs ist, falls einer existiert.
     tab: "kurse",
-    selector: '[data-tour="kurse-banner-quickpick"]',
-    title: "Konversions-Banner direkt auf der Kachel",
+    selector: ['[data-tour="kurse-banner-quickpick"]'],
+    title: "Banner direkt auf der Kachel",
     description:
-      "Ohne den Kurs erst zu bearbeiten: Start-Datum und verbleibende Plätze eintragen oder einen eigenen Text wählen — daraus entstehen automatisch Banner wie „Startet in Kürze“ oder „Nur noch wenige Plätze“, die der Nutzer später in der Journey sieht. Bewusst nur aus echten, hier gepflegten Werten berechnet, nie frei erfunden — ein Kurs ohne Start-Datum zeigt schlicht kein Banner.",
+      "Start-Datum und freie Plätze eintragen – daraus entstehen Banner wie „Startet in Kürze“ oder „Nur noch wenige Plätze“. Sie beruhen immer auf deinen echten Werten, ohne Start-Datum gibt es kein Banner.",
   },
   {
     tab: "reports",
-    selector: '[data-tour="tile-row-reports"]',
+    selector: ['[data-tour="tile-row-reports"]'],
     title: "Report-Kennzahlen",
-    description:
-      "Neue Leads, durchschnittlicher Match-Score, qualifizierte Leads und Conversion-Rate im Überblick — dieselben Rohdaten wie im Leads-Tab, hier aber als Trend über die Zeit statt als Einzel-Kacheln.",
+    description: "Neue Leads, durchschnittlicher Match, qualifizierte Leads und Conversion – als Entwicklung über die Zeit.",
   },
   {
     tab: "reports",
-    selector: '[data-tour="report-skill-gaps"]',
+    selector: ['[data-tour="report-skill-gaps"]'],
     title: "Größte Skill-Gaps",
     description:
-      "Die Skills, die Nutzern am häufigsten fehlen — zugleich ein Signal, wofür am meisten Nachfrage besteht. Gute Grundlage für neue Kursangebote: fehlt hier ein Skill, für den es im eigenen Katalog noch gar keinen passenden Kurs gibt, ist das ein sehr konkreter Hinweis, was sich lohnen würde. Auch hier lässt sich die Auswertung über die Filterleiste gezielt auf einen Zeitraum oder Bereich eingrenzen, statt immer alle Daten auf einmal zu sehen.",
-    demoEvent: "📊 Größter Skill-Gap aktualisiert: Cloud/DevOps",
+      "Die Kompetenzen, die Interessierten am häufigsten fehlen – filterbar nach Zeitraum und Bereich.",
+    benefit: "Fehlt für einen häufigen Gap ein Kurs in deinem Katalog, ist das ein konkreter Hinweis für neue Angebote.",
+    demoEvent: "📊 Größter Skill-Gap aktualisiert",
   },
   {
     tab: "reports",
-    selector: '[data-tour="report-top-courses"]',
+    selector: ['[data-tour="report-top-courses"]'],
     title: "Top-Kurse",
-    description:
-      "Die am häufigsten empfohlenen Kurse über alle Leads hinweg, nach Empfehlungshäufigkeit sortiert — zeigt, welche Kurse im eigenen Katalog tatsächlich am besten zu den ankommenden Zielrollen/Skill-Lücken passen, und je Bereich gefiltert auch, welche Branche bei dir am meisten Nachfrage erzeugt.",
+    description: "Deine am häufigsten empfohlenen Kurse – je Bereich gefiltert siehst du, welche Branche die meiste Nachfrage bringt.",
   },
   {
     tab: "reports",
     selector: null,
     title: "Das war der Rundgang",
     description:
-      "Du findest den Button „🎓 Rundgang starten“ jederzeit oben rechts wieder, falls du ihn nochmal brauchst — z.B. direkt vor einer Präsentation oder Bildschirmaufzeichnung. Beim erneuten Start läuft eine laufende automatische Wiedergabe wieder von vorne los.",
+      "Den Button „🎓 Rundgang starten“ findest du jederzeit oben rechts – praktisch direkt vor einer Präsentation oder Aufnahme.",
   },
 ];
 
-interface Rect {
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-}
-
+const CARD_WIDTH = 380;
 const PAD = 10;
-const CARD_WIDTH = 360;
 
 interface DashboardTourProps {
   open: boolean;
@@ -204,29 +207,26 @@ interface DashboardTourProps {
   activeTab: DashboardTab;
   onChangeTab: (tab: DashboardTab) => void;
   /**
-   * Meldet den Selector des gerade aktiven Schritts nach oben (null, wenn die
-   * Tour geschlossen ist oder der Schritt keinen Selector hat, z.B. Intro/
-   * Abschluss). DashboardPage.tsx nutzt das u.a., um beim Kurse-Schritt
-   * Beispieldaten ins Formular bzw. den CSV-Import einzublenden — rein zur
-   * Anschauung, es wird dabei nichts an die API geschickt.
+   * Meldet den (ersten) Selector des gerade aktiven Schritts nach oben (null,
+   * wenn die Tour geschlossen ist oder der Schritt keinen Selector hat).
+   * DashboardPage.tsx blendet damit u.a. beim Kurse-Schritt Beispieldaten ein
+   * — rein zur Anschauung, es wird dabei nichts an die API geschickt.
    */
   onStepChange?: (selector: string | null) => void;
 }
 
 export function DashboardTour({ open, onClose, activeTab, onChangeTab, onStepChange }: DashboardTourProps) {
   const [stepIndex, setStepIndex] = useState(0);
-  const [rect, setRect] = useState<Rect | null>(null);
-  const pulsedElRef = useRef<Element | null>(null);
-  // Automatische Wiedergabe (NEU, 18.09. — siehe tourAutoplay.tsx): rein
-  // clientseitiger An/Aus-Schalter, ausschliesslich fuers Bild bei einer
-  // Bildschirmaufzeichnung, kein Einfluss auf echte Daten.
   const [autoplay, setAutoplay] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Karte einklappen (v. a. auf schmalen Screens), damit das hervorgehobene
+  // Element komplett sichtbar ist. Bleibt ueber die Schritte hinweg bestehen.
+  const [collapsed, setCollapsed] = useState(false);
 
   const step = STEPS[stepIndex];
   const isLast = stepIndex === STEPS.length - 1;
   const isFirst = stepIndex === 0;
 
-  // Beim Öffnen immer bei Schritt 1 starten, Automatik zurücksetzen.
   useEffect(() => {
     if (open) {
       setStepIndex(0);
@@ -234,27 +234,14 @@ export function DashboardTour({ open, onClose, activeTab, onChangeTab, onStepCha
     }
   }, [open]);
 
-  // Läuft der letzte Schritt, bleibt die Automatik bewusst auf der
-  // Abschluss-Karte stehen statt die Tour selbst zu schliessen — bei einer
-  // Aufzeichnung soll Quentin selbst entscheiden, wann er "Fertig" klickt.
   const autoplayProgress = useTourAutoplay(
     autoplay && open && !isLast,
     stepIndex,
-    readingDurationMs(step.description),
+    readingDurationMs(step.description + (step.benefit ?? "")),
     () => setStepIndex((i) => Math.min(i + 1, STEPS.length - 1)),
   );
 
-  /** Bugfix (14.09., "die Kachel von der Rundtour ist hinter den Infos, die
-   *  muss irgendwo am Rand stehen, sodass man beides immer sieht" — siehe
-   *  identischer Kommentar in JourneyTour.tsx): ab einer gewissen
-   *  Fensterbreite (Media Query bei .tour-card-dock in dashboard.css) dockt
-   *  die Karte seitlich am rechten Rand statt unten mittig, UND ".main"
-   *  bekommt per Body-Klasse echten zusaetzlichen Platz auf der rechten Seite
-   *  (das Dashboard-Inhaltsraster wird dadurch tatsaechlich schmaler/nach
-   *  links verschoben, nicht nur ueberlagert) — bei einem inhaltsreichen
-   *  Schritt wie dem Kurskatalog verdeckt die Karte dadurch nie mehr Teile
-   *  des echten, hervorgehobenen Inhalts. Auf schmalen Bildschirmen bleibt
-   *  das bisherige Verhalten (unten mittig, keine Verschiebung) unveraendert. */
+  // Seitlicher Platz fuer die Karte (siehe .dashboard-tour-open .main im CSS).
   useEffect(() => {
     document.body.classList.toggle("dashboard-tour-open", open);
     return () => {
@@ -263,7 +250,7 @@ export function DashboardTour({ open, onClose, activeTab, onChangeTab, onStepCha
   }, [open]);
 
   useEffect(() => {
-    onStepChange?.(open ? step.selector : null);
+    onStepChange?.(open && step.selector ? step.selector[0] : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, stepIndex]);
 
@@ -273,97 +260,9 @@ export function DashboardTour({ open, onClose, activeTab, onChangeTab, onStepCha
     if (step.tab !== activeTab) onChangeTab(step.tab);
   }, [open, stepIndex, step.tab, activeTab, onChangeTab]);
 
-  // Zielelement erst messen, sobald der richtige Tab aktiv ist (nach obigem
-  // Wechsel rendert die Elternkomponente neu, dieser Effekt läuft dann erneut
-  // mit aktualisiertem activeTab).
-  useEffect(() => {
-    if (!open) return;
-    if (step.tab !== activeTab) return;
+  const rect = useTourSpotlight(open && step.tab === activeTab, step.selector, stepIndex, cardRef);
 
-    if (pulsedElRef.current) {
-      pulsedElRef.current.classList.remove("tour-pulse-target", "tour-highlight-active");
-      pulsedElRef.current = null;
-    }
-
-    if (!step.selector) {
-      setRect(null);
-      return;
-    }
-
-    const raf = requestAnimationFrame(() => {
-      const el = document.querySelector(step.selector as string);
-      if (!el) {
-        setRect(null);
-        return;
-      }
-      // Zielt der Schritt auf ein eingeklapptes <details> ODER liegt einfach
-      // INNERHALB eines eingeklappten <details> (z.B. die Felder "Preis",
-      // "Skills automatisch erkennen", "Modulhandbuch" und "Bereich
-      // zuordnen" — alle vier liegen im selben "Kurs manuell anlegen"-
-      // <details>), klappt die Tour es auf — sonst waere im Spotlight gar
-      // nichts zu sehen (ein Kind eines geschlossenen <details> hat keine
-      // Layout-Box, getBoundingClientRect() liefert 0/0/0/0, das Spotlight
-      // rendert dadurch als kaputtes Mini-Rechteck an einer Zufallsposition).
-      //
-      // Bugfix (18.09., "Schritt 8 bis 11 ... ist falsch formatiert"): die
-      // bisherige Pruefung oeffnete NUR ein <details>, wenn es SELBST das
-      // Rundgang-Ziel war (z.B. der "Kurse anlegen"-Schritt) — ein <details>,
-      // das nur zufaellig ein VORFAHRE des eigentlichen Ziels ist (z.B. beim
-      // Kurs-Anlegen ein Feld anspringen OHNE vorher ueber den "Kurse
-      // anlegen"-Schritt zu gehen, etwa per Klick auf einen Fortschritts-Punkt
-      // oder beim erneuten Oeffnen der Tour), wurde nie geoeffnet. Jetzt wird
-      // die GESAMTE Vorfahrenkette nach geschlossenen <details> durchsucht,
-      // nicht nur das Zielelement selbst.
-      let detailsAncestor: HTMLElement | null = el instanceof HTMLElement ? el : null;
-      while (detailsAncestor) {
-        if (detailsAncestor instanceof HTMLDetailsElement && !detailsAncestor.open) {
-          detailsAncestor.open = true;
-          detailsAncestor.dispatchEvent(new Event("toggle", { bubbles: false }));
-        }
-        detailsAncestor = detailsAncestor.parentElement;
-      }
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      // kurz warten, bis der Scroll (grob) angekommen ist, dann messen, das
-      // Element DAUERHAFT (fuer die gesamte Dauer dieses Schritts) ueber das
-      // dunkle Overlay heben ("tour-highlight-active") + kurzen "Bounce"-Puls
-      // ausloesen ("tour-pulse-target", wird nach 550ms wieder entfernt -- nur
-      // die Animation endet, die Sichtbarkeit bleibt). Vorher wurde hier nur
-      // "tour-pulse-target" gesetzt UND nach 550ms wieder entfernt -- das war
-      // zugleich die einzige Klasse, die das Element ueber das Overlay hob,
-      // wodurch es danach wieder hinter dem Overlay verschwand, obwohl der
-      // Schritt noch aktiv war.
-      window.setTimeout(() => {
-        const r = el.getBoundingClientRect();
-        setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
-        el.classList.add("tour-highlight-active", "tour-pulse-target");
-        pulsedElRef.current = el;
-        window.setTimeout(() => el.classList.remove("tour-pulse-target"), 550);
-      }, 260);
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [open, stepIndex, step.tab, step.selector, activeTab]);
-
-  // Bei Resize/Scroll neu messen, solange ein Ziel hervorgehoben ist.
-  useEffect(() => {
-    if (!open || !step.selector) return;
-    function remeasure() {
-      const el = document.querySelector(step.selector as string);
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
-    }
-    window.addEventListener("resize", remeasure);
-    window.addEventListener("scroll", remeasure, true);
-    return () => {
-      window.removeEventListener("resize", remeasure);
-      window.removeEventListener("scroll", remeasure, true);
-    };
-  }, [open, step.selector]);
-
-  // Esc schließt den Rundgang; Pfeiltasten blättern. Ein manuelles
-  // Zurückblättern beendet die Automatik (siehe Kommentar am
-  // "← Zurück"-Button unten) — sonst würde der Timer kurz danach wieder
-  // ungefragt vorwärts springen.
+  // Esc schliesst, Pfeiltasten blaettern (Zurueck stoppt die Automatik).
   useEffect(() => {
     if (!open) return;
     function onKeyDown(e: KeyboardEvent) {
@@ -378,79 +277,48 @@ export function DashboardTour({ open, onClose, activeTab, onChangeTab, onStepCha
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
-  // Beim Schließen letzte Hervorhebung + Puls sauber entfernen.
-  useEffect(() => {
-    if (open) return;
-    if (pulsedElRef.current) {
-      pulsedElRef.current.classList.remove("tour-pulse-target", "tour-highlight-active");
-      pulsedElRef.current = null;
-    }
-  }, [open]);
-
   if (!open) return null;
 
   const highlightBox = rect
-    ? {
-        top: rect.top - PAD,
-        left: rect.left - PAD,
-        width: rect.width + PAD * 2,
-        height: rect.height + PAD * 2,
-      }
+    ? { top: rect.top - PAD, left: rect.left - PAD, width: rect.width + PAD * 2, height: rect.height + PAD * 2 }
     : null;
 
   return (
     <div className="tour-layer" role="dialog" aria-modal="true" aria-label="Geführter Rundgang">
-      <div className="tour-scrim" onClick={onClose} />
-      {highlightBox && (
-        <div
-          className="tour-spotlight"
-          style={{
-            top: highlightBox.top,
-            left: highlightBox.left,
-            width: highlightBox.width,
-            height: highlightBox.height,
-          }}
-        />
-      )}
-      {/* Bugfix (14.09., "Erklärfeld darf nie im Hintergrund sein und immer
-       *  gut sichtbar sein"): statt dynamisch ueber/unter dem jeweiligen
-       *  Zielelement zu schweben (konnte bei sehr hohen Zielen wie
-       *  kurse-catalog/lead-list ausserhalb des sichtbaren Bereichs landen,
-       *  siehe ausfuehrlicher Kommentar in dashboard.css bei .tour-card-dock)
-       *  jetzt IMMER an derselben festen Stelle (unten mittig) — identisches,
-       *  bereits bewaehrtes Muster wie in JourneyTour.tsx. */}
+      {/* Mit Spotlight durchsichtig (der Schatten des Spotlights dunkelt ab),
+          ohne Spotlight abgedunkelt. Ein Klick darauf beendet die Tour nicht. */}
+      <div className={`tour-scrim ${highlightBox ? "is-clear" : ""}`} />
+      {highlightBox && <div className="tour-spotlight" style={highlightBox} />}
       <TourDemoToast text={autoplay ? step.demoEvent : null} toastKey={stepIndex} />
-      <div className="tour-card tour-card-dock" style={{ width: CARD_WIDTH }}>
+      <div ref={cardRef} className={`tour-card tour-card-dock ${collapsed ? "is-collapsed" : ""}`} style={{ width: CARD_WIDTH }}>
         <div className="tour-card-head">
           <span className="tour-step-count">
             {stepIndex + 1} / {STEPS.length}
           </span>
-          <button className="tour-close" onClick={onClose} aria-label="Rundgang beenden" title="Beenden (Esc)">
-            ×
-          </button>
+          <span className="tour-head-btns">
+            <button
+              type="button"
+              className="tour-collapse"
+              onClick={() => setCollapsed((c) => !c)}
+              aria-expanded={!collapsed}
+              title={collapsed ? "Erklärung wieder anzeigen" : "Karte einklappen, um den Bereich ganz zu sehen"}
+            >
+              {collapsed ? "Text zeigen ▴" : "Einklappen ▾"}
+            </button>
+            <button className="tour-close" onClick={onClose} aria-label="Rundgang beenden" title="Beenden (Esc)">
+              ×
+            </button>
+          </span>
         </div>
-        {/* Rueckmeldung (19./20.09., "Beschreibung soll immer sichtbar sein,
-           egal in welchem Format man die Seite offen hat"): dieser mittlere
-           Block ist jetzt der EINZIGE Scroll-Container der Karte
-           (.tour-card-body, siehe dashboard.css) — Kopf oben und die
-           Weiter/Zurueck-Buttons unten (.tour-actions) liegen bewusst
-           AUSSERHALB und bleiben dadurch immer sichtbar, unabhaengig von der
-           Fensterhoehe. Titel+Beschreibung stehen hier ganz oben, sind also
-           auch bei wenig Platz als Erstes sichtbar. */}
+        {/* Einziger Scroll-Bereich der Karte — Kopf und Buttons bleiben immer sichtbar. */}
         <div className="tour-card-body">
-          {/* Eigene, auffällige Zeile statt im engen Kopf (siehe Kommentar an
-             TourAutoplayToggle in tourAutoplay.tsx) — vorher zwischen
-             Schrittzähler und ×-Button eingeklemmt und dadurch leicht zu
-             übersehen. */}
           <div className="tour-autoplay-row">
             <TourAutoplayToggle active={autoplay} onToggle={() => setAutoplay((a) => !a)} />
           </div>
           <TourAutoplayBar active={autoplay && !isLast} progress={autoplayProgress} />
           <h3 className="tour-title">{step.title}</h3>
           <p className="tour-desc">{step.description}</p>
-          {/* Klickbare Punkte statt reiner Anzeige (NEU, 18.09., "es soll
-             interaktiver sein") — direkter Sprung zu jedem Schritt, stoppt
-             dabei die Automatik wie ein manueller Zurück-Klick. */}
+          {step.benefit && <p className="tour-benefit">{step.benefit}</p>}
           <TourStepDots
             count={STEPS.length}
             currentIndex={stepIndex}
@@ -468,9 +336,6 @@ export function DashboardTour({ open, onClose, activeTab, onChangeTab, onStepCha
             <button
               className="tour-btn tour-btn-secondary"
               onClick={() => {
-                // Manuelles Zurückblättern beendet die Automatik (siehe
-                // Kommentar am ArrowLeft-Handler oben) — sonst würde der
-                // Timer kurz danach wieder ungefragt vorwärts springen.
                 setAutoplay(false);
                 setStepIndex((i) => Math.max(i - 1, 0));
               }}

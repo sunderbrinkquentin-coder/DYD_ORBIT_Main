@@ -1690,9 +1690,25 @@ export function JourneyPage({
    * Bedingung fuers Rendern des Panels statt IntroStep braucht knowsRole
    * explizit gesetzt). Wird nur mit Schluesseln aufgerufen, die laut
    * availableKeys im aktuell gültigen Pfad ohnehin vorkommen. */
-  function tourNavigate(key: StepKey) {
+  function tourNavigate(key: StepKey, sub?: string) {
     if (knowsRole === null) setKnowsRole(true);
     setCurrent(stepIndex(key));
+    // Rundgang-Vorschau: beim ersten Blick aufs Ergebnis die beiden obersten
+    // Kurse in die Anfrage legen (Mehrfach-Anfrage sichtbar). Erst hier, weil
+    // die Reihenfolge der Empfehlungen erst jetzt endgueltig feststeht.
+    if (isV2 && key === "v2ergebnis" && v2DemoSelectRef.current && v2ResultCards.length > 0) {
+      v2DemoSelectRef.current = false;
+      setSelectedCourseId(v2ResultCards[0].course.course_id);
+      setAdditionalCourseIds(new Set(v2ResultCards.slice(1, 2).map((c) => c.course.course_id)));
+    }
+    if (isV2) {
+      setV2TourView((prev) => ({
+        n: (prev?.n ?? 0) + 1,
+        richtung: sub === "schwerpunkt" ? "schwerpunkt" : "bereich",
+        ergebnis: sub === "contact" || sub === "plan" ? "contact" : "results",
+        plan: sub === "plan",
+      }));
+    }
   }
   /** Fuer JourneyTour: sorgt dafuer, dass beim Start des Rundgangs echte
    * Skill-Gap-/Kursergebnisse vorliegen, statt diese beiden Schritte einfach
@@ -1836,6 +1852,7 @@ async function runDemoAnalysis() {
    * weiterverwenden, statt neu zu rechnen. */
   function tourClose() {
     setTourOpen(false);
+    setV2TourView(null);
     demoRunIdRef.current++; // eine noch laufende Demo-Anfrage als ueberholt markieren
     if (!demoDataActiveRef.current) return;
     demoDataActiveRef.current = false;
@@ -1876,6 +1893,11 @@ async function runDemoAnalysis() {
     setV2Answers(new Map());
     setV2EvidenceRemoved(new Set());
     setBereichRole(null);
+    setV2PreselectedBereich(null);
+    setV2Situation(null);
+    setV2Priority(null);
+    setV2Hurdles(new Set());
+    v2DemoSelectRef.current = false;
     if (isV2) setCurrent(0);
   }
   // Zielrollen
@@ -2091,6 +2113,16 @@ async function runDemoAnalysis() {
   // Rundgang-Vorschau (v2): vorbereitetes Gap-Ergebnis, fuer das goToKurs()
   // laufen soll, sobald targetRoleId/bereichRole im State angekommen sind.
   const [v2DemoGap, setV2DemoGap] = useState<GapAnalysisResponse | null>(null);
+  // Rundgang: welche Unter-Ansicht gezeigt wird (Schwerpunkt-Stufe,
+  // Abschlussseite, persoenlicher Plan). n erzwingt ein erneutes Setzen.
+  const [v2TourView, setV2TourView] = useState<{
+    richtung?: "bereich" | "schwerpunkt";
+    ergebnis?: "results" | "contact";
+    plan?: boolean;
+    n: number;
+  } | null>(null);
+  // Rundgang: nach der Demo-Empfehlung zwei Kurse in die Anfrage legen.
+  const v2DemoSelectRef = useRef(false);
   const v2SchwerpunktRoleIds = useMemo(
     () => new Set(SCHWERPUNKTE.filter((sp) => v2Schwerpunkte.includes(sp.key)).flatMap((sp) => sp.role_ids)),
     [v2Schwerpunkte]
@@ -2425,6 +2457,16 @@ async function runDemoAnalysis() {
     setGapResult(built.result);
     setTestId(null);
     setCourseResult(null);
+    // Rahmen wie bei einer typischen Anfrage, damit auch Foerderweg,
+    // Prioritaet und Huerden im Ergebnis zu sehen sind.
+    setV2PreselectedBereich(bereich);
+    setV2Situation("arbeitsuchend");
+    setFundingPreference("gefoerdert");
+    setEmploymentType("vollzeit");
+    setDesiredStart("1-3-monate");
+    setV2Priority("abschluss");
+    setV2Hurdles(new Set<V2Hurdle>(["kosten", "zeit"]));
+    v2DemoSelectRef.current = true;
     setV2DemoGap(built.result);
   }
 
@@ -3926,6 +3968,7 @@ async function runDemoAnalysis() {
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isV2, courseResult, allCourses, careerGoal, v2Situation, employmentType, desiredStart, v2Direction, v2Plan, v2Answers, v2Role, activityIds, targetBereichLabel, rolesInPortfolio, bereichRole, v2SchwerpunktRoleIds]);
+
   /** Ergebnis, Weg ueber die Branche: realistische Berufe (Richtung) plus
    *  die Berufe, zu denen die empfohlenen Kurse fuehren — als Moeglichkeiten. */
   const v2Options = useMemo(() => {
@@ -4035,7 +4078,7 @@ async function runDemoAnalysis() {
             </>
           )}
           <div className="widget-body" ref={widgetBodyRef}>
-            {done && isV2 ? (
+            {(done || v2TourView?.plan) && isV2 ? (
               <V2PlanScreen
                 leadName={leadName}
                 goalLabel={GOAL_OPTIONS.find((g) => g.key === careerGoal)?.label ?? null}
@@ -4098,6 +4141,9 @@ async function runDemoAnalysis() {
                     offeredRoleIds={offeredRoleIds}
                     onConfirm={v2ApplyDirection}
                     onBack={() => setCurrent(stepIndex("v2herkunft"))}
+                    initialFocus={v2Schwerpunkte}
+                    forcePhase={v2TourView?.richtung}
+                    forceNonce={v2TourView?.n ?? 0}
                   />
                 )}
                 {stepKey === "v2check" &&
@@ -4209,6 +4255,8 @@ async function runDemoAnalysis() {
                     options={v2Options}
                     bereichLabel={v2SchwerpunktText || targetBereichLabel || null}
                     onAdjust={() => setCurrent(stepIndex("v2check"))}
+                    forceView={v2TourView?.ergebnis}
+                    forceNonce={v2TourView?.n ?? 0}
                     onBack={() => setCurrent(stepIndex("v2rahmen"))}
                   />
                 )}
@@ -4435,7 +4483,7 @@ async function runDemoAnalysis() {
           availableKeys={(isV2 ? steps.map((s) => s.key) : steps.map((s) => s.key).filter((k) => !k.startsWith("v2"))) as JourneyStepKey[]}
           hasGapResult={Boolean(gapResult)}
           hasCourseResult={Boolean(courseResult)}
-          onNavigate={(key) => tourNavigate(key as StepKey)}
+          onNavigate={(key, sub) => tourNavigate(key as StepKey, sub)}
           onEnsureDemoResults={isV2 ? runV2Demo : runDemoAnalysis}
           version={isV2 ? "v2" : "v1"}
         />
@@ -4685,7 +4733,7 @@ function V2GoalStep({
         title="Was soll sich für dich beruflich verändern?"
         description="Ein Tipp genügt – einen konkreten Beruf musst du nicht kennen, die Branche reicht. In wenigen Minuten bekommst du deine persönliche Weiterbildungs-Empfehlung, kostenlos und unverbindlich."
       />
-      <div className="role-grid">
+      <div className="role-grid" data-tour="v2-goals">
         {GOAL_OPTIONS.map((g) => (
           <div
             key={g.key}
@@ -4703,6 +4751,7 @@ function V2GoalStep({
       </div>
       <div
         className="method-switch"
+        data-tour="v2-known"
         onClick={onKnowTarget}
         role="button"
         tabIndex={0}
@@ -4753,7 +4802,10 @@ function V2HerkunftStep({
         description="Tipp einfach an – auch Aushilfsjobs, Praktika und Ehrenamt zählen. Du musst nichts schreiben."
       />
       {/* Abschluss zuerst: ein Tipp, leichter Einstieg in den Bildschirm. */}
-      <div style={{ marginBottom: "18px", padding: "13px 14px", borderRadius: "14px", border: "1px solid var(--border-soft)" }}>
+      <div
+        data-tour="v2-qualification"
+        style={{ marginBottom: "18px", padding: "13px 14px", borderRadius: "14px", border: "1px solid var(--border-soft)" }}
+      >
         <div className="field-label" style={{ marginBottom: "4px" }}>Dein höchster Abschluss</div>
         <div className="hint" style={{ marginBottom: "8px" }}>
           Damit zeigen wir dir realistische nächste Schritte – und die Förderungen, die für dich passen.
@@ -4774,7 +4826,9 @@ function V2HerkunftStep({
         </div>
       </div>
 
-      <ActivityChecklist activityIds={activityIds} setActivityIds={setActivityIds} />
+      <div data-tour="v2-activities">
+        <ActivityChecklist activityIds={activityIds} setActivityIds={setActivityIds} />
+      </div>
       {strengths > 0 && (
         <div
           aria-live="polite"
@@ -4786,6 +4840,7 @@ function V2HerkunftStep({
 
       <div
         className="method-switch"
+        data-tour="v2-cv"
         onClick={onUseCv}
         role="button"
         tabIndex={0}
@@ -4812,9 +4867,16 @@ function V2RichtungStep({
   offeredRoleIds,
   onConfirm,
   onBack,
+  initialFocus = [],
+  forcePhase,
+  forceNonce = 0,
 }: {
   /** Vorauswahl, z. B. aus "Nur Branche wählen" im Berufs-Schritt. */
   initialSelected?: string[];
+  /** Rundgang: vorausgewaehlte Schwerpunkte und erzwungene Stufe. */
+  initialFocus?: string[];
+  forcePhase?: "bereich" | "schwerpunkt";
+  forceNonce?: number;
   goal: string | null;
   activityIds: string[];
   bereicheOptions: BereichOption[];
@@ -4837,6 +4899,15 @@ function V2RichtungStep({
         .filter((g) => g.bereich && g.options.length >= 2),
     [selected, bereicheOptions, rolesInPortfolio, activityIds, offeredRoleIds]
   );
+  // Rundgang (28.09.2026): Stufe von aussen setzen (Bereich/Schwerpunkt).
+  useEffect(() => {
+    if (!forcePhase) return;
+    if (forcePhase === "schwerpunkt" && focusGroups.length > 0) {
+      setFocus(initialFocus.filter((k) => focusGroups.some((g) => g.options.some((o) => o.key === k))));
+      setPhase("schwerpunkt");
+    } else setPhase("bereich");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forcePhase, forceNonce]);
   function confirmBereich() {
     if (focusGroups.length === 0) {
       onConfirm(selected, []);
@@ -4952,18 +5023,20 @@ function V2RichtungStep({
         title={title}
         description="Wähle einen oder zwei Bereiche. Wo du schon Erfahrung mitbringst, siehst du am Häkchen."
       />
-      {withExperience.length > 0 && (
-        <>
-          <div className="field-label" style={{ marginBottom: "8px" }}>Passt zu deiner Erfahrung</div>
-          <div className="role-grid" style={{ marginBottom: "16px" }}>{withExperience.map(card)}</div>
-        </>
-      )}
-      {others.length > 0 && (
-        <>
-          {withExperience.length > 0 && <div className="field-label" style={{ marginBottom: "8px" }}>Weitere Bereiche</div>}
-          <div className="role-grid">{others.map(card)}</div>
-        </>
-      )}
+      <div data-tour="v2-bereiche">
+        {withExperience.length > 0 && (
+          <>
+            <div className="field-label" style={{ marginBottom: "8px" }}>Passt zu deiner Erfahrung</div>
+            <div className="role-grid" style={{ marginBottom: "16px" }}>{withExperience.map(card)}</div>
+          </>
+        )}
+        {others.length > 0 && (
+          <>
+            {withExperience.length > 0 && <div className="field-label" style={{ marginBottom: "8px" }}>Weitere Bereiche</div>}
+            <div className="role-grid">{others.map(card)}</div>
+          </>
+        )}
+      </div>
       <ActionsRow
         onBack={onBack}
         forwardLabel={selected.length > 0 ? "Passt – weiter →" : "Bereich wählen"}
@@ -5316,8 +5389,13 @@ function V2ErgebnisStep({
   bereichLabel,
   onAdjust,
   onBack,
+  forceView,
+  forceNonce = 0,
 }: {
   cards: { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean }[];
+  /** Rundgang: Ansicht von aussen setzen (Empfehlungen/Abschlussseite). */
+  forceView?: "results" | "contact";
+  forceNonce?: number;
   evidence: ActivityEvidence[];
   confirmedSkills: string[];
   /** Alle angefragten Kurse (Hauptkurs zuerst). */
@@ -5351,6 +5429,9 @@ function V2ErgebnisStep({
   // (-> consultation_requested, im Dashboard als "Beratungsgespräch angefragt").
   const [view, setView] = useState<"results" | "contact">(cards.length === 0 ? "contact" : "results");
   const [wantsConsult, setWantsConsult] = useState(cards.length === 0);
+  useEffect(() => {
+    if (forceView) setView(forceView);
+  }, [forceView, forceNonce]);
   const openDirection = options.length > 0;
   const [expanded, setExpanded] = useState<string | null>(null);
   const emailValid = EMAIL_RE.test(leadEmail.trim());

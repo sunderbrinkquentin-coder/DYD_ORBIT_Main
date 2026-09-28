@@ -1725,3 +1725,90 @@ export function attachTestRecommendation(
     body: JSON.stringify({ course_id: courseId, course_name: courseName }),
   });
 }
+// ---------- Branding je Bildungsträger (Edge Function "tenant-branding", 28.09.2026) ----------
+//
+// Logo und Corporate-Farben werden serverseitig am Mandanten gespeichert
+// (Tabelle tenant_branding) und von Dashboard UND Journey geladen. "detect"
+// liest Farb- und Logo-Vorschläge von der Website — gespeichert wird erst
+// nach Bestätigung per saveTenantBranding.
+
+export function tenantBrandingBaseUrl(apiBase: string): string {
+  return apiBase.replace(/\/functions\/v1\/api\/?$/, "/functions/v1/tenant-branding");
+}
+
+export interface TenantBranding {
+  tenant_id: string;
+  primary_color: string;
+  accent_color: string | null;
+  logo_url: string | null;
+  source_url: string | null;
+  updated_at: string;
+}
+
+export interface TenantBrandingSuggestion {
+  primary_color: string | null;
+  accent_color: string | null;
+  palette: string[];
+  logo_url: string | null;
+  logo_candidates: string[];
+  site_name: string | null;
+  notes: string[];
+}
+
+export interface TenantBrandingDetectResponse {
+  source_url: string;
+  stylesheets_read: number;
+  suggestion: TenantBrandingSuggestion;
+}
+
+async function brandingRequest<T>(base: string, apiKey: string, path: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${base.replace(/\/$/, "")}${path}`, {
+      ...init,
+      headers: { "Content-Type": "application/json", "X-API-Key": apiKey, ...(init?.headers ?? {}) },
+    });
+  } catch (err) {
+    console.error(`Branding ${path}: keine Antwort`, err);
+    throw new Error(
+      'Das Branding ist nicht erreichbar. Bitte Internetverbindung prüfen und ob die Edge Function "tenant-branding" deployt ist (Verify JWT aus).'
+    );
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    console.error(`Branding ${path} fehlgeschlagen (HTTP ${res.status})`, text);
+    if (res.status === 400 || res.status === 413 || res.status === 502) {
+      try {
+        const detail = (JSON.parse(text) as { detail?: unknown }).detail;
+        if (typeof detail === "string" && detail.length > 0 && detail.length < 300) throw new Error(detail);
+      } catch (e) {
+        if (e instanceof Error && !(e instanceof SyntaxError)) throw e;
+      }
+    }
+    if (res.status === 404 && path === "") {
+      throw new Error('Das Branding ist noch nicht eingerichtet (Edge Function "tenant-branding" fehlt).');
+    }
+    throw new Error(genericRequestError(res.status));
+  }
+  return res.json() as Promise<T>;
+}
+
+export function fetchTenantBranding(base: string, apiKey: string): Promise<{ branding: TenantBranding | null }> {
+  return brandingRequest(base, apiKey, "");
+}
+
+export function saveTenantBranding(
+  base: string,
+  apiKey: string,
+  payload: { primary_color: string; accent_color: string | null; logo_url: string | null; source_url?: string | null }
+): Promise<{ branding: TenantBranding }> {
+  return brandingRequest(base, apiKey, "", { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function resetTenantBranding(base: string, apiKey: string): Promise<{ branding: null }> {
+  return brandingRequest(base, apiKey, "", { method: "DELETE" });
+}
+
+export function detectTenantBranding(base: string, apiKey: string, url: string | null): Promise<TenantBrandingDetectResponse> {
+  return brandingRequest(base, apiKey, "/detect", { method: "POST", body: JSON.stringify(url ? { url } : {}) });
+}

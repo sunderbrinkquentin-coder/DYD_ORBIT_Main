@@ -107,7 +107,8 @@ function cacheKey(course: OrbitCourse): string {
   ].join("|");
 }
 
-function mapCourseCached(course: OrbitCourse, roles: CatalogRole[]): MappedCourse {
+/** Wie mapCourse, aber mit Zwischenspeicher (auch fuers Dashboard). */
+export function mapCourseCached(course: OrbitCourse, roles: CatalogRole[] = ROLES_CATALOG): MappedCourse {
   if (hasRoles(course) && hasSkills(course)) return course;
   const key = cacheKey(course);
   const hit = cache.get(key);

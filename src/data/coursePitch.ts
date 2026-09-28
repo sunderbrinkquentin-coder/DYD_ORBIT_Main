@@ -320,7 +320,9 @@ function fitLines(course: PitchCourse, ctx: PitchContext): string[] {
     out.push(days <= 14 ? `Start schon in ${days} Tag${days === 1 ? "" : "en"}${soon}` : `Start am ${formatDate(course.starts_at!)}${soon}`);
   }
   if (course.duration_weeks && course.duration_weeks > 0) {
-    out.push(course.duration_weeks >= 9 ? `Dauer ca. ${Math.round(course.duration_weeks / 4.33)} Monate` : `Dauer ${course.duration_weeks} Wochen`);
+    // Gleiche Einheit wie die Fakten-Zeile der Kurskarte ("10 Wochen") -
+    // vorher stand dort "10 Wochen" und hier "ca. 2 Monate" (29.09.2026).
+    out.push(`Dauer ${course.duration_weeks} Wochen`);
   }
   if (course.location_mode === "remote") out.push("Online – von zu Hause aus");
   else if (course.location_mode === "hybrid") out.push(course.location ? `Online und vor Ort in ${course.location}` : "Online und vor Ort");

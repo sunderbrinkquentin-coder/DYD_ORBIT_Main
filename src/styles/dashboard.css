@@ -4798,3 +4798,35 @@ button.course-skill-chip:disabled {
     display: none;
   }
 }
+
+/* URL-Import: Dauer-Varianten der Kursseite (28.09.2026) */
+.url-import-duration-variants {
+  margin-top: 8px;
+}
+.url-import-duration-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.url-import-duration-chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1.5px solid var(--blue-border);
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.url-import-duration-chip:hover {
+  border-color: var(--dyd-blue);
+}
+.url-import-duration-chip.active {
+  border-color: var(--dyd-mint-2);
+  background: var(--green-bg);
+  color: var(--green-text);
+}
+.url-import-duration-missing {
+  margin-top: 6px;
+}

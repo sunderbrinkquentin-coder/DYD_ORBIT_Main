@@ -73,7 +73,7 @@ import {
 import { guessExperienceLevel } from "../lib/skillLevel";
 import { matchSkills } from "../data/skillMatcher";
 import { listBereiche } from "../data/gapAnalysis";
-import { ROLES_CATALOG } from "../data/rolesCatalog";
+import { ROLES_CATALOG, SKILLS_CATALOG } from "../data/rolesCatalog";
 import { classifyCourse, splitLearningGoals, suggestBereiche, type Confidence as SuggestionConfidence } from "../data/courseClassifier";
 import { BereichBadges, CourseBadgeRow } from "../data/courseBadges";
 import { AnimatedNumber } from "../components/AnimatedNumber";
@@ -543,6 +543,13 @@ function suggestBereicheForText(title: string, description = ""): string[] {
   if (`${title} ${description}`.trim().length < MIN_DESCRIPTION_FOR_SKILL_DETECT) return [];
   return suggestBereiche(classifyCourse({ title, description, learningGoals: splitLearningGoals(description) }));
 }
+/** Klartext-Namen der Skills aus dem lokalen Katalog (28.09.2026): Die
+ *  automatische Skill-Erkennung legt Skills mit ihrer Katalog-ID ab (z.B.
+ *  "lagerorganisation"). Gespeichert wird nur die ID - beim spaeteren
+ *  Bearbeiten stand deshalb statt des Namens ein Platzhalter da. */
+const SKILL_LABEL_CACHE_KEY = "dyd-orbit-skill-labels";
+const CATALOG_SKILL_NAMES = new Map(SKILLS_CATALOG.map((s) => [s.skill_id, s.name] as const));
+
 /** Dauer-Felder des Kursformulars aus einem URL-Import (28.09.2026).
  *  Kein Wert gefunden -> leeres Feld (Pflichteingabe) statt Standardwert.
  *  Monate/Jahre werden als Monate angezeigt, alles andere in Wochen. */
@@ -1394,11 +1401,64 @@ export function DashboardPage({
   // covered_skill_uris nur rohe URIs sind) lesbare Chips angezeigt werden
   // koennen, sobald die passende Rolle einmal durchsucht wurde.
   const [courseSkillUris, setCourseSkillUris] = useState<Set<string>>(new Set());
-  const [skillLabelCache, setSkillLabelCache] = useState<Record<string, string>>({});
+  // Seit 28.09.2026 im Browser gemerkt (localStorage): Das Backend speichert
+  // am Kurs nur die Skill-URIs, keine Namen. Ohne gemerkten Cache fehlten die
+  // Namen nach jedem Neuladen (Platzhalter statt Skill-Name).
+  const [skillLabelCache, setSkillLabelCache] = useState<Record<string, string>>(() => {
+    try {
+      const raw = window.localStorage.getItem(SKILL_LABEL_CACHE_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return parsed && typeof parsed === "object" ? (parsed as Record<string, string>) : {};
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    try {
+      const entries = Object.entries(skillLabelCache);
+      const trimmed = entries.length > 5000 ? Object.fromEntries(entries.slice(-5000)) : skillLabelCache;
+      window.localStorage.setItem(SKILL_LABEL_CACHE_KEY, JSON.stringify(trimmed));
+    } catch {
+      // Speicher voll oder gesperrt: Namen werden dann wie bisher nachgeladen.
+    }
+  }, [skillLabelCache]);
   const [skillPickerRoleId, setSkillPickerRoleId] = useState("");
   const [skillPickerSkills, setSkillPickerSkills] = useState<RoleSkillStatus[]>([]);
   const [skillPickerLoading, setSkillPickerLoading] = useState(false);
   const [skillPickerError, setSkillPickerError] = useState<string | null>(null);
+  // Namen gespeicherter Skills werden beim Bearbeiten nachgeladen (siehe
+  // resolveCourseSkillLabels) — solange steht "wird geladen" statt eines
+  // Platzhalters.
+  const [skillLabelsLoading, setSkillLabelsLoading] = useState(false);
+  /** Klartext-Name eines Skills: erst aus dem Sitzungs-Cache (Rollen-Suche,
+   *  ESCO-Suche, Erkennung), dann aus dem lokalen Skill-Katalog. */
+  function skillLabelFor(uri: string): string | null {
+    return skillLabelCache[uri] ?? CATALOG_SKILL_NAMES.get(uri) ?? null;
+  }
+  /** Beim Bearbeiten eines gespeicherten Kurses: Namen fuer Skills nachladen,
+   *  die weder im Cache noch im lokalen Katalog stehen (ESCO-URIs). Dafuer
+   *  werden die Skill-Listen der am Kurs hinterlegten Zielrollen geladen —
+   *  genau das, was vorher per Hand ("Rolle einmal durchsuchen") noetig war. */
+  async function resolveCourseSkillLabels(uris: string[], roleIds: string[]) {
+    const missing = uris.filter((u) => !skillLabelCache[u] && !CATALOG_SKILL_NAMES.has(u));
+    if (missing.length === 0 || roleIds.length === 0 || !live) return;
+    setSkillLabelsLoading(true);
+    try {
+      const found: Record<string, string> = {};
+      for (const roleId of roleIds.slice(0, 4)) {
+        try {
+          const res = await fetchGapAnalysis(baseUrl, apiKey, { text: "", target_role_id: roleId, lang: ESCO_LANG });
+          for (const sk of [...res.covered_skills, ...res.gap_skills]) found[sk.esco_uri] = sk.preferred_label;
+        } catch (err) {
+          console.warn("[DashboardPage] Skill-Namen fuer Rolle nicht ladbar:", roleId, err);
+        }
+        if (missing.every((u) => found[u])) break;
+      }
+      if (Object.keys(found).length > 0) setSkillLabelCache((prev) => ({ ...found, ...prev }));
+    } finally {
+      setSkillLabelsLoading(false);
+    }
+  }
   // Automatische Skill-Erkennung aus der Kursbeschreibung (siehe
   // handleDetectManualSkills): Vorschlaege landen NICHT direkt in
   // courseSkillUris, sondern hier — erst ein bewusster Klick ("+ übernehmen"
@@ -2583,8 +2643,8 @@ export function DashboardPage({
   async function handleRefineSkillLevels() {
     const text = manualDetectText();
     const skillsToRefine = Array.from(courseSkillUris)
-      .filter((uri) => skillLabelCache[uri])
-      .map((uri) => ({ esco_uri: uri, preferred_label: skillLabelCache[uri] }));
+      .map((uri) => ({ esco_uri: uri, preferred_label: skillLabelFor(uri) ?? "" }))
+      .filter((sk) => sk.preferred_label);
     if (text.length < MIN_DESCRIPTION_FOR_SKILL_DETECT || skillsToRefine.length === 0) {
       setLevelRefineError("Bitte Kursname/-beschreibung sowie mindestens einen zugeordneten Skill angeben.");
       return;
@@ -3961,6 +4021,10 @@ export function DashboardPage({
       requiredLanguageLevel: course.required_language_level ?? "",
     });
     setCourseSkillUris(new Set(course.covered_skill_uris));
+    void resolveCourseSkillLabels(
+      course.covered_skill_uris,
+      course.target_role_ids ?? (course.target_role_id ? [course.target_role_id] : []),
+    );
     // Erfahrungslevel aus covered_skills übernehmen, falls das Backend sie
     // bereits zurückliefert (sonst bleiben die Chips ohne aktives Level,
     // frei setzbar wie bei einem neuen Kurs).
@@ -6447,7 +6511,8 @@ export function DashboardPage({
                           {Array.from(courseSkillUris).map((uri) => (
                             <div className="course-skill-level-row" key={uri}>
                               <div className="course-skill-level-name">
-                                {skillLabelCache[uri] ?? "Skill (Rolle einmal durchsuchen für den Namen)"}
+                                {skillLabelFor(uri) ??
+                                  (skillLabelsLoading ? "Name wird geladen …" : "Gespeicherter Skill (Name über „Zielrolle wählen“ unten anzeigen)")}
                                 <button
                                   type="button"
                                   className="chip-remove"

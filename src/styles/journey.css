@@ -6223,13 +6223,55 @@ input.big-input:focus {
 /* ---- Eine Abschlussseite: "Deine Anfrage" ---- */
 .v2-contact-summary {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 8px;
   margin-bottom: 14px;
   padding: 14px 16px;
   border-radius: 18px;
   border: 1px solid var(--blue-border);
   background: linear-gradient(135deg, rgba(47, 143, 214, 0.07), rgba(95, 220, 153, 0.08));
+}
+.v2-contact-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.v2-contact-remove {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.v2-contact-remove:hover {
+  border-color: var(--red-border);
+  background: var(--red-bg);
+  color: var(--red-text);
+}
+.v2-contact-add {
+  align-self: flex-start;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1.5px dashed var(--blue-border);
+  background: transparent;
+  color: var(--dyd-blue-dark);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.v2-contact-add:hover {
+  border-color: var(--dyd-blue);
+  background: var(--blue-bg);
 }
 .v2-contact-summary-icon {
   display: inline-flex;
@@ -6350,4 +6392,101 @@ input.big-input:focus {
   font-size: 13px;
   line-height: 1.45;
   color: var(--text-secondary);
+}
+
+/* ---- Mehrere Kurse anfragen ---- */
+.v2-request-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+  padding: 7px 14px 7px 8px;
+  border-radius: 999px;
+  border: 1.5px solid var(--blue-border);
+  background: var(--surface);
+  color: var(--dyd-blue-dark);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.v2-request-toggle:hover {
+  border-color: var(--dyd-blue);
+  background: var(--blue-bg);
+}
+.v2-request-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: var(--blue-bg);
+  font-size: 13px;
+}
+.v2-request-toggle.on {
+  border-color: var(--dyd-mint-2);
+  background: var(--green-bg);
+  color: var(--green-text);
+}
+.v2-request-toggle.on .v2-request-box {
+  background: var(--dyd-mint-2);
+  color: #fff;
+}
+.v2-request-bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 10px 10px 10px 14px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--dyd-navy), var(--dyd-navy-glow));
+  color: #fff;
+  box-shadow: var(--shadow-lg);
+  animation: v2CardIn 0.25s ease both;
+}
+.v2-request-bar-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--dyd-mint-2);
+  color: var(--dyd-navy);
+  font-weight: 800;
+}
+.v2-request-bar-text {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 700;
+}
+.v2-request-bar-cta {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(90deg, var(--dyd-mint), var(--dyd-mint-2));
+  color: var(--dyd-navy);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+@media (max-width: 480px) {
+  .v2-request-bar-text {
+    font-size: 12.5px;
+  }
+  .v2-request-bar-cta {
+    padding: 9px 12px;
+    font-size: 13px;
+  }
+}
+.v2-request-toggle + .v2-course-more {
+  margin-left: 12px;
 }

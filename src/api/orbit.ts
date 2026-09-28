@@ -1674,6 +1674,58 @@ export function fetchCourses(apiBase: string, apiKey: string): Promise<CourseLis
   });
 }
 
+/**
+ * Vollstaendiger Upsert-Datensatz aus einem bestehenden Kurs (29.09.2026).
+ * upsertCourse() ERSETZT den kompletten Kurs - wer nur ein Feld aendern will
+ * (Banner, Zuordnung ...), muss alle anderen mitschicken. Vorher stand diese
+ * Liste von Hand in der Banner-Schnellbearbeitung und hatte Luecken
+ * (booking_url, sessions, course_category, Voraussetzungen): jeder Klick auf
+ * einen Banner-Button hat diese Angaben geloescht. Jetzt eine Stelle fuer
+ * alle Teil-Aenderungen: courseToUpsertPayload(kurs) + { ...aenderung }.
+ */
+export function courseToUpsertPayload(course: OrbitCourse): CourseUpsertRequest {
+  return {
+    course_id: course.course_id,
+    course_name: course.course_name,
+    provider: course.provider,
+    duration_weeks: course.duration_weeks,
+    covered_skill_uris: course.covered_skill_uris,
+    covered_skills: course.covered_skills,
+    is_featured: course.is_featured,
+    description: course.description,
+    target_role_id: course.target_role_id,
+    target_role_name: course.target_role_name,
+    target_role_ids: course.target_role_ids,
+    target_role_names: course.target_role_names,
+    bereich_key: course.bereich_key,
+    bereich_label: course.bereich_label,
+    bereich_keys: course.bereich_keys,
+    bereich_labels: course.bereich_labels,
+    location: course.location,
+    is_remote: course.is_remote,
+    location_mode: course.location_mode,
+    employment_mode: course.employment_mode,
+    starts_at: course.starts_at,
+    seats_remaining: course.seats_remaining,
+    custom_banner: course.custom_banner,
+    price_eur: course.price_eur,
+    price_vat_exempt: course.price_vat_exempt,
+    exam_fee_eur: course.exam_fee_eur,
+    teaching_units: course.teaching_units,
+    funding_types: course.funding_types,
+    funding_measure_number: course.funding_measure_number,
+    qualification_type: course.qualification_type,
+    dqr_level: course.dqr_level,
+    target_group: course.target_group,
+    booking_url: course.booking_url,
+    course_category: course.course_category,
+    sessions: course.sessions,
+    min_qualification_level: course.min_qualification_level,
+    min_experience_years: course.min_experience_years,
+    required_language_level: course.required_language_level,
+  };
+}
+
 /** Ruft POST /api/v1/orbit/courses auf — legt einen Kurs an oder aktualisiert ihn (Upsert nach course_id). */
 export function upsertCourse(
   apiBase: string,

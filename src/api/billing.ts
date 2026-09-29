@@ -40,6 +40,10 @@ export interface CheckoutSessionResponse {
   checkout_url: string;
 }
 
+export interface PortalSessionResponse {
+  portal_url: string;
+}
+
 function safeJsonParse(text: string): { detail?: unknown; code?: unknown } | null {
   try {
     return JSON.parse(text);
@@ -104,6 +108,24 @@ export function createCheckoutSession(
       success_url: successUrl,
       cancel_url: cancelUrl,
     }),
+  });
+}
+
+/** Ruft POST /api/v1/billing/portal-session auf - fuer einen Tenant mit
+ *  BEREITS existierendem Stripe-Abo (Zahlungsdaten aktualisieren, Rechnungen
+ *  einsehen, selbst kuendigen), OHNE dafuer ein neues Abo per Checkout
+ *  anzulegen. Insbesondere fuer status "past_due" der richtige Weg (siehe
+ *  Backend-Kommentar bei handleCreateBillingPortalSession) - dort repariert
+ *  man das bestehende Abo, statt ein zweites zu starten. returnUrl muss wie
+ *  bei createCheckoutSession https:// sein. */
+export function createBillingPortalSession(
+  apiBase: string,
+  apiKey: string,
+  returnUrl: string,
+): Promise<PortalSessionResponse> {
+  return requestJson<PortalSessionResponse>(apiBase, apiKey, "/api/v1/billing/portal-session", {
+    method: "POST",
+    body: JSON.stringify({ return_url: returnUrl }),
   });
 }
 

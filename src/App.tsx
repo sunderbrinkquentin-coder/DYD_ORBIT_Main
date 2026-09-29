@@ -5,6 +5,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { TrialLockedPage } from "./pages/TrialLockedPage";
 import { PlanPicker } from "./components/PlanPicker";
+import { createBillingPortalSession } from "./api/billing";
 import { supabase } from "./lib/supabaseClient";
 import { fetchTenantSession, type TenantSessionResponse } from "./api/session";
 
@@ -88,6 +89,8 @@ export default function App() {
   const [auth, setAuth] = useState<AuthState>({ status: "loading" });
   const [syncingCheckout, setSyncingCheckout] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
   const showDevPreviewEntry = import.meta.env.DEV && isLocalDevMachine();
 
   useEffect(() => {
@@ -170,6 +173,23 @@ export default function App() {
     setAuth({ status: "loggedOut" });
   }
 
+  // NEU (Billing Portal): oeffnet Stripes gehostete Kundenportal-Seite
+  // (Zahlungsmittel aendern, Rechnungen einsehen, selbst kuendigen) - fuer
+  // einen Tenant mit bereits bestehendem Stripe-Abo. Getrennt vom
+  // PlanPicker/Checkout, siehe Kommentar bei createBillingPortalSession().
+  async function handleManageBilling(apiKey: string) {
+    setPortalError(null);
+    setPortalLoading(true);
+    try {
+      const returnUrl = window.location.origin + window.location.pathname;
+      const { portal_url } = await createBillingPortalSession(API_BASE, apiKey, returnUrl);
+      window.location.href = portal_url;
+    } catch (err) {
+      setPortalLoading(false);
+      setPortalError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   if (showDevPreviewEntry && devPreview) {
     return <DevPreview onExit={() => setDevPreview(false)} />;
   }
@@ -215,6 +235,12 @@ export default function App() {
         reason={lockReason}
         apiBase={API_BASE}
         apiKey={auth.session.api_key}
+        // NEU (Billing Portal): past_due/canceled hat evtl. schon ein
+        // bestehendes Stripe-Abo, das repariert (statt per Checkout ein
+        // zweites angelegt) werden soll - siehe TrialLockedPage.
+        onManageBilling={lockReason === "tenant_inactive" ? () => handleManageBilling(auth.session.api_key) : undefined}
+        portalLoading={portalLoading}
+        portalError={portalError}
         onLogout={handleLogout}
       />
     );
@@ -225,17 +251,30 @@ export default function App() {
   // ORBIT-Dashboard/Sperrbildschirm"), damit man nicht erst auf den
   // Sperrbildschirm warten muss, um einen bezahlten Plan zu wählen.
   const canUpgrade = auth.session.status === "trial";
+  // NEU (Billing Portal): ein bereits zahlender Kunde soll Zahlungsdaten/
+  // Rechnungen selbst verwalten koennen, ohne Support kontaktieren zu muessen.
+  const canManageBilling = auth.session.status === "active";
 
   return (
     <div>
       <button style={logoutButtonStyle} onClick={handleLogout}>
         Abmelden
       </button>
+      {canManageBilling && (
+        <button
+          style={manageBillingButtonStyle}
+          disabled={portalLoading}
+          onClick={() => void handleManageBilling(auth.session.api_key)}
+        >
+          {portalLoading ? "Wird geöffnet…" : "Abo verwalten"}
+        </button>
+      )}
       {canUpgrade && (
         <button style={upgradeButtonStyle} onClick={() => setUpgradeOpen(true)}>
           Plan upgraden
         </button>
       )}
+      {portalError && <div style={portalErrorStyle}>{portalError}</div>}
       <DashboardPage
         tenantName={auth.session.tenant_name}
         defaultBaseUrl={API_BASE}
@@ -353,6 +392,38 @@ const logoutButtonStyle: CSSProperties = {
   fontFamily: "'Inter', system-ui, sans-serif",
   background: "#fff",
   color: "#5b6779",
+  boxShadow: "0 8px 24px rgba(15,27,45,.08)",
+};
+
+const manageBillingButtonStyle: CSSProperties = {
+  position: "fixed",
+  top: 12,
+  right: 108,
+  zIndex: 50,
+  border: "1px solid #e6eaf2",
+  borderRadius: 8,
+  padding: "8px 14px",
+  fontSize: 12.5,
+  fontWeight: 700,
+  cursor: "pointer",
+  fontFamily: "'Inter', system-ui, sans-serif",
+  background: "#fff",
+  color: "#5b6779",
+  boxShadow: "0 8px 24px rgba(15,27,45,.08)",
+};
+
+const portalErrorStyle: CSSProperties = {
+  position: "fixed",
+  top: 56,
+  right: 12,
+  zIndex: 50,
+  maxWidth: 280,
+  fontSize: 12.5,
+  color: "#c0392b",
+  background: "#fdecea",
+  border: "1px solid #f5c6c0",
+  borderRadius: 8,
+  padding: "8px 10px",
   boxShadow: "0 8px 24px rgba(15,27,45,.08)",
 };
 

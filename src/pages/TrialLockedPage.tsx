@@ -1,13 +1,12 @@
 import type { CSSProperties } from "react";
+import { PlanPicker } from "../components/PlanPicker";
 
 interface TrialLockedPageProps {
   reason: "trial_expired" | "tenant_inactive";
+  apiBase: string;
+  apiKey: string;
   onLogout: () => void;
 }
-
-// TODO: durch die echte Preise-/Upgrade-Seite auf deiner Website ersetzen,
-// sobald Schritt 5 (Website-Anbindung) steht.
-const UPGRADE_URL = "https://DEINE-WEBSITE.de/preise";
 
 /**
  * NEU (Schritt 7, Auth-Flow): Sperrbildschirm anstelle des Dashboards, wenn
@@ -18,11 +17,17 @@ const UPGRADE_URL = "https://DEINE-WEBSITE.de/preise";
  * (enforceTenantActive, Schritt 2); dieser Bildschirm ist nur die
  * clientseitige Entsprechung, damit Kunden nicht auf einem kaputt
  * wirkenden, halb ladenden Dashboard landen.
+ *
+ * GEÄNDERT (Schritt 4, Upgrade-Flow): der frühere statische Link zur
+ * externen Preise-Seite ist ersetzt durch den PlanPicker direkt hier im
+ * Sperrbildschirm (Team-Entscheidung: "Im ORBIT-Dashboard/Sperrbildschirm"),
+ * weil nur ORBIT bereits den X-API-Key aus der Tenant-Session kennt, den
+ * der Checkout-Aufruf braucht — die externe Website hat ihn nicht.
  */
-export function TrialLockedPage({ reason, onLogout }: TrialLockedPageProps) {
+export function TrialLockedPage({ reason, apiBase, apiKey, onLogout }: TrialLockedPageProps) {
   const message =
     reason === "tenant_inactive"
-      ? "Dein Abonnement ist aktuell nicht aktiv. Bitte prüfe deine Zahlungsdaten oder reaktiviere deinen Plan."
+      ? "Dein Abonnement ist aktuell nicht aktiv. Bitte prüfe deine Zahlungsdaten oder wähle unten erneut einen Plan."
       : "Deine Testphase ist abgelaufen. Wähle einen Plan, um weiter auf dein Dashboard zuzugreifen.";
 
   return (
@@ -31,9 +36,9 @@ export function TrialLockedPage({ reason, onLogout }: TrialLockedPageProps) {
         <div style={styles.brand}>DYD ORBIT</div>
         <h1 style={styles.heading}>Zugriff gesperrt</h1>
         <p style={styles.text}>{message}</p>
-        <a href={UPGRADE_URL} style={styles.cta}>
-          Jetzt Plan wählen
-        </a>
+
+        <PlanPicker apiBase={apiBase} apiKey={apiKey} />
+
         <button onClick={onLogout} style={styles.logout}>
           Abmelden
         </button>
@@ -54,7 +59,7 @@ const styles: Record<string, CSSProperties> = {
   },
   card: {
     width: "100%",
-    maxWidth: 400,
+    maxWidth: 720,
     background: "#fff",
     border: "1px solid #e6eaf2",
     borderRadius: 16,
@@ -80,22 +85,8 @@ const styles: Record<string, CSSProperties> = {
     lineHeight: 1.5,
     color: "#5b6779",
   },
-  cta: {
-    display: "inline-block",
-    width: "100%",
-    boxSizing: "border-box",
-    textDecoration: "none",
-    border: "none",
-    borderRadius: 8,
-    padding: "11px 14px",
-    fontSize: 14,
-    fontWeight: 700,
-    fontFamily: "inherit",
-    background: "linear-gradient(90deg, #8fecb4, #2f8fd6)",
-    color: "#0c1c34",
-  },
   logout: {
-    marginTop: 14,
+    marginTop: 22,
     background: "none",
     border: "none",
     color: "#5b6779",

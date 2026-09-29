@@ -40,7 +40,11 @@ const PLAN_TAGLINES: Record<BillingPlan, string> = {
  * damit eine spätere Preisänderung in Stripe automatisch ankommt.
  */
 export function PlanPicker({ apiBase, apiKey, intro }: PlanPickerProps) {
-  const [interval, setInterval] = useState<BillingInterval>("monthly");
+  // Bewusst NICHT "interval"/"setInterval" genannt - das wuerde die globale
+  // window.setInterval()-Funktion in diesem Scope verdecken (Bugfix im
+  // Rahmen der Review-Runde: aktuell harmlos, da hier nirgends ein echter
+  // Timer gebraucht wird, aber ein Stolperstein für spätere Änderungen).
+  const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
   const [plans, setPlans] = useState<BillingPlansResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [checkoutPlan, setCheckoutPlan] = useState<BillingPlan | null>(null);
@@ -75,7 +79,7 @@ export function PlanPicker({ apiBase, apiKey, intro }: PlanPickerProps) {
         apiBase,
         apiKey,
         plan,
-        interval,
+        billingInterval,
         `${redirectBase}?checkout=success`,
         `${redirectBase}?checkout=cancelled`
       );
@@ -91,10 +95,10 @@ export function PlanPicker({ apiBase, apiKey, intro }: PlanPickerProps) {
       {intro && <p style={styles.intro}>{intro}</p>}
 
       <div style={styles.toggleRow}>
-        <IntervalButton active={interval === "monthly"} onClick={() => setInterval("monthly")}>
+        <IntervalButton active={billingInterval === "monthly"} onClick={() => setBillingInterval("monthly")}>
           Monatlich
         </IntervalButton>
-        <IntervalButton active={interval === "yearly"} onClick={() => setInterval("yearly")}>
+        <IntervalButton active={billingInterval === "yearly"} onClick={() => setBillingInterval("yearly")}>
           Jährlich <span style={styles.badge}>2 Monate gratis</span>
         </IntervalButton>
       </div>
@@ -105,7 +109,7 @@ export function PlanPicker({ apiBase, apiKey, intro }: PlanPickerProps) {
       <div style={styles.grid}>
         {PLAN_ORDER.map((plan) => {
           const info = plans?.plans[plan];
-          const price = info ? info[interval] : null;
+          const price = info ? info[billingInterval] : null;
           const isLoading = checkoutPlan === plan;
 
           return (
@@ -114,7 +118,7 @@ export function PlanPicker({ apiBase, apiKey, intro }: PlanPickerProps) {
               <div style={styles.cardTagline}>{PLAN_TAGLINES[plan]}</div>
               <div style={styles.cardPrice}>
                 {price ? formatPriceAmount(price.amount, price.currency) : "…"}
-                <span style={styles.cardPriceUnit}>{interval === "monthly" ? " / Monat" : " / Jahr"}</span>
+                <span style={styles.cardPriceUnit}>{billingInterval === "monthly" ? " / Monat" : " / Jahr"}</span>
               </div>
               <div style={styles.cardLimit}>
                 {info ? `bis zu ${info.course_limit.toLocaleString("de-DE")} Kurse` : " "}

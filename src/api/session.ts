@@ -8,7 +8,7 @@
  * den wollen wir gerade erst herausfinden.
  */
 
-import { ApiClientError } from "./core";
+import { ApiRequestError } from "./apiError";
 
 export interface TenantSessionResponse {
   tenant_id: string;
@@ -43,7 +43,7 @@ export async function fetchTenantSession(
     const parsed = body ? safeJsonParse(body) : null;
     const detail = parsed && typeof parsed.detail === "string" ? parsed.detail : body;
     const code = parsed && typeof parsed.code === "string" ? parsed.code : undefined;
-    throw new ApiClientError(
+    throw new ApiRequestError(
       res.status,
       detail || `Sitzung konnte nicht aufgelöst werden: HTTP ${res.status}`,
       code

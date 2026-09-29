@@ -42,10 +42,10 @@ function tenantLockReason(session: TenantSessionResponse): "trial_expired" | "te
  *   4) Sonst -> DashboardPage im Whitelabel-Modus (showConnectionPanel=false),
  *      mit dem aufgelösten API-Key/Basis-URL statt manueller Eingabe.
  *
- * Der alte Dashboard/Journey-Vorschau-Toggle bleibt NUR im lokalen
- * Dev-Server (import.meta.env.DEV) über einen expliziten Link erreichbar,
- * damit man die Oberflächen weiterhin ohne Supabase-Login durchklicken kann
- * — echte Kunden sehen ihn nie.
+ * Der alte Dashboard/Journey-Vorschau-Toggle bleibt NUR auf deinem eigenen
+ * Rechner (echtes localhost, siehe isLocalDevMachine() unten) über einen
+ * expliziten Link erreichbar, NIE in der Bolt-Live-Vorschau und NIE im
+ * echten Deployment — echte Kunden sehen ihn nie.
  */
 /** Warte-Intervalle beim Zurueckkommen von Stripe Checkout: der Webhook
  *  (customer.subscription.updated, siehe Backend Schritt 4) braucht ein paar
@@ -64,11 +64,29 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * GEÄNDERT (Bugfix): "import.meta.env.DEV" ist NICHT gleichbedeutend mit
+ * "läuft nur lokal bei mir" - Bolts Live-Vorschau führt die App ebenfalls
+ * über den Vite-Dev-Server aus, d.h. DEV ist dort ebenfalls true. Ohne
+ * diesen zusätzlichen Hostname-Check war der "Dev-Vorschau ohne
+ * Login"-Link (und damit das alte manuelle API-Key-Feld dahinter) für
+ * JEDEN sichtbar, der den Bolt-Vorschau-Link öffnet - nicht nur lokal.
+ * Jetzt zusätzlich: nur auf echtem localhost/127.0.0.1 (dein eigener
+ * Rechner beim Ausführen von "npm run dev"), NIE in der Bolt-Vorschau oder
+ * im echten Deployment.
+ */
+function isLocalDevMachine(): boolean {
+  if (typeof window === "undefined") return false;
+  const host = window.location.hostname;
+  return host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+}
+
 export default function App() {
   const [devPreview, setDevPreview] = useState(false);
   const [auth, setAuth] = useState<AuthState>({ status: "loading" });
   const [syncingCheckout, setSyncingCheckout] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const showDevPreviewEntry = import.meta.env.DEV && isLocalDevMachine();
 
   useEffect(() => {
     let cancelled = false;
@@ -131,7 +149,7 @@ export default function App() {
     setAuth({ status: "loggedOut" });
   }
 
-  if (import.meta.env.DEV && devPreview) {
+  if (showDevPreviewEntry && devPreview) {
     return <DevPreview onExit={() => setDevPreview(false)} />;
   }
 
@@ -145,7 +163,7 @@ export default function App() {
     return (
       <>
         <LoginPage onLoggedIn={() => setAuth({ status: "loading" })} />
-        {import.meta.env.DEV && (
+        {showDevPreviewEntry && (
           <button style={devLinkStyle} onClick={() => setDevPreview(true)}>
             Dev-Vorschau ohne Login
           </button>

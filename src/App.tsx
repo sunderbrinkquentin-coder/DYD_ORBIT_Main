@@ -91,6 +91,7 @@ export default function App() {
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
+  const [apiKeyPanelOpen, setApiKeyPanelOpen] = useState(false);
   const showDevPreviewEntry = import.meta.env.DEV && isLocalDevMachine();
 
   useEffect(() => {
@@ -260,6 +261,16 @@ export default function App() {
       <button style={logoutButtonStyle} onClick={handleLogout}>
         Abmelden
       </button>
+      {/* NEU (Direktkauf): der API-Key muss fuer JEDEN eingeloggten Tenant
+       * sichtbar/kopierbar sein - insbesondere fuer einen Direktkauf-Kunden
+       * ohne vorherigen Trial ist das Login gerade der einzige Weg, an
+       * seinen Key zu kommen ("dem Kaeufer zugaenglich gemacht werden",
+       * siehe Team-Entscheidung). Bewusst HIER in App.tsx statt in
+       * DashboardPage, damit es unabhaengig von deren Inhalt garantiert
+       * angezeigt wird. */}
+      <button style={apiKeyButtonStyle} onClick={() => setApiKeyPanelOpen(true)}>
+        API-Zugang
+      </button>
       {canManageBilling && (
         <button
           style={manageBillingButtonStyle}
@@ -292,6 +303,62 @@ export default function App() {
           </div>
         </div>
       )}
+      {apiKeyPanelOpen && (
+        <div style={overlayStyle} onClick={() => setApiKeyPanelOpen(false)}>
+          <div style={overlayCardStyle} onClick={(e) => e.stopPropagation()}>
+            <button style={overlayCloseStyle} onClick={() => setApiKeyPanelOpen(false)} aria-label="Schließen">
+              ×
+            </button>
+            <h2 style={overlayHeadingStyle}>API-Zugang</h2>
+            <ApiKeyBox tenantId={auth.session.tenant_id} apiKey={auth.session.api_key} apiBase={API_BASE} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** NEU (Direktkauf): einfache Anzeige der Zugangsdaten mit "Kopieren"-Buttons,
+ * damit auch ein Kunde, der nie den ORBIT-Support kontaktiert hat, seinen
+ * API-Key selbst findet und in seine eigene Website/Integration eintragen
+ * kann. */
+function ApiKeyBox({ tenantId, apiKey, apiBase }: { tenantId: string; apiKey: string; apiBase: string }) {
+  const [copied, setCopied] = useState<"key" | "base" | null>(null);
+
+  async function copy(value: string, which: "key" | "base") {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(which);
+      setTimeout(() => setCopied(null), 2000);
+    } catch {
+      // Clipboard-API kann in manchen Kontexten fehlen/verweigert werden -
+      // dann bleibt nur manuelles Markieren/Kopieren, kein Absturz.
+    }
+  }
+
+  return (
+    <div style={apiKeyBoxStyle}>
+      <p style={apiKeyHintStyle}>
+        Tenant-ID: <strong>{tenantId}</strong>
+      </p>
+      <label style={apiKeyLabelStyle}>API-Basis-URL</label>
+      <div style={apiKeyRowStyle}>
+        <code style={apiKeyCodeStyle}>{apiBase}</code>
+        <button style={apiKeyCopyButtonStyle} onClick={() => void copy(apiBase, "base")}>
+          {copied === "base" ? "Kopiert!" : "Kopieren"}
+        </button>
+      </div>
+      <label style={apiKeyLabelStyle}>API-Key</label>
+      <div style={apiKeyRowStyle}>
+        <code style={apiKeyCodeStyle}>{apiKey}</code>
+        <button style={apiKeyCopyButtonStyle} onClick={() => void copy(apiKey, "key")}>
+          {copied === "key" ? "Kopiert!" : "Kopieren"}
+        </button>
+      </div>
+      <p style={apiKeyWarningStyle}>
+        Behandle diesen Key wie ein Passwort - gib ihn nur in deine eigene Website/Integration ein,
+        niemals an Dritte weiter.
+      </p>
     </div>
   );
 }
@@ -393,6 +460,80 @@ const logoutButtonStyle: CSSProperties = {
   background: "#fff",
   color: "#5b6779",
   boxShadow: "0 8px 24px rgba(15,27,45,.08)",
+};
+
+const apiKeyButtonStyle: CSSProperties = {
+  position: "fixed",
+  top: 12,
+  right: 204,
+  zIndex: 50,
+  border: "1px solid #e6eaf2",
+  borderRadius: 8,
+  padding: "8px 14px",
+  fontSize: 12.5,
+  fontWeight: 700,
+  cursor: "pointer",
+  fontFamily: "'Inter', system-ui, sans-serif",
+  background: "#fff",
+  color: "#5b6779",
+  boxShadow: "0 8px 24px rgba(15,27,45,.08)",
+};
+
+const apiKeyBoxStyle: CSSProperties = {
+  fontFamily: "'Inter', system-ui, sans-serif",
+};
+
+const apiKeyHintStyle: CSSProperties = {
+  margin: "0 0 16px",
+  fontSize: 13.5,
+  color: "#5b6779",
+};
+
+const apiKeyLabelStyle: CSSProperties = {
+  display: "block",
+  fontSize: 12.5,
+  fontWeight: 600,
+  color: "#5b6779",
+  marginBottom: 6,
+};
+
+const apiKeyRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  marginBottom: 16,
+};
+
+const apiKeyCodeStyle: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  overflowX: "auto",
+  whiteSpace: "nowrap",
+  background: "#fafbfd",
+  border: "1px solid #e6eaf2",
+  borderRadius: 8,
+  padding: "8px 10px",
+  fontSize: 12.5,
+  color: "#0c1c34",
+};
+
+const apiKeyCopyButtonStyle: CSSProperties = {
+  border: "none",
+  borderRadius: 8,
+  padding: "8px 12px",
+  fontSize: 12.5,
+  fontWeight: 700,
+  fontFamily: "inherit",
+  cursor: "pointer",
+  background: "#0c1c34",
+  color: "#fff",
+  whiteSpace: "nowrap",
+};
+
+const apiKeyWarningStyle: CSSProperties = {
+  margin: 0,
+  fontSize: 12,
+  color: "#5b6779",
 };
 
 const manageBillingButtonStyle: CSSProperties = {

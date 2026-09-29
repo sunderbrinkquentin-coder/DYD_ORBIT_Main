@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { DashboardPage } from "./pages/DashboardPage";
 import { JourneyPage } from "./pages/JourneyPage";
 import { LoginPage } from "./pages/LoginPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { TrialLockedPage } from "./pages/TrialLockedPage";
 import { PlanPicker } from "./components/PlanPicker";
 import { supabase } from "./lib/supabaseClient";
@@ -16,6 +17,7 @@ const API_BASE = (import.meta.env.VITE_ORBIT_API_BASE as string | undefined) ?? 
 type AuthState =
   | { status: "loading" }
   | { status: "loggedOut" }
+  | { status: "passwordRecovery" }
   | { status: "loggedIn"; session: TenantSessionResponse }
   | { status: "error"; message: string };
 
@@ -134,7 +136,17 @@ export default function App() {
 
     void resolveSession();
 
-    const { data: subscription } = supabase.auth.onAuthStateChange(() => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((event) => {
+      // NEU (Task #8): kommt die Person ueber den "Passwort vergessen"-Link
+      // zurueck, meldet Supabase dieses Event EINMALIG, mit einer gueltigen
+      // (Recovery-)Session, aber noch OHNE neues Passwort. In diesem Fall
+      // NICHT wie sonst sofort die Tenant-Session aufloesen (das wuerde
+      // direkt am ResetPasswordPage-Bildschirm vorbei ins Dashboard fuehren)
+      // - erst nach erfolgreichem updateUser() dort geht es normal weiter.
+      if (event === "PASSWORD_RECOVERY") {
+        if (!cancelled) setAuth({ status: "passwordRecovery" });
+        return;
+      }
       void resolveSession();
     });
 
@@ -170,6 +182,10 @@ export default function App() {
         )}
       </>
     );
+  }
+
+  if (auth.status === "passwordRecovery") {
+    return <ResetPasswordPage onPasswordUpdated={() => setAuth({ status: "loading" })} />;
   }
 
   if (auth.status === "error") {

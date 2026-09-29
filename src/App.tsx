@@ -3,6 +3,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { JourneyPage } from "./pages/JourneyPage";
 import { LoginPage } from "./pages/LoginPage";
 import { TrialLockedPage } from "./pages/TrialLockedPage";
+import { PlanPicker } from "./components/PlanPicker";
 import { supabase } from "./lib/supabaseClient";
 import { fetchTenantSession, type TenantSessionResponse } from "./api/session";
 
@@ -46,9 +47,28 @@ function tenantLockReason(session: TenantSessionResponse): "trial_expired" | "te
  * damit man die Oberflächen weiterhin ohne Supabase-Login durchklicken kann
  * — echte Kunden sehen ihn nie.
  */
+/** Warte-Intervalle beim Zurueckkommen von Stripe Checkout: der Webhook
+ *  (customer.subscription.updated, siehe Backend Schritt 4) braucht ein paar
+ *  Sekunden, bis tenants.status in der DB aktualisiert ist - ohne diesen
+ *  kurzen Poll wuerde die Person direkt nach "Diesen Plan wählen" kurz
+ *  wieder auf dem Sperrbildschirm landen, obwohl die Zahlung erfolgreich war. */
+const CHECKOUT_POLL_DELAYS_MS = [1500, 2000, 2500, 3000, 3000];
+
+function stripCheckoutParamFromUrl() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("checkout");
+  window.history.replaceState({}, "", url.toString());
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
 export default function App() {
   const [devPreview, setDevPreview] = useState(false);
   const [auth, setAuth] = useState<AuthState>({ status: "loading" });
+  const [syncingCheckout, setSyncingCheckout] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,10 +82,29 @@ export default function App() {
         return;
       }
 
+      const checkoutStatus = new URLSearchParams(window.location.search).get("checkout");
+
       try {
-        const session = await fetchTenantSession(API_BASE, accessToken);
+        let session = await fetchTenantSession(API_BASE, accessToken);
+
+        // Kommt die Person gerade von einem erfolgreichen Stripe-Checkout
+        // zurueck, kurz auf die Webhook-Aktualisierung warten, statt sie
+        // fälschlich wieder auf dem Sperrbildschirm zu zeigen.
+        if (checkoutStatus === "success" && tenantLockReason(session)) {
+          if (!cancelled) setSyncingCheckout(true);
+          for (const delay of CHECKOUT_POLL_DELAYS_MS) {
+            if (cancelled) break;
+            await sleep(delay);
+            session = await fetchTenantSession(API_BASE, accessToken);
+            if (!tenantLockReason(session)) break;
+          }
+          if (!cancelled) setSyncingCheckout(false);
+        }
+
+        if (checkoutStatus) stripCheckoutParamFromUrl();
         if (!cancelled) setAuth({ status: "loggedIn", session });
       } catch (err) {
+        if (checkoutStatus) stripCheckoutParamFromUrl();
         if (!cancelled) {
           setAuth({
             status: "error",
@@ -97,7 +136,9 @@ export default function App() {
   }
 
   if (auth.status === "loading") {
-    return <CenteredMessage>Lade…</CenteredMessage>;
+    return (
+      <CenteredMessage>{syncingCheckout ? "Dein Plan wird aktiviert…" : "Lade…"}</CenteredMessage>
+    );
   }
 
   if (auth.status === "loggedOut") {
@@ -126,20 +167,49 @@ export default function App() {
 
   const lockReason = tenantLockReason(auth.session);
   if (lockReason) {
-    return <TrialLockedPage reason={lockReason} onLogout={handleLogout} />;
+    return (
+      <TrialLockedPage
+        reason={lockReason}
+        apiBase={API_BASE}
+        apiKey={auth.session.api_key}
+        onLogout={handleLogout}
+      />
+    );
   }
+
+  // Noch nicht gesperrt, aber im Trial -> zusätzlicher, freiwilliger
+  // Upgrade-Einstieg direkt im Dashboard (Team-Entscheidung: "Im
+  // ORBIT-Dashboard/Sperrbildschirm"), damit man nicht erst auf den
+  // Sperrbildschirm warten muss, um einen bezahlten Plan zu wählen.
+  const canUpgrade = auth.session.status === "trial";
 
   return (
     <div>
       <button style={logoutButtonStyle} onClick={handleLogout}>
         Abmelden
       </button>
+      {canUpgrade && (
+        <button style={upgradeButtonStyle} onClick={() => setUpgradeOpen(true)}>
+          Plan upgraden
+        </button>
+      )}
       <DashboardPage
         tenantName={auth.session.tenant_name}
         defaultBaseUrl={API_BASE}
         defaultApiKey={auth.session.api_key}
         showConnectionPanel={false}
       />
+      {upgradeOpen && (
+        <div style={overlayStyle} onClick={() => setUpgradeOpen(false)}>
+          <div style={overlayCardStyle} onClick={(e) => e.stopPropagation()}>
+            <button style={overlayCloseStyle} onClick={() => setUpgradeOpen(false)} aria-label="Schließen">
+              ×
+            </button>
+            <h2 style={overlayHeadingStyle}>Plan upgraden</h2>
+            <PlanPicker apiBase={API_BASE} apiKey={auth.session.api_key} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -254,4 +324,63 @@ const devLinkStyle: CSSProperties = {
   fontFamily: "'Inter', system-ui, sans-serif",
   textDecoration: "underline",
   cursor: "pointer",
+};
+
+const upgradeButtonStyle: CSSProperties = {
+  position: "fixed",
+  top: 12,
+  right: 108,
+  zIndex: 50,
+  border: "none",
+  borderRadius: 8,
+  padding: "8px 14px",
+  fontSize: 12.5,
+  fontWeight: 700,
+  cursor: "pointer",
+  fontFamily: "'Inter', system-ui, sans-serif",
+  background: "linear-gradient(90deg, #8fecb4, #2f8fd6)",
+  color: "#0c1c34",
+  boxShadow: "0 8px 24px rgba(15,27,45,.08)",
+};
+
+const overlayStyle: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 100,
+  background: "rgba(12,28,52,.55)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 16,
+};
+
+const overlayCardStyle: CSSProperties = {
+  position: "relative",
+  width: "100%",
+  maxWidth: 760,
+  maxHeight: "90vh",
+  overflowY: "auto",
+  background: "#fff",
+  borderRadius: 16,
+  padding: "32px 28px",
+  fontFamily: "'Inter', system-ui, sans-serif",
+};
+
+const overlayCloseStyle: CSSProperties = {
+  position: "absolute",
+  top: 14,
+  right: 14,
+  border: "none",
+  background: "none",
+  fontSize: 22,
+  lineHeight: 1,
+  color: "#5b6779",
+  cursor: "pointer",
+};
+
+const overlayHeadingStyle: CSSProperties = {
+  margin: "0 0 18px",
+  fontSize: 20,
+  color: "#0c1c34",
+  textAlign: "center",
 };

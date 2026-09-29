@@ -109,14 +109,23 @@ export default function App() {
 
         // Kommt die Person gerade von einem erfolgreichen Stripe-Checkout
         // zurueck, kurz auf die Webhook-Aktualisierung warten, statt sie
-        // fälschlich wieder auf dem Sperrbildschirm zu zeigen.
-        if (checkoutStatus === "success" && tenantLockReason(session)) {
+        // fälschlich wieder auf dem Sperrbildschirm zu zeigen ODER (Bugfix,
+        // Review-Runde) mit veraltetem Plan/Kurslimit im Dashboard landen zu
+        // lassen. GEÄNDERT: nicht mehr nur bei zuvor gesperrten Tenants
+        // (abgelaufener Trial/past_due) pollen - auch ein Tenant, der noch
+        // GAR NICHT gesperrt war (z.B. freiwilliges Upgrade waehrend eines
+        // noch laufenden Trials ueber den "Plan upgraden"-Button), landet
+        // sonst nach dem Checkout mit status "trial" und altem course_limit
+        // im Dashboard, bis er zufaellig neu laedt. Stattdessen: nach einem
+        // erfolgreichen Checkout IMMER warten, bis der Webhook den Status auf
+        // "active" gesetzt hat (oder die Versuche ausgehen).
+        if (checkoutStatus === "success" && session.status !== "active") {
           if (!cancelled) setSyncingCheckout(true);
           for (const delay of CHECKOUT_POLL_DELAYS_MS) {
             if (cancelled) break;
             await sleep(delay);
             session = await fetchTenantSession(API_BASE, accessToken);
-            if (!tenantLockReason(session)) break;
+            if (session.status === "active") break;
           }
           if (!cancelled) setSyncingCheckout(false);
         }

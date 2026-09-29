@@ -6,11 +6,22 @@ interface LoginPageProps {
   onLoggedIn: () => void;
 }
 
+// Deine Pricing-/Signup-Seite auf der Marketing-Website (siehe
+// TrialSignupForm.tsx dort, Schritt 5). In Bolt unter "Umgebungsvariablen"
+// setzen: VITE_MARKETING_SIGNUP_URL=https://DEINE-WEBSITE.de/preise
+const SIGNUP_URL =
+  (import.meta.env.VITE_MARKETING_SIGNUP_URL as string | undefined) ?? "https://DEINE-WEBSITE.de/preise";
+
 /**
  * NEU (Schritt 7, Auth-Flow): echter E-Mail+Passwort-Login (Supabase Auth) —
  * ersetzt das bisherige "API-Key manuell eintragen"-Panel für echte Kunden.
  * Konten entstehen ausschließlich über den Signup auf der Website (Schritt
  * 3/5) — hier gibt es bewusst KEIN Registrierungsformular.
+ *
+ * GEÄNDERT (Bugfix): ohne jeden Hinweis landen neue Interessenten, die
+ * direkt auf ORBIT statt auf der Website landen, hier in einer Sackgasse
+ * ("wo melde ich mich an?"). Deshalb jetzt ein Link zur Website-Pricing-
+ * Seite unterhalb des Formulars.
  */
 export function LoginPage({ onLoggedIn }: LoginPageProps) {
   const [email, setEmail] = useState("");
@@ -80,6 +91,13 @@ export function LoginPage({ onLoggedIn }: LoginPageProps) {
         <button type="submit" disabled={submitting} style={styles.submit}>
           {submitting ? "Anmelden…" : "Anmelden"}
         </button>
+
+        <p style={styles.signupHint}>
+          Noch kein Konto?{" "}
+          <a href={SIGNUP_URL} style={styles.signupLink}>
+            Jetzt 7 Tage kostenlos testen
+          </a>
+        </p>
       </form>
     </div>
   );
@@ -159,5 +177,17 @@ const styles: Record<string, CSSProperties> = {
     fontFamily: "inherit",
     background: "linear-gradient(90deg, #8fecb4, #2f8fd6)",
     color: "#0c1c34",
+  },
+  signupHint: {
+    marginTop: 18,
+    marginBottom: 0,
+    fontSize: 13,
+    color: "#5b6779",
+    textAlign: "center",
+  },
+  signupLink: {
+    color: "#2f8fd6",
+    fontWeight: 700,
+    textDecoration: "none",
   },
 };

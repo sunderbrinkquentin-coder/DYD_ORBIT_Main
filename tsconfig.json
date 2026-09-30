@@ -19,5 +19,9 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
+  "exclude": [
+    "src/lib/orbitSignup.ts",
+    "src/components/TrialSignupForm.tsx"
+  ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

@@ -14,6 +14,13 @@ export interface TenantSessionResponse {
   tenant_id: string;
   tenant_name: string;
   api_key: string;
+  /** NEU (30.09.2026, Journey-Embed): oeffentlicher, bewusst eingeschraenkter
+   *  Key (Produkt "journey", siehe generatePublicApiKey() im Backend) fuer
+   *  den iframe-Einbettungs-Code der Nutzer-Journey auf der Website des
+   *  Bildungstraegers — NICHT derselbe wie api_key oben (der bleibt geheim,
+   *  Operator-Zugriff). null nur bei einem sehr alten Tenant, falls das
+   *  automatische Nachlegen im Backend einmalig fehlschlug. */
+  journey_key: string | null;
   /** null = Legacy-Tenant ohne Self-Service-Plan (siehe tenants-Tabelle) — nie gesperrt. */
   plan: string | null;
   status: string | null;

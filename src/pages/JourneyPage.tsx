@@ -34,6 +34,7 @@ import {
   type CourseRecommendation,
   type CourseSession,
   type DepthSkillAssessment,
+  type LocationMode,
   type OrbitCourse,
   fetchTenantBranding,
   type TenantBranding,
@@ -55,10 +56,8 @@ import {
 import { ROLES_CATALOG, SKILLS_CATALOG, type CatalogRole } from "../data/rolesCatalog";
 import {
   getCoveredBereiche,
-  matchCoursesToGap,
   describePreferenceMismatches,
   rankCoursesForGap,
-  QUALIFICATION_LABELS,
 } from "../data/courseMatcher";
 import { BereichBadges, CourseBadgeRow, courseBadges, daysUntilCourseStart, type CourseBadge } from "../data/courseBadges";
 import { mapCatalogAsync, type MappedCourse } from "../data/courseMap";
@@ -91,7 +90,6 @@ import {
   type V2Hurdle,
   type V2Priority,
 } from "../data/journeyAdvice";
-import { AnimatedNumber } from "../components/AnimatedNumber";
 import { JourneyTour, type JourneyStepKey } from "../components/JourneyTour";
 import "../styles/journey.css";
 
@@ -340,8 +338,6 @@ const V2_QUALIFICATION_OPTIONS: { key: V2QualificationLevel; label: string }[] =
  * RoleSuggestStep: Bereichs-Kacheln (Pflicht, listBereiche() in
  * gapAnalysis.ts) + eine optionale, nach careerGoal sortierte Zielrollen-
  * Auswahl + optionale Skill-Checkboxen (topSkillsForRoles()). */
-/** Anzahl der Skill-Checkboxen, die RoleSuggestStep auf einmal anzeigt. */
-const ROLE_SUGGEST_SKILL_CHIP_LIMIT = 8;
 /** Rein dekorativ (siehe bereicheInPortfolio in JourneyPage, aus den echten
  *  bereich_key-Werten der Rollen) — Fallback-Icon fuer den unwahrscheinlichen
  *  Fall, dass der Katalog kuenftig einen neuen, hier noch unbekannten
@@ -495,10 +491,6 @@ const GOAL_OPTIONS: { key: string; label: string; icon: string }[] = [
 //   liefert sie null und es wird nichts behauptet. So bleibt die Erklaerung
 //   immer wahr, nie eine erfundene Begruendung.
 // ---------------------------------------------------------------------------
-
-/** Zwei Kursempfehlungen gelten als "gleich gut" (Tie), wenn ihre
- *  covers_gap_percentage um weniger als diesen Wert auseinanderliegt. */
-const GOAL_TIE_EPSILON = 1;
 
 /** Schwelle für die "Startet bald"-Gruppe unten in KursStep (15.09., "startet
  *  innerhalb 1 Monats") — bewusst eigenständig von STARTS_SOON_DAYS
@@ -1369,7 +1361,7 @@ function courseCostText(course: {
  * sessions) verhält sich unverändert.
  */
 function courseLocationText(course: {
-  location_mode?: string | null;
+  location_mode?: LocationMode | null;
   sessions?: CourseSession[] | null;
   starts_at?: string | null;
   location?: string | null;
@@ -1407,7 +1399,7 @@ function courseStartText(course: {
   starts_at?: string | null;
   sessions?: CourseSession[] | null;
   location?: string | null;
-  location_mode?: string | null;
+  location_mode?: LocationMode | null;
   is_remote?: boolean | null;
   seats_remaining?: number | null;
 }): string {
@@ -1766,8 +1758,7 @@ async function runDemoAnalysis() {
                 preferred_label: "Grundlegende Programmierlogik",
                 weight: 20,
                 covered: true,
-                matched_score: 95,
-                description: "Fundiertes Verständnis durch Vorerfahrung vorhanden."
+                matched_score: 95
               }
             ],
             gap_skills: [
@@ -1776,16 +1767,14 @@ async function runDemoAnalysis() {
                 preferred_label: "React.js & State Management",
                 weight: 45,
                 covered: false,
-                matched_score: null,
-                description: "Zentrale Anforderung für moderne Frontend-Architekturen."
+                matched_score: null
               },
               {
                 esco_uri: "http://data.europa.eu/esco/skill/demo-gap-2",
                 preferred_label: "TypeScript Erweiterte Konzepte",
                 weight: 35,
                 covered: false,
-                matched_score: null,
-                description: "Wichtig für typsichere und skalierbare Webanwendungen."
+                matched_score: null
               }
             ]
           };
@@ -2015,7 +2004,7 @@ async function runDemoAnalysis() {
   const [manualSkillUris, setManualSkillUris] = useState<Set<string>>(new Set());
   const manualSkillUrisRef = useRef<Set<string>>(new Set());
   const [courseResult, setCourseResult] = useState<CourseMatchResponse | null>(null);
-  const [courses, setCourses] = useState<CourseItem[]>([]);
+  const [, setCourses] = useState<CourseItem[]>([]);
   // Aktive Kursauswahl im Kurs-Schritt (Version 15): standardmäßig die beste
   // Empfehlung, die Person kann aber bewusst einen der Alternativ-Kurse
   // wählen. Macht die spätere Anfrage konkreter als "irgendeine Empfehlung"
@@ -2082,7 +2071,7 @@ async function runDemoAnalysis() {
   }, [allCourses]);
   const [courseCatalogError, setCourseCatalogError] = useState<string | null>(null);
   const [courseCatalogLoading, setCourseCatalogLoading] = useState(false);
-  const [courseCatalogLoadedAt, setCourseCatalogLoadedAt] = useState<number | null>(null);
+  const [, setCourseCatalogLoadedAt] = useState<number | null>(null);
   // Refs fuer die Katalog-Ladelogik (siehe loadFeaturedCourses): Zeitpunkt
   // des letzten erfolgreichen Abrufs, laufender Abruf, aktueller Katalog.
   const courseCatalogLoadedAtRef = useRef<number | null>(null);
@@ -3128,8 +3117,7 @@ async function runDemoAnalysis() {
       console.info("[JourneyPage] depth_analysis_completed", {
         request_id: requestId,
         skills: depthMap.size,
-        quality: res?.quality ?? null,
-        overall_match_percentage: res?.overall_match_percentage ?? null,
+        overall_assessment: res?.overall_assessment ?? null,
       });
 
       setDepthByUri(depthMap);
@@ -3180,17 +3168,6 @@ async function runDemoAnalysis() {
     setGapResult((current) => (current ? applyManualSkillMove(current, escoUri, toCovered) : current));
   }
 
-  /**
-   * Schaltet einen Skill mit genau einem Klick zwischen "Vorhanden" und
-   * "Skill-Lücke" um. Die Funktion arbeitet bewusst nur mit der Skill-ID;
-   * der Zielstatus wird aus dem aktuell gespeicherten Zustand abgeleitet.
-   */
-  function moveSkillManually(id: string): void {
-    const currentSkill = skills.find((skill) => skill.id === id);
-    if (!currentSkill) return;
-    const nextMatched = !currentSkill.matched;
-    handleMoveSkill(id, nextMatched);
-  }
   /** Version 26 — zweistufig (lokal, dann Backend-Fallback), siehe
    *  ausfuehrlichen Kommentar an loadRoleSkills oben: derselbe Grund
    *  (Zielrolle evtl. nicht im statischen 74-Rollen-Katalog, aber sehr wohl
@@ -4701,6 +4678,13 @@ async function runDemoAnalysis() {
                   <MotivationStep
                     gapResult={gapResult}
                     goalLabel={GOAL_OPTIONS.find((g) => g.key === careerGoal)?.label}
+                    allCourses={allCourses}
+                    targetBereichKey={
+                      bereichRole?.bereich_key ??
+                      rolesInPortfolio.find((r) => r.role_id === targetRoleId)?.bereich_key ??
+                      null
+                    }
+                    portfolioRoles={rolesInPortfolio}
                     onForward={() => setCurrent(stepIndex("gap"))}
                     onBack={() => setCurrent(stepIndex("skills"))}
                   />
@@ -8150,7 +8134,7 @@ function FragebogenMethod({
                 const recencyLabel = answer && answer !== "no"
                   ? answer.recency === "aktuell" ? "aktuell" : "vor einiger Zeit"
                   : "";
-                const isGoal = learningGoalSkillIdsSafe.has(s.skill_id);
+                const isGoal = learningGoalSkillIdsSafe.has(s.esco_uri);
                 return (
                   <div key={s.esco_uri} style={{ padding: "12px 13px", borderRadius: "14px", border: "1px solid var(--border-soft)", background: "var(--surface, #fff)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -8392,13 +8376,6 @@ function skillImportance(weight: number): { label: string; cls: string } {
   if (weight >= 0.75) return { label: "Wichtig", cls: "important" };
   return { label: "Hilfreich", cls: "helpful" };
 }
-/** Kurzlabel für proficiency_level aus der KI-Tiefenanalyse (Version 3 der
- *  Edge Function) — reine Anzeige-Übersetzung, keine eigene Einschätzung. */
-const PROFICIENCY_LABELS: Record<string, string> = {
-  grundkenntnisse: "Grundkenntnisse",
-  fortgeschritten: "Fortgeschritten",
-  experte: "Experte",
-};
 /** Auswahloptionen für die Pill-Leiste, mit der die Person im Gap-Schritt ihr
  *  eigenes Erfahrungslevel zu einem "Vorhanden"-Skill wählt (siehe
  *  selfLevelByUri in JourneyPage) - dieselben drei Stufen wie
@@ -8572,9 +8549,9 @@ function skillReasonInfo(
 function MotivationStep({
   gapResult,
   goalLabel,
-  allCourses,
-  targetBereichKey,
-  portfolioRoles,
+  allCourses: _allCourses,
+  targetBereichKey: _targetBereichKey,
+  portfolioRoles: _portfolioRoles,
   onForward,
   onBack,
 }: {
@@ -8755,7 +8732,6 @@ function GapStep({
   const earlyEmailValid = leadEmail.trim().length > 0 && EMAIL_RE.test(leadEmail.trim());
   const coveredCount = gapResult.covered_skills.length;
   const gapCount = gapResult.gap_skills.length;
-  const totalCount = coveredCount + gapCount;
   // Einmal pro Text berechnet statt pro Skill (siehe detectCvSectionHeaders
   // oben) - reine Performance-Optimierung, das Ergebnis ist unabhängig vom
   // einzelnen Skill.
@@ -9541,7 +9517,6 @@ function KursStep({
   // The popup is intentionally local to KursStep: it appears exactly when
   // the existing Journey advances from Skill-Gap to the recommendation step.
   const [showRecommendationIntro, setShowRecommendationIntro] = useState(true);
-  const currentMatch = courseResult?.match_percentage ?? 0;
   const role = targetRoleName || "deiner Zielrolle";
   // Was tatsächlich als "meine Wahl" in Pitch/Anfrage einfließt: die aktive
   // Auswahl, falls getroffen — sonst die algorithmische Bestempfehlung.
@@ -10466,11 +10441,11 @@ function LeadStep({
   courseName,
   courseDescription,
   additionalCourseNames,
-  projectedMatch,
-  desiredStartLabel,
-  employmentTypeLabel,
-  workLocationLabel,
-  wantsConsultation,
+  projectedMatch: _projectedMatch,
+  desiredStartLabel: _desiredStartLabel,
+  employmentTypeLabel: _employmentTypeLabel,
+  workLocationLabel: _workLocationLabel,
+  wantsConsultation: _wantsConsultation,
   setWantsConsultation,
   privacyPolicyUrl,
   bookingUrl,

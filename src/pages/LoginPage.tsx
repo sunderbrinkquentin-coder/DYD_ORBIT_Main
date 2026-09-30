@@ -10,7 +10,7 @@ interface LoginPageProps {
 // TrialSignupForm.tsx dort, Schritt 5). In Bolt unter "Umgebungsvariablen"
 // setzen: VITE_MARKETING_SIGNUP_URL=https://DEINE-WEBSITE.de/preise
 const SIGNUP_URL =
-  (import.meta.env.VITE_MARKETING_SIGNUP_URL as string | undefined) ?? "https://decide-your-dream.de/#/DashboardPage";
+  (import.meta.env.VITE_MARKETING_SIGNUP_URL as string | undefined) ?? "https://quentin907-dyd-nexus-29l3.bolt.host/#/DashboardPage";
 
 type Mode = "login" | "forgot" | "forgotSent";
 

@@ -92,7 +92,26 @@ export default function App() {
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
   const [apiKeyPanelOpen, setApiKeyPanelOpen] = useState(false);
+  const [embedPanelOpen, setEmbedPanelOpen] = useState(false);
   const showDevPreviewEntry = import.meta.env.DEV && isLocalDevMachine();
+
+  // NEU (30.09.2026, Journey-Embed): oeffentliche, unauthentifizierte Route
+  // fuer den iframe-Code, den ein Bildungstraeger auf seiner eigenen Website
+  // einbindet - Aufruf per ?embed=journey&key=<oeffentlicher Journey-Key>
+  // (siehe EmbedBox weiter unten, die genau diese URL zusammenbaut). Einmal
+  // beim Mount aus der URL gelesen, gleiches Muster wie isV2 in
+  // JourneyPage.tsx.
+  const [embedJourneyKey] = useState<string | null>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("embed") === "journey") {
+        return params.get("key");
+      }
+    } catch {
+      // kein window (SSR/Tests)
+    }
+    return null;
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -191,6 +210,15 @@ export default function App() {
     }
   }
 
+  // NEU (30.09.2026, Journey-Embed): bewusst VOR jeder Login-/Tenant-Session-
+  // Logik geprueft - der Endnutzer im iframe ist NIE bei ORBIT eingeloggt,
+  // er ist einfach Besucher der Website des Bildungstraegers. showConnectionPanel
+  // bleibt false, damit im Embed nie ein Verbindungs-/Debug-Formular
+  // aufblitzt, egal in welchem Modus (Dev/Prod) die Seite laeuft.
+  if (embedJourneyKey) {
+    return <JourneyPage defaultApiKey={embedJourneyKey} defaultBaseUrl={API_BASE} showConnectionPanel={false} />;
+  }
+
   if (showDevPreviewEntry && devPreview) {
     return <DevPreview onExit={() => setDevPreview(false)} />;
   }
@@ -269,6 +297,14 @@ export default function App() {
         <button style={apiKeyButtonStyle} onClick={() => setApiKeyPanelOpen(true)}>
           API-Zugang
         </button>
+        {/* NEU (30.09.2026, Journey-Embed): fertiger iframe-Code fuer die
+         * Nutzer-Journey, mit dem eigenen oeffentlichen Journey-Key des
+         * Tenants (auth.session.journey_key - NICHT dem Operator-Key oben),
+         * damit der Bildungstraeger sie auf seiner eigenen Website
+         * einbetten kann. */}
+        <button style={apiKeyButtonStyle} onClick={() => setEmbedPanelOpen(true)}>
+          Journey einbetten
+        </button>
         {canManageBilling && (
           <button
             style={manageBillingButtonStyle}
@@ -316,6 +352,17 @@ export default function App() {
           </div>
         </div>
       )}
+      {embedPanelOpen && (
+        <div style={overlayStyle} onClick={() => setEmbedPanelOpen(false)}>
+          <div style={overlayCardStyle} onClick={(e) => e.stopPropagation()}>
+            <button style={overlayCloseStyle} onClick={() => setEmbedPanelOpen(false)} aria-label="Schließen">
+              ×
+            </button>
+            <h2 style={overlayHeadingStyle}>Journey einbetten</h2>
+            <EmbedBox journeyKey={auth.session.journey_key} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -360,6 +407,78 @@ function ApiKeyBox({ tenantId, apiKey, apiBase }: { tenantId: string; apiKey: st
       <p style={apiKeyWarningStyle}>
         Behandle diesen Key wie ein Passwort - gib ihn nur in deine eigene Website/Integration ein,
         niemals an Dritte weiter.
+      </p>
+    </div>
+  );
+}
+
+/** NEU (30.09.2026, Journey-Embed): zeigt den fertigen iframe-Code fuer die
+ * Nutzer-Journey mit dem OEFFENTLICHEN Journey-Key des Tenants (Produkt
+ * "journey", siehe generatePublicApiKey()/handleTenantSession() im
+ * Backend) - bewusst NIE dem Operator-Key aus ApiKeyBox oben. Dieser Key
+ * darf oeffentlich im Seitenquelltext einer fremden Website stehen: er kann
+ * serverseitig nur die paar Journey-Endpunkte nutzen (Skill-Match,
+ * Gap-Analyse, Kursvorschlag, Test-Log, Lead-Anlegen), nicht Kurse
+ * verwalten oder die Leads-Liste/Reports lesen. journeyKey ist nur bei
+ * einem sehr alten Tenant null, falls das automatische Nachlegen im
+ * Backend einmalig fehlschlug - dann bittet der Hinweistext, es per
+ * erneutem Login zu versuchen. */
+function EmbedBox({ journeyKey }: { journeyKey: string | null }) {
+  const [copied, setCopied] = useState<"url" | "snippet" | null>(null);
+
+  const embedUrl = journeyKey
+    ? `${window.location.origin}${window.location.pathname}?embed=journey&key=${encodeURIComponent(journeyKey)}`
+    : "";
+  const iframeSnippet = embedUrl
+    ? `<iframe src="${embedUrl}" style="width:100%;min-height:900px;border:0" title="Weiterbildungs-Finder"></iframe>`
+    : "";
+
+  async function copy(value: string, which: "url" | "snippet") {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(which);
+      setTimeout(() => setCopied(null), 2000);
+    } catch {
+      // Clipboard-API kann in manchen Kontexten fehlen/verweigert werden -
+      // dann bleibt nur manuelles Markieren/Kopieren, kein Absturz.
+    }
+  }
+
+  if (!journeyKey) {
+    return (
+      <div style={apiKeyBoxStyle}>
+        <p style={apiKeyWarningStyle}>
+          Für dein Konto wurde noch kein öffentlicher Journey-Key angelegt. Bitte einmal ab- und
+          wieder anmelden - danach sollte er hier erscheinen.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={apiKeyBoxStyle}>
+      <p style={apiKeyHintStyle}>
+        Binde diesen Code auf deiner eigenen Website ein, damit Besucher dort direkt den
+        Weiterbildungs-Finder nutzen können. Der enthaltene Key ist absichtlich eingeschränkt -
+        er kann keine Kurse verwalten und keine Leads einsehen, nur die Journey selbst ausführen.
+      </p>
+      <label style={apiKeyLabelStyle}>Einbettungs-Code (iframe)</label>
+      <div style={apiKeyRowStyle}>
+        <code style={apiKeyCodeStyle}>{iframeSnippet}</code>
+        <button style={apiKeyCopyButtonStyle} onClick={() => void copy(iframeSnippet, "snippet")}>
+          {copied === "snippet" ? "Kopiert!" : "Kopieren"}
+        </button>
+      </div>
+      <label style={apiKeyLabelStyle}>Nur der Link (z.B. für einen Button/Menüpunkt)</label>
+      <div style={apiKeyRowStyle}>
+        <code style={apiKeyCodeStyle}>{embedUrl}</code>
+        <button style={apiKeyCopyButtonStyle} onClick={() => void copy(embedUrl, "url")}>
+          {copied === "url" ? "Kopiert!" : "Kopieren"}
+        </button>
+      </div>
+      <p style={apiKeyWarningStyle}>
+        Dieser Key ist bewusst öffentlich einsetzbar - trotzdem gilt: nur auf Seiten einbetten, die
+        du selbst kontrollierst.
       </p>
     </div>
   );

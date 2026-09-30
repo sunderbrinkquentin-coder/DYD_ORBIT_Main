@@ -4264,7 +4264,6 @@ export function DashboardPage({
   // NICHT auf die vier Kennzahlen-Kacheln oben — die stammen aus dem
   // Backend-Report und lassen sich nicht rückwirkend nach Zeitraum/Kategorie
   // aufschlüsseln, ohne Zahlen zu erfinden). ---
-  const leadsFilterActive = leadsPeriod !== "alle" || leadsCategoryFilter !== "" || leadsBereichFilter !== "";
   const filteredSortedLeads = useMemo(() => {
     const filtered = displayedLeads.filter(
       (l) =>

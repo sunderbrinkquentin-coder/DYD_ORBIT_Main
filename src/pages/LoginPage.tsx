@@ -10,7 +10,7 @@ interface LoginPageProps {
 // TrialSignupForm.tsx dort, Schritt 5). In Bolt unter "Umgebungsvariablen"
 // setzen: VITE_MARKETING_SIGNUP_URL=https://DEINE-WEBSITE.de/preise
 const SIGNUP_URL =
-  (import.meta.env.VITE_MARKETING_SIGNUP_URL as string | undefined) ?? "https://DEINE-WEBSITE.de/preise";
+  (import.meta.env.VITE_MARKETING_SIGNUP_URL as string | undefined) ?? "https://decide-your-dream.de/#/DashboardPage";
 
 type Mode = "login" | "forgot" | "forgotSent";
 

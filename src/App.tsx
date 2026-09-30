@@ -8,6 +8,8 @@ import { PlanPicker } from "./components/PlanPicker";
 import { createBillingPortalSession } from "./api/billing";
 import { supabase } from "./lib/supabaseClient";
 import { fetchTenantSession, type TenantSessionResponse } from "./api/session";
+import { fetchAdminSession } from "./api/admin";
+import { AdminTenantListPage } from "./pages/AdminTenantListPage";
 
 // Deine deployte Edge-Function-Adresse, z.B.
 // https://<DEIN-PROJECT-REF>.supabase.co/functions/v1/api
@@ -19,7 +21,16 @@ type AuthState =
   | { status: "loading" }
   | { status: "loggedOut" }
   | { status: "passwordRecovery" }
-  | { status: "loggedIn"; session: TenantSessionResponse }
+  // NEU (30.09.2026, Admin-Modus): dein eigenes Admin-Konto (siehe
+  // admin_users-Tabelle im Backend) landet nach dem Login HIER statt in
+  // "loggedIn" - Tenant-Auswahl statt direktem Dashboard, siehe
+  // resolveSession() unten.
+  | { status: "adminTenantList"; adminEmail: string }
+  // GEAENDERT (30.09.2026, Admin-Modus): "adminView" ist nur gesetzt, wenn
+  // diese Sitzung ueber die Tenant-Auswahl (Impersonation) statt ueber einen
+  // echten Tenant-Login zustande kam - steuert die zusaetzliche Admin-Leiste
+  // im Dashboard weiter unten.
+  | { status: "loggedIn"; session: TenantSessionResponse; adminView?: { adminEmail: string } }
   | { status: "error"; message: string };
 
 /** Rein clientseitige Entsprechung von enforceTenantActive() in orbit-api.ts
@@ -126,6 +137,22 @@ export default function App() {
       }
 
       const checkoutStatus = new URLSearchParams(window.location.search).get("checkout");
+
+      // NEU (30.09.2026, Admin-Modus): admin_users hat IMMER Vorrang vor der
+      // normalen Tenant-Session - so bekommt dein Admin-Konto zuverlaessig
+      // die Tenant-Liste zu sehen, unabhaengig davon, ob es (z.B. aus
+      // frueheren Tests) zufaellig auch selbst einen Tenant besitzt. Fuer
+      // jeden echten Bildungstraeger-Kunden (kein Eintrag in admin_users)
+      // schlaegt das hier einfach mit 403 fehl und es geht normal weiter
+      // unten mit fetchTenantSession().
+      try {
+        const adminSession = await fetchAdminSession(API_BASE, accessToken);
+        if (checkoutStatus) stripCheckoutParamFromUrl();
+        if (!cancelled) setAuth({ status: "adminTenantList", adminEmail: adminSession.email });
+        return;
+      } catch {
+        // kein Admin-Konto - normal als Tenant weiter unten aufloesen.
+      }
 
       try {
         let session = await fetchTenantSession(API_BASE, accessToken);
@@ -257,6 +284,24 @@ export default function App() {
     );
   }
 
+  // NEU (30.09.2026, Admin-Modus): Tenant-Auswahl statt Dashboard - siehe
+  // AdminTenantListPage.tsx. Ein Klick auf "Dashboard öffnen" dort ruft
+  // onOpenTenant() auf und wechselt in denselben "loggedIn"-Zustand wie ein
+  // echter Tenant-Login, nur mit gesetztem adminView (siehe Banner weiter
+  // unten).
+  if (auth.status === "adminTenantList") {
+    return (
+      <AdminTenantListPage
+        apiBase={API_BASE}
+        adminEmail={auth.adminEmail}
+        onOpenTenant={(session) =>
+          setAuth({ status: "loggedIn", session, adminView: { adminEmail: auth.adminEmail } })
+        }
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   const lockReason = tenantLockReason(auth.session);
   if (lockReason) {
     return (
@@ -283,9 +328,28 @@ export default function App() {
   // NEU (Billing Portal): ein bereits zahlender Kunde soll Zahlungsdaten/
   // Rechnungen selbst verwalten koennen, ohne Support kontaktieren zu muessen.
   const canManageBilling = auth.session.status === "active";
+  // NEU (30.09.2026, Admin-Modus): nur gesetzt, wenn diese Sitzung ueber die
+  // Tenant-Auswahl (Impersonation) zustande kam - steuert Admin-Leiste +
+  // Logout-Beschriftung unten. In einen lokalen const kopiert (statt jedes
+  // Mal auth.adminView zu schreiben), damit TypeScript die Narrowing auch in
+  // den onClick-Closures unten sauber durchreicht.
+  const adminView = auth.adminView;
 
   return (
     <div>
+      {adminView && (
+        <div style={adminBannerStyle}>
+          <span>
+            Admin-Ansicht: eingeloggt als <strong>{auth.session.tenant_name}</strong> ({adminView.adminEmail})
+          </span>
+          <button
+            style={adminBannerButtonStyle}
+            onClick={() => setAuth({ status: "adminTenantList", adminEmail: adminView.adminEmail })}
+          >
+            ← Zurück zur Tenant-Liste
+          </button>
+        </div>
+      )}
       <div style={headerActionsRowStyle}>
         {/* NEU (Direktkauf): der API-Key muss fuer JEDEN eingeloggten Tenant
          * sichtbar/kopierbar sein - insbesondere fuer einen Direktkauf-Kunden
@@ -320,7 +384,7 @@ export default function App() {
           </button>
         )}
         <button style={logoutButtonStyle} onClick={handleLogout}>
-          Abmelden
+          {adminView ? "Admin abmelden" : "Abmelden"}
         </button>
       </div>
       {portalError && <div style={portalErrorStyle}>{portalError}</div>}
@@ -583,6 +647,39 @@ const headerActionsRowStyle: CSSProperties = {
   justifyContent: "flex-end",
   gap: 8,
   maxWidth: "calc(100vw - 24px)",
+};
+
+const adminBannerStyle: CSSProperties = {
+  position: "fixed",
+  top: 12,
+  left: 12,
+  zIndex: 55,
+  display: "flex",
+  alignItems: "center",
+  flexWrap: "wrap",
+  gap: 10,
+  maxWidth: "calc(100vw - 24px)",
+  background: "#0c1c34",
+  color: "#fff",
+  border: "1px solid #14294a",
+  borderRadius: 8,
+  padding: "8px 12px",
+  fontSize: 12.5,
+  fontFamily: "'Inter', system-ui, sans-serif",
+  boxShadow: "0 8px 24px rgba(15,27,45,.25)",
+};
+
+const adminBannerButtonStyle: CSSProperties = {
+  border: "1px solid rgba(255,255,255,.35)",
+  borderRadius: 6,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 700,
+  cursor: "pointer",
+  fontFamily: "inherit",
+  background: "transparent",
+  color: "#fff",
+  whiteSpace: "nowrap",
 };
 
 const logoutButtonStyle: CSSProperties = {

@@ -1369,7 +1369,7 @@ function courseLocationText(course: {
   seats_remaining?: number | null;
 }): string {
   const upcoming = getCourseSessions(course).filter((s) => isSessionUpcoming(s));
-  const distinctModes = new Set(upcoming.map((s) => s.location_mode).filter((m): m is string => Boolean(m)));
+  const distinctModes = new Set(upcoming.map((s) => s.location_mode).filter((m): m is LocationMode => Boolean(m)));
   if (upcoming.length > 1 && distinctModes.size > 1) {
     return "Mehrere Standorte";
   }
@@ -1971,7 +1971,7 @@ async function runDemoAnalysis() {
   const [gapResult, setGapResult] = useState<GapAnalysisResponse | null>(null);
   const [gapBusy, setGapBusy] = useState(false);
   const [gapError, setGapError] = useState<string | null>(null);
-  const [skills, setSkills] = useState<SkillItem[]>([]);
+  const [, setSkills] = useState<SkillItem[]>([]);
   // KI-Tiefenanalyse (Version 19): reine Anreicherung der schnellen
   // Fuzzy-Gap-Analyse oben um woertliche Belege pro Skill - nach esco_uri
   // nachschlagbar. Laeuft NACH dem schnellen Gap-Ergebnis, bewusst

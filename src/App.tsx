@@ -258,33 +258,35 @@ export default function App() {
 
   return (
     <div>
-      <button style={logoutButtonStyle} onClick={handleLogout}>
-        Abmelden
-      </button>
-      {/* NEU (Direktkauf): der API-Key muss fuer JEDEN eingeloggten Tenant
-       * sichtbar/kopierbar sein - insbesondere fuer einen Direktkauf-Kunden
-       * ohne vorherigen Trial ist das Login gerade der einzige Weg, an
-       * seinen Key zu kommen ("dem Kaeufer zugaenglich gemacht werden",
-       * siehe Team-Entscheidung). Bewusst HIER in App.tsx statt in
-       * DashboardPage, damit es unabhaengig von deren Inhalt garantiert
-       * angezeigt wird. */}
-      <button style={apiKeyButtonStyle} onClick={() => setApiKeyPanelOpen(true)}>
-        API-Zugang
-      </button>
-      {canManageBilling && (
-        <button
-          style={manageBillingButtonStyle}
-          disabled={portalLoading}
-          onClick={() => void handleManageBilling(auth.session.api_key)}
-        >
-          {portalLoading ? "Wird geöffnet…" : "Abo verwalten"}
+      <div style={headerActionsRowStyle}>
+        {/* NEU (Direktkauf): der API-Key muss fuer JEDEN eingeloggten Tenant
+         * sichtbar/kopierbar sein - insbesondere fuer einen Direktkauf-Kunden
+         * ohne vorherigen Trial ist das Login gerade der einzige Weg, an
+         * seinen Key zu kommen ("dem Kaeufer zugaenglich gemacht werden",
+         * siehe Team-Entscheidung). Bewusst HIER in App.tsx statt in
+         * DashboardPage, damit es unabhaengig von deren Inhalt garantiert
+         * angezeigt wird. */}
+        <button style={apiKeyButtonStyle} onClick={() => setApiKeyPanelOpen(true)}>
+          API-Zugang
         </button>
-      )}
-      {canUpgrade && (
-        <button style={upgradeButtonStyle} onClick={() => setUpgradeOpen(true)}>
-          Plan upgraden
+        {canManageBilling && (
+          <button
+            style={manageBillingButtonStyle}
+            disabled={portalLoading}
+            onClick={() => void handleManageBilling(auth.session.api_key)}
+          >
+            {portalLoading ? "Wird geöffnet…" : "Abo verwalten"}
+          </button>
+        )}
+        {canUpgrade && (
+          <button style={upgradeButtonStyle} onClick={() => setUpgradeOpen(true)}>
+            Plan upgraden
+          </button>
+        )}
+        <button style={logoutButtonStyle} onClick={handleLogout}>
+          Abmelden
         </button>
-      )}
+      </div>
       {portalError && <div style={portalErrorStyle}>{portalError}</div>}
       <DashboardPage
         tenantName={auth.session.tenant_name}
@@ -445,11 +447,26 @@ function ViewButton({ active, onClick, children }: { active: boolean; onClick: (
   );
 }
 
-const logoutButtonStyle: CSSProperties = {
+/** NEU (Bugfix Überlappung): alle Header-Aktions-Buttons (API-Zugang, Abo
+ *  verwalten/Plan upgraden, Abmelden) sitzen jetzt in EINER gemeinsamen
+ *  fixed-Flexbox-Zeile (headerActionsRowStyle) statt jeder einzeln mit
+ *  eigenem hartem "right"-Pixelwert. Vorher überlappten sich Buttons mit
+ *  längerem Text (z.B. "Plan upgraden"), weil der eingeplante Abstand nicht
+ *  zur tatsächlichen Button-Breite passte. Die einzelnen Styles hier
+ *  enthalten deshalb bewusst kein position/top/right/zIndex mehr. */
+const headerActionsRowStyle: CSSProperties = {
   position: "fixed",
   top: 12,
   right: 12,
   zIndex: 50,
+  display: "flex",
+  flexWrap: "wrap",
+  justifyContent: "flex-end",
+  gap: 8,
+  maxWidth: "calc(100vw - 24px)",
+};
+
+const logoutButtonStyle: CSSProperties = {
   border: "1px solid #e6eaf2",
   borderRadius: 8,
   padding: "8px 14px",
@@ -460,13 +477,10 @@ const logoutButtonStyle: CSSProperties = {
   background: "#fff",
   color: "#5b6779",
   boxShadow: "0 8px 24px rgba(15,27,45,.08)",
+  whiteSpace: "nowrap",
 };
 
 const apiKeyButtonStyle: CSSProperties = {
-  position: "fixed",
-  top: 12,
-  right: 204,
-  zIndex: 50,
   border: "1px solid #e6eaf2",
   borderRadius: 8,
   padding: "8px 14px",
@@ -477,6 +491,7 @@ const apiKeyButtonStyle: CSSProperties = {
   background: "#fff",
   color: "#5b6779",
   boxShadow: "0 8px 24px rgba(15,27,45,.08)",
+  whiteSpace: "nowrap",
 };
 
 const apiKeyBoxStyle: CSSProperties = {
@@ -537,10 +552,6 @@ const apiKeyWarningStyle: CSSProperties = {
 };
 
 const manageBillingButtonStyle: CSSProperties = {
-  position: "fixed",
-  top: 12,
-  right: 108,
-  zIndex: 50,
   border: "1px solid #e6eaf2",
   borderRadius: 8,
   padding: "8px 14px",
@@ -551,6 +562,7 @@ const manageBillingButtonStyle: CSSProperties = {
   background: "#fff",
   color: "#5b6779",
   boxShadow: "0 8px 24px rgba(15,27,45,.08)",
+  whiteSpace: "nowrap",
 };
 
 const portalErrorStyle: CSSProperties = {
@@ -582,10 +594,6 @@ const devLinkStyle: CSSProperties = {
 };
 
 const upgradeButtonStyle: CSSProperties = {
-  position: "fixed",
-  top: 12,
-  right: 108,
-  zIndex: 50,
   border: "none",
   borderRadius: 8,
   padding: "8px 14px",
@@ -596,6 +604,7 @@ const upgradeButtonStyle: CSSProperties = {
   background: "linear-gradient(90deg, #8fecb4, #2f8fd6)",
   color: "#0c1c34",
   boxShadow: "0 8px 24px rgba(15,27,45,.08)",
+  whiteSpace: "nowrap",
 };
 
 const overlayStyle: CSSProperties = {

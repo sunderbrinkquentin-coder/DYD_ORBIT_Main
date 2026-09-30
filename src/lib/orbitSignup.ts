@@ -20,6 +20,9 @@ export interface TrialSignupInput {
   email: string;
   password: string;
   companyName: string;
+  /** NEU (Personalisierung): "Ihr Name" - fuer eine persoenliche Anrede in
+   *  der Bestaetigungsmail, siehe trialSignupEmailHtml() im Backend. */
+  contactName: string;
 }
 
 export interface TrialSignupResult {
@@ -73,6 +76,9 @@ export function validateTrialSignupInput(input: TrialSignupInput): string | null
   if (!input.companyName.trim()) {
     return "Bitte einen Bildungsträger-/Firmennamen angeben.";
   }
+  if (!input.contactName.trim()) {
+    return "Bitte Ihren Namen angeben.";
+  }
   return null;
 }
 
@@ -88,6 +94,7 @@ export async function signupTrialTenant(
       email: input.email.trim(),
       password: input.password,
       company_name: input.companyName.trim(),
+      contact_name: input.contactName.trim(),
     }),
   });
 

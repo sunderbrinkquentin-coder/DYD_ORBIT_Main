@@ -57,7 +57,9 @@ import { ROLES_CATALOG, SKILLS_CATALOG, type CatalogRole } from "../data/rolesCa
 import {
   getCoveredBereiche,
   describePreferenceMismatches,
+  frameFitScore,
   rankCoursesForGap,
+  type FrameFitInput,
 } from "../data/courseMatcher";
 import { BereichBadges, CourseBadgeRow, courseBadges, daysUntilCourseStart, type CourseBadge } from "../data/courseBadges";
 import { mapCatalogAsync, type MappedCourse } from "../data/courseMap";
@@ -1558,9 +1560,9 @@ interface JourneyPageProps {
    * Farbverlauf (Mint → Blau, dieselbe Familie wie MatchRing). */
   avatarAccentColor?: string;
   /**
-   * Journey v2 "Der kurze Weg" (24.09.2026) einschalten. Default "v1", bis
-   * alle drei Umbau-Teile fertig sind. Zum Testen ohne Code-Aenderung:
-   * ?journey=v2 an die URL haengen.
+   * Journey v2 "Der kurze Weg" (24.09.2026). Seit 06.10.2026 Standard —
+   * die alte Journey bleibt ueber journeyVersion="v1" oder ?journey=v1
+   * erreichbar.
    */
   journeyVersion?: "v1" | "v2";
 }
@@ -1583,7 +1585,7 @@ export function JourneyPage({
   showAvatar = true,
   avatarName = "Mia",
   avatarAccentColor,
-  journeyVersion = "v1",
+  journeyVersion = "v2",
 }: JourneyPageProps = {}) {
   // Journey v2 (siehe V2_STEPS_*): Prop oder ?journey=v2. Einmal beim Mount
   // bestimmt — ein Wechsel mitten im Durchlauf waere fuer Nutzer verwirrend.
@@ -4085,6 +4087,21 @@ async function runDemoAnalysis() {
       [...v2Direction.map((d) => d.role.bereich_key), bereichRole?.bereich_key].filter((k): k is string => Boolean(k))
     );
     const directRoleIds = new Set<string>(v2SchwerpunktRoleIds.size > 0 ? v2SchwerpunktRoleIds : v2Direction.map((d) => d.role.role_id));
+    // Rahmen-Passung (06.10.2026): alles aus "Dein Rahmen" (Zeit, Ort, Start,
+    // Foerderung, Prioritaet, Huerden, Voraussetzungen) — siehe frameFitScore.
+    const frame: FrameFitInput = {
+      employmentType,
+      workLocation,
+      desiredStart,
+      fundingPreference,
+      categoryPreference,
+      desiredDuration,
+      priority: v2Priority,
+      hurdles: v2Hurdles,
+      qualificationLevel,
+      experienceYears,
+      germanLevel,
+    };
     // Kein Rueckschritt: Kurse, die zu einem Beruf mehr als eine Stufe
     // UNTER der eingegrenzten Richtung fuehren, werden nicht gezeigt.
     const targetNiveau = v2Direction[0]?.role.anforderungsniveau ?? 0;
@@ -4159,11 +4176,16 @@ async function runDemoAnalysis() {
           .filter((x): x is { id: string; t: { name: string; weight: number } } => Boolean(x.t) && !alreadyStrong.has(x.id))
           .sort((a, b) => b.t.weight - a.t.weight);
         const bridgeWeight = bridge.reduce((sum, x) => sum + x.t.weight, 0);
-        return { ...cand, pitch, level, index, bridgeSkills: bridge.map((x) => x.t.name), bridgeWeight, inBereich: inDirBereich(cand.course) };
+        const frameScore = frameFitScore(cand.course, frame);
+        return { ...cand, pitch, level, index, frameScore, bridgeSkills: bridge.map((x) => x.t.name), bridgeWeight, inBereich: inDirBereich(cand.course) };
       });
 
+    // Bei gleicher fachlicher Stufe entscheidet zuerst der Rahmen der Person
+    // (06.10.2026), erst danach "Top-Kurs" und die bisherige Reihenfolge.
     const byPriority = (a: (typeof scored)[number], b: (typeof scored)[number]) =>
-      Number(Boolean(b.course.is_featured)) - Number(Boolean(a.course.is_featured)) || a.index - b.index;
+      b.frameScore - a.frameScore ||
+      Number(Boolean(b.course.is_featured)) - Number(Boolean(a.course.is_featured)) ||
+      a.index - b.index;
     // 1) Direkte Treffer (Stufe 2-3), wie bisher.
     const direct = scored.filter((x) => x.level >= 2).sort((a, b) => b.level - a.level || byPriority(a, b));
     // 2) Einstiege: andere Berufe im Bereich (Stufe 1) oder Kurse mit
@@ -4204,7 +4226,7 @@ async function runDemoAnalysis() {
       })
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isV2, courseResult, allCourses, careerGoal, v2Situation, employmentType, desiredStart, v2Direction, v2Plan, v2Answers, v2Role, activityIds, targetBereichLabel, rolesInPortfolio, bereichRole, v2SchwerpunktRoleIds, v2SchwerpunktText]);
+  }, [isV2, courseResult, allCourses, careerGoal, v2Situation, employmentType, desiredStart, v2Direction, v2Plan, v2Answers, v2Role, activityIds, targetBereichLabel, rolesInPortfolio, bereichRole, v2SchwerpunktRoleIds, v2SchwerpunktText, workLocation, fundingPreference, categoryPreference, desiredDuration, v2Priority, v2Hurdles, qualificationLevel, experienceYears, germanLevel]);
 
   /**
    * Spotlight (29.09.2026, Rueckmeldung "vorher gab es ein dynamisches Feld
@@ -4243,6 +4265,35 @@ async function runDemoAnalysis() {
     const dirBereiche = new Set(
       [...v2Direction.map((d) => d.role.bereich_key), bereichRole?.bereich_key].filter((k): k is string => Boolean(k))
     );
+    // "In deiner Richtung" (06.10.2026, Fehler: SQL-Kurs bei Schwerpunkt
+    // Buchhaltung so markiert): Bereichs-Tag allein reicht nicht mehr — Kurse
+    // werden im Dashboard oft mehreren Bereichen zugeordnet. Zusaetzlich muss
+    // ein fachlicher Bezug zur gewaehlten Richtung bestehen: Kurs fuehrt zu
+    // einem Beruf der Richtung/des Schwerpunkts, vermittelt einen ihrer
+    // Skills oder traegt ein Fachwort der Richtung im Titel.
+    const spotDirectRoleIds = new Set<string>(v2SchwerpunktRoleIds.size > 0 ? v2SchwerpunktRoleIds : v2Direction.map((d) => d.role.role_id));
+    const spotDirectRoles = ROLES_CATALOG.filter((r) => spotDirectRoleIds.has(r.role_id));
+    const spotTerms = directionTerms([
+      v2SchwerpunktText ?? "",
+      ...spotDirectRoles.map((r) => r.role_name),
+      ...spotDirectRoles.map((r) => r.typische_weiterbildung ?? ""),
+    ]);
+    const spotSkillIds = new Set(
+      (spotDirectRoles.length > 0 ? spotDirectRoles : v2Direction.map((d) => d.role)).flatMap((r) => r.skills.map((sk) => sk.skill_id))
+    );
+    const spotFrame: FrameFitInput = {
+      employmentType,
+      workLocation,
+      desiredStart,
+      fundingPreference,
+      categoryPreference,
+      desiredDuration,
+      priority: v2Priority,
+      hurdles: v2Hurdles,
+      qualificationLevel,
+      experienceYears,
+      germanLevel,
+    };
     const items: (V2SpotlightItem & { rank: number })[] = [];
     for (const course of allCourses) {
       if (shown.has(course.course_id) || !course.course_id || !course.course_name) continue;
@@ -4251,8 +4302,15 @@ async function runDemoAnalysis() {
       const highlighted = Boolean(course.is_featured) || Boolean(course.custom_banner);
       if (!highlighted && !soon) continue;
       if (course.seats_remaining != null && course.seats_remaining <= 0) continue;
-      const inDirection = [...(course.bereich_keys ?? []), ...(course.bereich_key ? [course.bereich_key] : [])].some((k) => dirBereiche.has(k));
+      const inBereich = [...(course.bereich_keys ?? []), ...(course.bereich_key ? [course.bereich_key] : [])].some((k) => dirBereiche.has(k));
       const pitch = buildCoursePitchV2(course as unknown as PitchCourse, ctx);
+      const reachId = pitch.ladder.reach?.role_id;
+      const fachlich =
+        (reachId != null && spotDirectRoleIds.has(reachId)) ||
+        (course.covered_skill_uris ?? []).some((id) => spotSkillIds.has(id)) ||
+        termHit(course.course_name, spotTerms);
+      const inDirection = inBereich && fachlich;
+      const frameScore = frameFitScore(course, spotFrame);
       const personal = pitch.fit.find((f) => /wie du es wolltest|Start schon in/.test(f)) ?? null;
       const hook = inDirection && pitch.ladder.reach ? `Führt zu ${pitch.ladder.reach.role_name}` : personal ?? pitch.fit[0] ?? null;
       items.push({
@@ -4263,12 +4321,14 @@ async function runDemoAnalysis() {
         daysUntilStart: soon ? days : null,
         // Reihenfolge: eigene Richtung vor fremdem Bereich, dann Top-Kurs,
         // dann eigener Banner, dann frueherer Start.
-        rank: (inDirection ? 0 : 1000) + (course.is_featured ? 0 : 100) + (course.custom_banner ? 0 : 50) + Math.min(days ?? 49, 49),
+        // Rahmen-Passung (06.10.2026) zwischen Richtung und Top-Kurs.
+        rank:
+          (inDirection ? 0 : 1000) - frameScore * 20 + (course.is_featured ? 0 : 100) + (course.custom_banner ? 0 : 50) + Math.min(days ?? 49, 49),
       });
     }
     return items.sort((a, b) => a.rank - b.rank).slice(0, 8).map(({ rank: _rank, ...rest }) => rest);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isV2, courseResult, v2ResultCards, allCourses, careerGoal, v2Situation, employmentType, desiredStart, v2Direction, v2Plan, v2Answers, v2Role, activityIds, targetBereichLabel, rolesInPortfolio, bereichRole]);
+  }, [isV2, courseResult, v2ResultCards, allCourses, careerGoal, v2Situation, employmentType, desiredStart, v2Direction, v2Plan, v2Answers, v2Role, activityIds, targetBereichLabel, rolesInPortfolio, bereichRole, v2SchwerpunktRoleIds, v2SchwerpunktText, workLocation, fundingPreference, categoryPreference, desiredDuration, v2Priority, v2Hurdles, qualificationLevel, experienceYears, germanLevel]);
 
   /** Ergebnis, Weg ueber die Branche: realistische Berufe (Richtung) plus
    *  die Berufe, zu denen die empfohlenen Kurse fuehren — als Moeglichkeiten. */

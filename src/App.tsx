@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { DashboardPage } from "./pages/DashboardPage";
 import { JourneyPage } from "./pages/JourneyPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -6,7 +6,7 @@ import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { TrialLockedPage } from "./pages/TrialLockedPage";
 import { PlanPicker } from "./components/PlanPicker";
 import { createBillingPortalSession } from "./api/billing";
-import { supabase } from "./lib/supabaseClient";
+import { OPENED_FROM_RECOVERY_LINK, supabase } from "./lib/supabaseClient";
 import { fetchTenantSession, type TenantSessionResponse } from "./api/session";
 import { fetchAdminSession } from "./api/admin";
 import { AdminTenantListPage } from "./pages/AdminTenantListPage";
@@ -97,7 +97,18 @@ function isLocalDevMachine(): boolean {
 
 export default function App() {
   const [devPreview, setDevPreview] = useState(false);
-  const [auth, setAuth] = useState<AuthState>({ status: "loading" });
+  const [auth, setAuth] = useState<AuthState>(() =>
+    OPENED_FROM_RECOVERY_LINK ? { status: "passwordRecovery" } : { status: "loading" }
+  );
+  // Bugfix (06.10.2026, "Seite zum Passwort-Setzen kam kurz, dann wurde ich
+  // eingeloggt"): Solange die Person ueber den Recovery-Link kommt und noch
+  // kein neues Passwort gesetzt hat, darf KEIN anderer Auth-Weg (der erste
+  // resolveSession()-Aufruf beim Start, SIGNED_IN, TOKEN_REFRESHED,
+  // USER_UPDATED ...) sie ins Dashboard schieben. Bisher setzte nur das
+  // PASSWORD_RECOVERY-Event den Zustand — der parallel laufende
+  // resolveSession() ueberschrieb ihn danach mit "loggedIn".
+  const recoveryRef = useRef(OPENED_FROM_RECOVERY_LINK);
+  const resolveSessionRef = useRef<() => Promise<void>>(async () => {});
   const [syncingCheckout, setSyncingCheckout] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
@@ -126,6 +137,10 @@ export default function App() {
     let cancelled = false;
 
     async function resolveSession() {
+      if (recoveryRef.current) {
+        if (!cancelled) setAuth({ status: "passwordRecovery" });
+        return;
+      }
       const { data } = await supabase.auth.getSession();
       const accessToken = data.session?.access_token;
 
@@ -191,6 +206,7 @@ export default function App() {
       }
     }
 
+    resolveSessionRef.current = resolveSession;
     void resolveSession();
 
     const { data: subscription } = supabase.auth.onAuthStateChange((event) => {
@@ -201,6 +217,7 @@ export default function App() {
       // direkt am ResetPasswordPage-Bildschirm vorbei ins Dashboard fuehren)
       // - erst nach erfolgreichem updateUser() dort geht es normal weiter.
       if (event === "PASSWORD_RECOVERY") {
+        recoveryRef.current = true;
         if (!cancelled) setAuth({ status: "passwordRecovery" });
         return;
       }
@@ -268,7 +285,16 @@ export default function App() {
   }
 
   if (auth.status === "passwordRecovery") {
-    return <ResetPasswordPage onPasswordUpdated={() => setAuth({ status: "loading" })} />;
+    return (
+      <ResetPasswordPage
+        onPasswordUpdated={() => {
+          // Erst JETZT (neues Passwort gespeichert) normal einloggen.
+          recoveryRef.current = false;
+          setAuth({ status: "loading" });
+          void resolveSessionRef.current();
+        }}
+      />
+    );
   }
 
   if (auth.status === "error") {

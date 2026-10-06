@@ -1075,6 +1075,13 @@ interface DashboardPageProps {
    * Default: an, solange im Vite-Dev-Server (`npm run dev`) entwickelt wird.
    */
   showConnectionPanel?: boolean;
+  /**
+   * Inhalt des "Entwickler"-Bereichs im Reports-Tab (06.10.2026): API-Key
+   * und Journey-Key/Einbettungscode des Tenants. Kommt aus App.tsx (dort
+   * liegt die Login-Sitzung mit den Schluesseln). Ohne Inhalt erscheint der
+   * Button nicht.
+   */
+  developerPanel?: ReactNode;
 }
 /**
  * Wiederverwendbare Zeitraum-/Bereichs-/Kategorie-Filterleiste (NEU, 18.09. —
@@ -1196,7 +1203,10 @@ export function DashboardPage({
   defaultBaseUrl = DEFAULT_ORBIT_API_BASE,
   defaultApiKey = "",
   showConnectionPanel = Boolean(import.meta.env?.DEV ?? true) || !defaultApiKey,
+  developerPanel,
 }: DashboardPageProps = {}) {
+  // Entwickler-Bereich im Reports-Tab (API-/Journey-Keys), eingeklappt.
+  const [devPanelOpen, setDevPanelOpen] = useState(false);
   // Version 27: Startwert zuerst aus localStorage (siehe
   // readStoredDashboardConnection oben), erst wenn dort nichts hinterlegt
   // ist, aus defaultBaseUrl/defaultApiKey.
@@ -7671,12 +7681,39 @@ export function DashboardPage({
                   <div className="sub">Dashboard-Kennzahlen aus deinen echten Leads</div>
                 </div>
                 <div className="head-actions">
+                  {developerPanel && (
+                    <button
+                      type="button"
+                      className={`btn-ghost dev-panel-toggle ${devPanelOpen ? "active" : ""}`}
+                      aria-expanded={devPanelOpen}
+                      aria-controls="dev-panel"
+                      onClick={() => setDevPanelOpen((v) => !v)}
+                    >
+                      🛠 Entwickler
+                    </button>
+                  )}
                   <div className={`live-pill ${live ? "" : "offline"}`}>
                     <span>●</span> {live ? "live" : "offline"}
                   </div>
                   {refreshIcon()}
                 </div>
               </div>
+              {developerPanel && devPanelOpen && (
+                <section id="dev-panel" className="dev-panel" aria-label="Entwickler-Zugang">
+                  <div className="dev-panel-head">
+                    <div>
+                      <div className="dev-panel-title">Entwickler-Zugang</div>
+                      <div className="dev-panel-sub">
+                        API-Key für eigene Integrationen und Journey-Key zum Einbetten auf deiner Website.
+                      </div>
+                    </div>
+                    <button type="button" className="dev-panel-close" onClick={() => setDevPanelOpen(false)} aria-label="Entwickler-Bereich schließen">
+                      ×
+                    </button>
+                  </div>
+                  {developerPanel}
+                </section>
+              )}
               {displayedLeads.length > 0 && (
                 <FilterBar
                   period={reportsPeriod}

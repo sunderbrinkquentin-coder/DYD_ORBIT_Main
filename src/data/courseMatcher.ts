@@ -260,6 +260,92 @@ export function preferenceMatchScore(
 }
 
 /**
+ * Rahmen-Passung fuer die v2-Ergebnisseite (06.10.2026, "perfektes Matching,
+ * wird auf die Rahmendaten eingegangen?"). Fasst ALLES zusammen, was die
+ * Person im Schritt "Dein Rahmen" angibt — nicht nur Zeit/Ort/Start/
+ * Foerderung (preferenceMatchScore), sondern auch:
+ *  - Prioritaet ("Was ist dir am wichtigsten?"): anerkannter Abschluss,
+ *    flexibel lernen, schnell starten
+ *  - Huerden ("Was koennte schwierig werden?"): Zeit -> Teilzeit/
+ *    berufsbegleitend, Kosten -> Foerderweg vorhanden
+ *  - Voraussetzungen (Abschluss/Erfahrung/Deutsch): nicht erfuellt kostet
+ *    deutlich, unklar leicht.
+ * Wird NACH der fachlichen Passung angewendet (nie davor): ein fachfremder
+ * Kurs wird dadurch nie empfohlen, aber unter fachlich gleichwertigen
+ * gewinnt der, der ins Leben der Person passt — erst danach zaehlt "Top-Kurs".
+ * Fehlende Angaben (Person "egal" oder Kursfeld leer) zaehlen nie negativ.
+ */
+export interface FrameFitInput {
+  employmentType?: string | null;
+  workLocation?: string | null;
+  desiredStart?: string | null;
+  fundingPreference?: string | null;
+  categoryPreference?: string | null;
+  desiredDuration?: string | null;
+  priority?: string | null;
+  hurdles?: ReadonlySet<string> | string[] | null;
+  qualificationLevel?: string | null;
+  experienceYears?: number | null;
+  germanLevel?: string | null;
+}
+export function frameFitScore(
+  course: {
+    location_mode?: string | null;
+    employment_mode?: string | null;
+    starts_at?: string | null;
+    funding_types?: string[] | null;
+    course_category?: string | null;
+    duration_weeks?: number | null;
+    qualification_type?: string | null;
+    min_qualification_level?: string | null;
+    min_experience_years?: number | null;
+    required_language_level?: string | null;
+  },
+  f: FrameFitInput
+): number {
+  let score = preferenceMatchScore(
+    course,
+    f.employmentType,
+    f.workLocation,
+    f.desiredStart,
+    f.fundingPreference,
+    f.categoryPreference,
+    f.desiredDuration
+  );
+  const flexibleTime = course.employment_mode === "teilzeit" || course.employment_mode === "beides";
+  const flexiblePlace = course.location_mode === "remote" || course.location_mode === "hybrid";
+  const days = daysUntilCourseStart(course);
+  const hasFunding = Boolean(course.funding_types && course.funding_types.length > 0);
+  switch (f.priority) {
+    case "abschluss":
+      if (course.qualification_type === "ihk_pruefung" || course.qualification_type === "sonstiger_abschluss") score += 2;
+      else if (course.qualification_type === "lehrgangszertifikat") score += 1;
+      break;
+    case "flexibel":
+      if (flexibleTime) score += 1;
+      if (flexiblePlace) score += 1;
+      break;
+    case "schnell":
+      if (days != null && days >= 0 && days <= 30) score += 2;
+      else if (days != null && days >= 0 && days <= 60) score += 1;
+      break;
+  }
+  const hurdles = f.hurdles ? new Set(f.hurdles) : new Set<string>();
+  if (hurdles.has("zeit") && flexibleTime) score += 1;
+  if (hurdles.has("kosten") && hasFunding) score += 1;
+  if (course.min_qualification_level || course.min_experience_years != null || course.required_language_level) {
+    const pre = checkPrerequisites(course, {
+      qualificationLevel: f.qualificationLevel,
+      experienceYears: f.experienceYears,
+      germanLevel: f.germanLevel,
+    });
+    if (pre.status === "nicht_erfuellt") score -= 4;
+    else if (pre.status === "unklar") score -= 0.5;
+  }
+  return score;
+}
+
+/**
  * Wie preferenceMatchScore() oben, aber statt einer Zahl die KONKRETEN
  * Dimensionen zurueckgibt, bei denen ein echter Widerspruch vorliegt (leeres
  * Array = passt ueberall bzw. keine Praeferenz genannt) — Antwort auf "bei
@@ -543,7 +629,9 @@ export function rankCoursesForGap(
     Boolean(preferences.germanLevel);
 
   const withGapCoverage = courses.map((course) => {
-    const coveredGapUris = course.covered_skill_uris.filter((uri) => gapWeightByUri.has(uri));
+    // Dedupliziert (06.10.2026): doppelte Skill-IDs am Kurs (z. B. ueber die
+    // Legacy-ESCO-Map) liessen covers_gap_percentage ueber 100 % steigen.
+    const coveredGapUris = [...new Set(course.covered_skill_uris ?? [])].filter((uri) => gapWeightByUri.has(uri));
     const coveredGapWeight = coveredGapUris.reduce((sum, uri) => sum + (gapWeightByUri.get(uri) ?? 0), 0);
     const prefScore = preferenceMatchScore(
       course,
@@ -626,7 +714,7 @@ export function rankCoursesForGap(
         duration_weeks: course.duration_weeks,
         covers_gap_count: coveredGapUris.length,
         covers_gap_percentage:
-          gapSkills.length > 0 ? Math.round((coveredGapUris.length / gapSkills.length) * 1000) / 10 : 0,
+          gapSkills.length > 0 ? Math.min(100, Math.round((coveredGapUris.length / gapSkills.length) * 1000) / 10) : 0,
         ...(hasPreference ? { preference_match: prefScore } : {}),
         ...(prereq && hasPersonPrereqInfo ? { prerequisite_status: prereq.status, prerequisite_unmet: prereq.unmet } : {}),
       }));
@@ -726,7 +814,7 @@ export function rankCoursesForGap(
         : null;
       return {
         course,
-        coveredRoleUris: course.covered_skill_uris.filter((uri) => allRoleUris.has(uri)),
+        coveredRoleUris: [...new Set(course.covered_skill_uris ?? [])].filter((uri) => allRoleUris.has(uri)),
         prefScore: preferenceMatchScore(
           course,
           preferences.employmentType,
@@ -757,7 +845,7 @@ export function rankCoursesForGap(
       covers_gap_percentage: 0,
       covers_role_count: coveredRoleUris.length,
       covers_role_percentage:
-        allRoleUris.size > 0 ? Math.round((coveredRoleUris.length / allRoleUris.size) * 1000) / 10 : 0,
+        allRoleUris.size > 0 ? Math.min(100, Math.round((coveredRoleUris.length / allRoleUris.size) * 1000) / 10) : 0,
       is_role_fallback: true,
       ...(hasPreference ? { preference_match: prefScore } : {}),
       ...(prereq && hasPersonPrereqInfo ? { prerequisite_status: prereq.status, prerequisite_unmet: prereq.unmet } : {}),

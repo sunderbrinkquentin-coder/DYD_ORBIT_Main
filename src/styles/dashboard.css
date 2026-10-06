@@ -5314,3 +5314,20 @@ button.course-skill-chip:disabled {
   justify-content: flex-end;
   margin-top: 8px;
 }
+
+/* ---------- Kurssuche vorzeitig beenden (06.10.2026) ---------- */
+.catalog-run-stop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.catalog-btn-stop {
+  padding: 8px 14px;
+  font-size: 13px;
+}
+.catalog-run-stop-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}

@@ -102,8 +102,6 @@ export default function App() {
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
-  const [apiKeyPanelOpen, setApiKeyPanelOpen] = useState(false);
-  const [embedPanelOpen, setEmbedPanelOpen] = useState(false);
   const showDevPreviewEntry = import.meta.env.DEV && isLocalDevMachine();
 
   // NEU (30.09.2026, Journey-Embed): oeffentliche, unauthentifizierte Route
@@ -351,24 +349,8 @@ export default function App() {
         </div>
       )}
       <div style={headerActionsRowStyle}>
-        {/* NEU (Direktkauf): der API-Key muss fuer JEDEN eingeloggten Tenant
-         * sichtbar/kopierbar sein - insbesondere fuer einen Direktkauf-Kunden
-         * ohne vorherigen Trial ist das Login gerade der einzige Weg, an
-         * seinen Key zu kommen ("dem Kaeufer zugaenglich gemacht werden",
-         * siehe Team-Entscheidung). Bewusst HIER in App.tsx statt in
-         * DashboardPage, damit es unabhaengig von deren Inhalt garantiert
-         * angezeigt wird. */}
-        <button style={apiKeyButtonStyle} onClick={() => setApiKeyPanelOpen(true)}>
-          API-Zugang
-        </button>
-        {/* NEU (30.09.2026, Journey-Embed): fertiger iframe-Code fuer die
-         * Nutzer-Journey, mit dem eigenen oeffentlichen Journey-Key des
-         * Tenants (auth.session.journey_key - NICHT dem Operator-Key oben),
-         * damit der Bildungstraeger sie auf seiner eigenen Website
-         * einbetten kann. */}
-        <button style={apiKeyButtonStyle} onClick={() => setEmbedPanelOpen(true)}>
-          Journey einbetten
-        </button>
+        {/* API-Zugang und "Journey einbetten" liegen seit 06.10.2026 im
+         * Dashboard unter Reports -> "Entwickler" (siehe developerPanel unten). */}
         {canManageBilling && (
           <button
             style={manageBillingButtonStyle}
@@ -393,6 +375,22 @@ export default function App() {
         defaultBaseUrl={API_BASE}
         defaultApiKey={auth.session.api_key}
         showConnectionPanel={false}
+        // Entwickler-Bereich im Reports-Tab (06.10.2026): API-Key fuer eigene
+        // Integrationen + oeffentlicher Journey-Key/Einbettungscode. Bleibt
+        // fuer JEDEN eingeloggten Tenant erreichbar (Direktkauf-Kunden haben
+        // sonst keinen Weg an ihren Key).
+        developerPanel={
+          <>
+            <div className="dev-panel-section">
+              <h3>API-Zugang</h3>
+              <ApiKeyBox tenantId={auth.session.tenant_id} apiKey={auth.session.api_key} apiBase={API_BASE} />
+            </div>
+            <div className="dev-panel-section">
+              <h3>Journey einbetten</h3>
+              <EmbedBox journeyKey={auth.session.journey_key} />
+            </div>
+          </>
+        }
       />
       {upgradeOpen && (
         <div style={overlayStyle} onClick={() => setUpgradeOpen(false)}>
@@ -402,28 +400,6 @@ export default function App() {
             </button>
             <h2 style={overlayHeadingStyle}>Plan upgraden</h2>
             <PlanPicker apiBase={API_BASE} apiKey={auth.session.api_key} />
-          </div>
-        </div>
-      )}
-      {apiKeyPanelOpen && (
-        <div style={overlayStyle} onClick={() => setApiKeyPanelOpen(false)}>
-          <div style={overlayCardStyle} onClick={(e) => e.stopPropagation()}>
-            <button style={overlayCloseStyle} onClick={() => setApiKeyPanelOpen(false)} aria-label="Schließen">
-              ×
-            </button>
-            <h2 style={overlayHeadingStyle}>API-Zugang</h2>
-            <ApiKeyBox tenantId={auth.session.tenant_id} apiKey={auth.session.api_key} apiBase={API_BASE} />
-          </div>
-        </div>
-      )}
-      {embedPanelOpen && (
-        <div style={overlayStyle} onClick={() => setEmbedPanelOpen(false)}>
-          <div style={overlayCardStyle} onClick={(e) => e.stopPropagation()}>
-            <button style={overlayCloseStyle} onClick={() => setEmbedPanelOpen(false)} aria-label="Schließen">
-              ×
-            </button>
-            <h2 style={overlayHeadingStyle}>Journey einbetten</h2>
-            <EmbedBox journeyKey={auth.session.journey_key} />
           </div>
         </div>
       )}
@@ -683,20 +659,6 @@ const adminBannerButtonStyle: CSSProperties = {
 };
 
 const logoutButtonStyle: CSSProperties = {
-  border: "1px solid #e6eaf2",
-  borderRadius: 8,
-  padding: "8px 14px",
-  fontSize: 12.5,
-  fontWeight: 700,
-  cursor: "pointer",
-  fontFamily: "'Inter', system-ui, sans-serif",
-  background: "#fff",
-  color: "#5b6779",
-  boxShadow: "0 8px 24px rgba(15,27,45,.08)",
-  whiteSpace: "nowrap",
-};
-
-const apiKeyButtonStyle: CSSProperties = {
   border: "1px solid #e6eaf2",
   borderRadius: 8,
   padding: "8px 14px",

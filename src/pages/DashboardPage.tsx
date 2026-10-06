@@ -216,7 +216,7 @@ function UrlImportAnalysisLoader({ url, courseIndex, courseTotal }: { url: strin
     </div>
   );
 }
-type Tab = "leads" | "kurse" | "reports";
+type Tab = "leads" | "kurse" | "reports" | "entwickler";
 type StatusKind = "" | "ok" | "err";
 interface LeadFormState {
   text: string;
@@ -1076,12 +1076,18 @@ interface DashboardPageProps {
    */
   showConnectionPanel?: boolean;
   /**
-   * Inhalt des "Entwickler"-Bereichs im Reports-Tab (06.10.2026): API-Key
-   * und Journey-Key/Einbettungscode des Tenants. Kommt aus App.tsx (dort
-   * liegt die Login-Sitzung mit den Schluesseln). Ohne Inhalt erscheint der
-   * Button nicht.
+   * Eigener Sidebar-Bereich "Entwickler" unter Reports (06.10.2026).
+   * developerEmbed: Journey-Einbettung (oeffentlicher Journey-Key) — immer
+   * nutzbar. developerApi: API-Key-Anzeige — nur sichtbar, wenn
+   * apiAccessUnlocked=true; sonst gesperrt mit "API-Zugang anfragen".
+   * Beides kommt aus App.tsx (dort liegt die Login-Sitzung). Ohne
+   * developerEmbed und developerApi erscheint der Bereich nicht.
    */
-  developerPanel?: ReactNode;
+  developerEmbed?: ReactNode;
+  developerApi?: ReactNode;
+  apiAccessUnlocked?: boolean;
+  /** Fuer die API-Anfrage-Mail (Zuordnung des Mandanten). */
+  tenantId?: string;
 }
 /**
  * Wiederverwendbare Zeitraum-/Bereichs-/Kategorie-Filterleiste (NEU, 18.09. —
@@ -1203,10 +1209,18 @@ export function DashboardPage({
   defaultBaseUrl = DEFAULT_ORBIT_API_BASE,
   defaultApiKey = "",
   showConnectionPanel = Boolean(import.meta.env?.DEV ?? true) || !defaultApiKey,
-  developerPanel,
+  developerEmbed,
+  developerApi,
+  apiAccessUnlocked = false,
+  tenantId,
 }: DashboardPageProps = {}) {
-  // Entwickler-Bereich im Reports-Tab (API-/Journey-Keys), eingeklappt.
-  const [devPanelOpen, setDevPanelOpen] = useState(false);
+  const hasDeveloperArea = Boolean(developerEmbed || developerApi);
+  // API-Zugang anfragen (06.10.2026): gleiche mailto-Mechanik wie das
+  // Feedback-Formular (kein Server-Versand) — die Mail geht an DYD.
+  const [apiRequestOpen, setApiRequestOpen] = useState(false);
+  const [apiRequestUseCase, setApiRequestUseCase] = useState("");
+  const [apiRequestContact, setApiRequestContact] = useState("");
+  const [apiRequestStatus, setApiRequestStatus] = useState<{ msg: string; kind: StatusKind }>({ msg: "", kind: "" });
   // Version 27: Startwert zuerst aus localStorage (siehe
   // readStoredDashboardConnection oben), erst wenn dort nichts hinterlegt
   // ist, aus defaultBaseUrl/defaultApiKey.
@@ -1308,6 +1322,27 @@ export function DashboardPage({
     window.location.href = mailtoUrl;
     setFeedbackStatus({
       msg: `Deine Mail-App sollte sich jetzt mit einer vorausgefüllten Nachricht geöffnet haben — bitte dort auf „Senden" klicken. Falls sich nichts öffnet, schreib direkt an ${FEEDBACK_TARGET_EMAIL}.`,
+      kind: "ok",
+    });
+  }
+  function handleSendApiRequest() {
+    const contact = apiRequestContact.trim();
+    if (!contact) {
+      setApiRequestStatus({ msg: "Bitte gib an, wie wir dich erreichen (E-Mail oder Telefon).", kind: "err" });
+      return;
+    }
+    const subject = `API-Zugang angefragt — ${effectiveTenantName}`;
+    const body = [
+      `Mandant: ${effectiveTenantName}`,
+      ...(tenantId ? [`Tenant-ID: ${tenantId}`] : []),
+      `Kontakt: ${contact}`,
+      "",
+      "Geplante Nutzung:",
+      apiRequestUseCase.trim() || "(keine Angabe)",
+    ].join("\n");
+    window.location.href = `mailto:${FEEDBACK_TARGET_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    setApiRequestStatus({
+      msg: `Deine Mail-App sollte sich mit der fertigen Anfrage geöffnet haben — bitte dort auf „Senden" klicken. Falls nicht: schreib an ${FEEDBACK_TARGET_EMAIL}.`,
       kind: "ok",
     });
   }
@@ -4410,7 +4445,8 @@ export function DashboardPage({
       <DashboardTour
         open={tourOpen}
         onClose={() => setTourOpen(false)}
-        activeTab={tab}
+        // Der Rundgang kennt den Entwickler-Bereich nicht - dort zaehlt er als Reports.
+        activeTab={tab === "entwickler" ? "reports" : tab}
         onChangeTab={setTab}
         onStepChange={setTourStepSelector}
       />
@@ -4546,6 +4582,18 @@ export function DashboardPage({
             >
               <span className="icon" aria-hidden="true">◫</span>Reports
             </div>
+            {hasDeveloperArea && (
+              <div
+                role="tab"
+                aria-selected={tab === "entwickler"}
+                tabIndex={0}
+                className={`nav-item ${tab === "entwickler" ? "active" : ""}`}
+                onClick={() => setTab("entwickler")}
+                onKeyDown={(e) => handleNavKeyDown(e, "entwickler")}
+              >
+                <span className="icon" aria-hidden="true">⌘</span>Entwickler
+              </div>
+            )}
           </nav>
           <div className="sidebar-spacer" />
           {showConnectionPanel && (
@@ -7672,6 +7720,76 @@ export function DashboardPage({
               </div>
             </div>
           )}
+          {tab === "entwickler" && hasDeveloperArea && (
+            <div role="tabpanel" aria-label="Entwickler">
+              <div className="page-head">
+                <div>
+                  <div className="eyebrow">DYD ORBIT · FÜR BILDUNGSTRÄGER &amp; AKADEMIEN</div>
+                  <h1 className="display">Entwickler</h1>
+                  <div className="sub">Journey auf deiner Website einbinden und Zugang zur ORBIT-API</div>
+                </div>
+              </div>
+              {developerEmbed && (
+                <section className="dev-panel" aria-label="Journey einbetten">
+                  <div className="dev-panel-title">Journey einbetten</div>
+                  <div className="dev-panel-sub">Fertiger Code, um den Weiterbildungs-Finder auf deiner eigenen Website zu zeigen.</div>
+                  <div className="dev-panel-body">{developerEmbed}</div>
+                </section>
+              )}
+              <section className={`dev-panel ${apiAccessUnlocked ? "" : "locked"}`} aria-label="API-Zugang">
+                <div className="dev-panel-head">
+                  <div>
+                    <div className="dev-panel-title">
+                      API-Zugang {!apiAccessUnlocked && <span className="dev-lock-pill">🔒 Gesperrt</span>}
+                    </div>
+                    <div className="dev-panel-sub">
+                      {apiAccessUnlocked
+                        ? "Dein Schlüssel für eigene Integrationen (CRM, Buchungssystem, Make.com …)."
+                        : "Leads, Kurse und Reports direkt in dein CRM oder Buchungssystem übertragen. Der Zugang wird auf Anfrage freigeschaltet."}
+                    </div>
+                  </div>
+                  {!apiAccessUnlocked && !apiRequestOpen && (
+                    <button type="button" className="btn-ghost dev-request-btn" onClick={() => setApiRequestOpen(true)}>
+                      API-Zugang anfragen
+                    </button>
+                  )}
+                </div>
+                {apiAccessUnlocked && developerApi && <div className="dev-panel-body">{developerApi}</div>}
+                {!apiAccessUnlocked && apiRequestOpen && (
+                  <div className="dev-request-form">
+                    <label htmlFor="apiRequestContact">Wie erreichen wir dich?</label>
+                    <input
+                      id="apiRequestContact"
+                      value={apiRequestContact}
+                      onChange={(e) => setApiRequestContact(e.target.value)}
+                      placeholder="E-Mail oder Telefon"
+                    />
+                    <label htmlFor="apiRequestUseCase">Wofür möchtest du die API nutzen? (optional)</label>
+                    <textarea
+                      id="apiRequestUseCase"
+                      rows={3}
+                      value={apiRequestUseCase}
+                      onChange={(e) => setApiRequestUseCase(e.target.value)}
+                      placeholder="z. B. Leads automatisch in unser CRM übernehmen"
+                    />
+                    <div className="dev-request-actions">
+                      <button type="button" className="btn-ghost" onClick={() => setApiRequestOpen(false)}>
+                        Abbrechen
+                      </button>
+                      <button type="button" className="btn-primary dev-request-send" onClick={handleSendApiRequest}>
+                        Anfrage senden
+                      </button>
+                    </div>
+                    {apiRequestStatus.msg && (
+                      <div className={apiRequestStatus.kind === "err" ? "hint warn" : "hint"} role="status">
+                        {apiRequestStatus.msg}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            </div>
+          )}
           {tab === "reports" && (
             <div role="tabpanel" aria-label="Reports">
               <div className="page-head">
@@ -7681,39 +7799,12 @@ export function DashboardPage({
                   <div className="sub">Dashboard-Kennzahlen aus deinen echten Leads</div>
                 </div>
                 <div className="head-actions">
-                  {developerPanel && (
-                    <button
-                      type="button"
-                      className={`btn-ghost dev-panel-toggle ${devPanelOpen ? "active" : ""}`}
-                      aria-expanded={devPanelOpen}
-                      aria-controls="dev-panel"
-                      onClick={() => setDevPanelOpen((v) => !v)}
-                    >
-                      🛠 Entwickler
-                    </button>
-                  )}
                   <div className={`live-pill ${live ? "" : "offline"}`}>
                     <span>●</span> {live ? "live" : "offline"}
                   </div>
                   {refreshIcon()}
                 </div>
               </div>
-              {developerPanel && devPanelOpen && (
-                <section id="dev-panel" className="dev-panel" aria-label="Entwickler-Zugang">
-                  <div className="dev-panel-head">
-                    <div>
-                      <div className="dev-panel-title">Entwickler-Zugang</div>
-                      <div className="dev-panel-sub">
-                        API-Key für eigene Integrationen und Journey-Key zum Einbetten auf deiner Website.
-                      </div>
-                    </div>
-                    <button type="button" className="dev-panel-close" onClick={() => setDevPanelOpen(false)} aria-label="Entwickler-Bereich schließen">
-                      ×
-                    </button>
-                  </div>
-                  {developerPanel}
-                </section>
-              )}
               {displayedLeads.length > 0 && (
                 <FilterBar
                   period={reportsPeriod}

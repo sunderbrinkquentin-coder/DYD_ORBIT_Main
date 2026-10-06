@@ -30,4 +30,19 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
+/**
+ * Wurde die Seite ueber den Link aus der "Passwort vergessen"-Mail geoeffnet?
+ * Muss VOR createClient() gelesen werden: der Client wertet den
+ * #access_token...&type=recovery-Teil der Adresse beim Start aus und
+ * entfernt ihn danach aus der Adresszeile (06.10.2026, Bugfix "Seite zum
+ * Passwort-Setzen verschwindet sofort wieder").
+ */
+export const OPENED_FROM_RECOVERY_LINK: boolean = (() => {
+  try {
+    return /(^|[#&?])type=recovery(&|$)/.test(window.location.hash);
+  } catch {
+    return false;
+  }
+})();
+
 export const supabase = createClient(supabaseUrl ?? "", supabaseAnonKey ?? "");

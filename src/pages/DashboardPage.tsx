@@ -1741,6 +1741,11 @@ export function DashboardPage({
   // geoeffneten Kurses wird der Vorschlag als "uebernommen" markiert.
   const catalogProposalByUrlRef = useRef<Map<string, string>>(new Map());
   const catalogCrawlAliveRef = useRef(true);
+  // Suche vorzeitig beenden (06.10.2026, "Crawling unterbrechen, bereits
+  // gefundene Kurse trotzdem übernehmen"): stoppt die Schritt-Schleife nach
+  // dem gerade laufenden Schritt und zeigt die bis dahin gefundenen Kurse.
+  const catalogStopRef = useRef(false);
+  const [catalogStopping, setCatalogStopping] = useState(false);
   // Warteschlange fuer den "ein Kurs nach dem anderen zur Pruefung"-Ablauf
   // (siehe startUrlImportQueue/advanceUrlImportQueue): urlImportQueue sind
   // die noch NICHT begonnenen URLs, urlImportCurrentUrl die gerade ins
@@ -3239,8 +3244,9 @@ export function DashboardPage({
     }
     void (async () => {
       const ov = await loadCatalogOverview();
-      // Eine noch laufende Suche (z. B. nach Neuladen der Seite) fortsetzen
-      if (ov?.active_run)
+      // Eine noch laufende Suche (z. B. nach Neuladen der Seite) fortsetzen —
+      // aber nicht, wenn die Person genau diese Suche selbst beendet hat.
+      if (ov?.active_run && ov.active_run.run_id !== readPausedCatalogRun())
         void runCatalogCrawlLoop(ov.active_run.run_id, ov.active_run.checked, ov.active_run.total, ov.active_run.found_so_far, ov.active_run.recent_found ?? []);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3271,8 +3277,76 @@ export function DashboardPage({
     }
   }
 
+  function pausedCatalogRunKey(): string {
+    return `dyd-orbit-catalog-paused-run:${apiKey}`;
+  }
+  function readPausedCatalogRun(): string | null {
+    try {
+      return window.localStorage.getItem(pausedCatalogRunKey());
+    } catch {
+      return null;
+    }
+  }
+  function writePausedCatalogRun(runId: string | null) {
+    try {
+      if (runId) window.localStorage.setItem(pausedCatalogRunKey(), runId);
+      else window.localStorage.removeItem(pausedCatalogRunKey());
+    } catch {
+      // best effort
+    }
+  }
+
+  /** "Suche beenden": nach dem laufenden Schritt anhalten (siehe Schleife). */
+  function handleStopCatalogCrawl() {
+    if (!catalogCrawl || catalogCrawl.done) return;
+    catalogStopRef.current = true;
+    setCatalogStopping(true);
+  }
+
+  /**
+   * Nach "Suche beenden": die bis dahin gefundenen Kurse anzeigen. Der
+   * Server legt jeden gefundenen Kurs sofort als offenen Vorschlag an (mit
+   * run_id) — deshalb reicht ein frischer Abruf der Uebersicht. Die Suche
+   * selbst bleibt beim Server pausiert und laesst sich mit "Jetzt neue Kurse
+   * suchen" spaeter fortsetzen.
+   */
+  async function finishStoppedCatalogCrawl(runId: string, checked: number, total: number) {
+    writePausedCatalogRun(runId);
+    const ov = await loadCatalogOverview();
+    const open = ov?.open ?? [];
+    const fromRun = open.filter((p) => p.run_id === runId);
+    setCatalogCrawl(null);
+    setCatalogStopping(false);
+    catalogStopRef.current = false;
+    setCatalogResult({
+      status: "partial",
+      new_courses: fromRun.filter((p) => p.kind === "new_course"),
+      possible_duplicates: fromRun.filter((p) => p.kind === "possible_duplicate"),
+      earlier_open: open.filter((p) => p.run_id !== runId),
+      stats: {
+        discovered: total,
+        checked,
+        course_pages: 0,
+        new_courses: fromRun.length,
+        possible_duplicates: 0,
+        already_known: 0,
+        skipped_known: 0,
+        errors: 0,
+        transient_errors: 0,
+        skipped_by_robots: 0,
+      },
+      truncated: true,
+      message: `Suche beendet nach ${checked}${total > 0 ? ` von ${total}` : ""} Seiten. Mit „Jetzt neue Kurse suchen“ geht es später an dieser Stelle weiter.`,
+      finished_at: new Date().toISOString(),
+      review: false,
+    });
+  }
+
   async function handleStartCatalogCrawl() {
     if (catalogCrawl) return;
+    writePausedCatalogRun(null);
+    catalogStopRef.current = false;
+    setCatalogStopping(false);
     if (!live) {
       setCatalogCrawlError('Nicht verbunden — bitte zuerst oben im Verbindungs-Panel „Verbinden & laden" klicken.');
       return;
@@ -3298,14 +3372,26 @@ export function DashboardPage({
   async function runCatalogCrawlLoop(runId: string, checked: number, total: number, found: number, recent: string[]) {
     setCatalogCrawl((prev) => ({ runId, checked, total, found, recent, startedAt: prev?.startedAt ?? Date.now(), done: false }));
     let failures = 0;
+    // Letzter bekannter Stand (fuer "Suche beenden" — der React-State ist in
+    // dieser Schleife nicht aktuell lesbar).
+    let lastChecked = checked;
+    let lastTotal = total;
     while (catalogCrawlAliveRef.current) {
+      if (catalogStopRef.current) {
+        await finishStoppedCatalogCrawl(runId, lastChecked, lastTotal);
+        return;
+      }
       try {
         const p = await stepCatalogCrawl(catalogAssistantBaseUrl(baseUrl), apiKey, runId);
         failures = 0;
         if (p.outcome) {
+          catalogStopRef.current = false;
+          setCatalogStopping(false);
           finishCatalogCrawl(p.outcome);
           return;
         }
+        lastChecked = p.checked;
+        lastTotal = p.total;
         setCatalogCrawl((prev) => ({
           runId,
           checked: p.checked,
@@ -5326,6 +5412,23 @@ export function DashboardPage({
                           {!c.done && (
                             <div className="catalog-run-tip" key={catalogTipIndex}>
                               💡 {CATALOG_CRAWL_TIPS[catalogTipIndex % CATALOG_CRAWL_TIPS.length]}
+                            </div>
+                          )}
+                          {!c.done && c.runId && (
+                            <div className="catalog-run-stop">
+                              <button
+                                type="button"
+                                className="btn-ghost catalog-btn-stop"
+                                onClick={handleStopCatalogCrawl}
+                                disabled={catalogStopping}
+                              >
+                                {catalogStopping
+                                  ? "Wird beendet …"
+                                  : c.found > 0
+                                    ? `⏹ Suche beenden & ${c.found} gefundene Kurs${c.found === 1 ? "" : "e"} anzeigen`
+                                    : "⏹ Suche beenden"}
+                              </button>
+                              <span className="catalog-run-stop-hint">Bereits gefundene Kurse bleiben erhalten.</span>
                             </div>
                           )}
                         </div>
@@ -8333,6 +8436,8 @@ export function DashboardPage({
           const r = catalogResult;
           const failed = r.status === "failed";
           const hasNew = r.new_courses.length > 0;
+          // Von der Person beendete Suche (handleStopCatalogCrawl).
+          const stopped = r.status === "partial" && r.truncated && !r.review;
           const tone = r.review || hasNew ? "success" : failed ? "warn" : "info";
           const icon = r.review ? "📋" : failed ? "⚠️" : hasNew ? "✨" : "🔍";
           const title = r.review
@@ -8343,14 +8448,22 @@ export function DashboardPage({
               ? "Suche nicht möglich"
               : hasNew
                 ? r.new_courses.length === 1
-                  ? "1 neuer Kurs gefunden"
-                  : `${r.new_courses.length} neue Kurse gefunden`
-                : "Keine neuen Kurse gefunden";
+                  ? stopped
+                    ? "1 neuer Kurs bis zum Stopp gefunden"
+                    : "1 neuer Kurs gefunden"
+                  : `${r.new_courses.length} neue Kurse${stopped ? " bis zum Stopp" : ""} gefunden`
+                : stopped
+                  ? "Suche beendet"
+                  : "Keine neuen Kurse gefunden";
           const subtitle = r.review
             ? "Diese Kurse wurden bei früheren Suchen gefunden und noch nicht übernommen."
             : failed
               ? r.message ?? "Die Website konnte gerade nicht gelesen werden."
-              : hasNew
+              : stopped
+                ? hasNew
+                  ? "Bis zum Stopp gefunden — Sie können diese Kurse jetzt übernehmen."
+                  : "Bis zum Stopp wurde kein neuer Kurs gefunden."
+                : hasNew
                 ? "Diese Kurse stehen auf Ihrer Website, aber noch nicht in Ihrem Katalog."
                 : "Ihr Katalog ist auf dem Stand Ihrer Website.";
           const known = r.stats.already_known + r.stats.skipped_known;

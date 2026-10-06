@@ -350,7 +350,7 @@ export default function App() {
       )}
       <div style={headerActionsRowStyle}>
         {/* API-Zugang und "Journey einbetten" liegen seit 06.10.2026 im
-         * Dashboard unter Reports -> "Entwickler" (siehe developerPanel unten). */}
+         * Dashboard im eigenen Bereich "Entwickler" (Sidebar unter Reports). */}
         {canManageBilling && (
           <button
             style={manageBillingButtonStyle}
@@ -375,22 +375,15 @@ export default function App() {
         defaultBaseUrl={API_BASE}
         defaultApiKey={auth.session.api_key}
         showConnectionPanel={false}
-        // Entwickler-Bereich im Reports-Tab (06.10.2026): API-Key fuer eigene
-        // Integrationen + oeffentlicher Journey-Key/Einbettungscode. Bleibt
-        // fuer JEDEN eingeloggten Tenant erreichbar (Direktkauf-Kunden haben
-        // sonst keinen Weg an ihren Key).
-        developerPanel={
-          <>
-            <div className="dev-panel-section">
-              <h3>API-Zugang</h3>
-              <ApiKeyBox tenantId={auth.session.tenant_id} apiKey={auth.session.api_key} apiBase={API_BASE} />
-            </div>
-            <div className="dev-panel-section">
-              <h3>Journey einbetten</h3>
-              <EmbedBox journeyKey={auth.session.journey_key} />
-            </div>
-          </>
-        }
+        // Eigener Bereich "Entwickler" in der Sidebar (06.10.2026):
+        // Journey-Einbettung immer nutzbar; API-Zugang vorerst gesperrt -
+        // der Tenant fragt per Button an, Freischaltung durch DYD
+        // (apiAccessUnlocked auf true setzen, sobald es pro Tenant ein
+        // Freigabe-Flag gibt).
+        tenantId={auth.session.tenant_id}
+        apiAccessUnlocked={false}
+        developerEmbed={<EmbedBox journeyKey={auth.session.journey_key} />}
+        developerApi={<ApiKeyBox tenantId={auth.session.tenant_id} apiKey={auth.session.api_key} apiBase={API_BASE} />}
       />
       {upgradeOpen && (
         <div style={overlayStyle} onClick={() => setUpgradeOpen(false)}>

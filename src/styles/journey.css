@@ -7090,3 +7090,72 @@ input.big-input:focus {
   margin-top: 8px;
   font-size: 0.84rem;
 }
+/* ---------- v2 Ergebnis: Rahmen direkt anpassen + Vergleichszeile (19.10.2026) ---------- */
+.v2-frame-bar {
+  margin-bottom: 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  background: var(--surface, #fff);
+}
+.v2-frame-bar > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 11px 14px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  font-weight: 800;
+}
+.v2-frame-bar > summary::-webkit-details-marker {
+  display: none;
+}
+.v2-frame-summary {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.v2-frame-edit {
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: underline;
+}
+.v2-frame-bar[open] .v2-frame-edit {
+  visibility: hidden;
+}
+.v2-frame-rows {
+  display: grid;
+  gap: 10px;
+  padding: 0 14px 14px;
+}
+.v2-frame-row {
+  display: grid;
+  gap: 6px;
+}
+.v2-frame-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.v2-frame-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.v2-frame-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.v2-compare {
+  margin: 6px 0 4px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: var(--border-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+}

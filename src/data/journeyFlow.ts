@@ -318,6 +318,11 @@ export function planQuickCheck(
   /** Optional: eigene Alltagsformulierungen (z. B. aus einem kuratierten
    *  Fragen-Katalog). Liefert null -> Standard aus quickCheckQuestion(). */
   questionFor?: (skillId: string, skillName: string) => { question: string; hint: string } | null,
+  /** Optional (19.10.2026): Skill-Mengen der Kurse, die fuer diese Richtung
+   *  in Frage kommen (covered_skill_uris je Kurs). Dann fragt der Check
+   *  bevorzugt Skills, die nur ein TEIL der Kurse vermittelt — genau deren
+   *  Antwort aendert, welcher Kurs vorn steht. Ohne Angabe: wie bisher. */
+  courseSkillSets?: ReadonlyArray<ReadonlySet<string>>,
 ): { questions: QuickCheckItem[]; evidence: ActivityEvidence[] } {
   const derived = deriveSkillsFromActivities(activityIds, new Set(directionRole.skills.map((s) => s.skill_id)));
   const sorted = [...directionRole.skills].sort((a, b) => b.weight - a.weight || a.skill_id.localeCompare(b.skill_id));
@@ -348,7 +353,29 @@ export function planQuickCheck(
   const kernOpen = open.filter((s) => kernIds.has(s.skill_id));
   // Sicherheitsnetz: nur wenn der Kern komplett belegt ist, EINE Frage aus
   // dem Rest, damit der Check nie leer ist.
-  const pool = kernOpen.length > 0 ? kernOpen : open.slice(0, 1);
+  let pool = kernOpen.length > 0 ? kernOpen : open.slice(0, 1);
+
+  // Trennschaerfe (19.10.2026): p = Anteil der Kurse, die den Skill
+  // vermitteln. 4·p·(1−p) ist 1 bei 50 % und 0, wenn alle oder keiner ihn
+  // haben — dann aendert die Antwort nichts an der Kurs-Reihenfolge. Kern-
+  // Skills bleiben im Pool (sie bestimmen den Match-Wert); Nicht-Kern-Skills
+  // kommen nur dazu, wenn sie klar zwischen Kursen unterscheiden. Sortiert
+  // nach Gewicht × Trennschaerfe, mit Untergrenze, damit schwere Kern-Skills
+  // nie ganz nach hinten fallen.
+  const sets = courseSkillSets ?? [];
+  if (sets.length >= 2) {
+    const disc = (id: string) => {
+      const p = sets.filter((s) => s.has(id)).length / sets.length;
+      return 4 * p * (1 - p);
+    };
+    const extra = open.filter((s) => !kernIds.has(s.skill_id) && disc(s.skill_id) >= 0.5);
+    const priority = (s: { skill_id: string; weight: number }) =>
+      s.weight * (kernIds.has(s.skill_id) ? 1 : 0.6) * (0.4 + 0.6 * disc(s.skill_id));
+    pool = [...(kernOpen.length > 0 ? kernOpen : []), ...extra].sort(
+      (a, b) => priority(b) - priority(a) || b.weight - a.weight || a.skill_id.localeCompare(b.skill_id),
+    );
+    if (pool.length === 0) pool = open.slice(0, 1);
+  }
 
   const questions: QuickCheckItem[] = pool.slice(0, max).map((s) => {
     const { question, hint } = questionFor?.(s.skill_id, s.name) ?? quickCheckQuestion(s.skill_id, s.name);

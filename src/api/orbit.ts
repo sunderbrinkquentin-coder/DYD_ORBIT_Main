@@ -1764,6 +1764,44 @@ export function createTest(apiBase: string, apiKey: string, payload: TestCreateR
   });
 }
 
+/**
+ * Journey-Funnel-Event (19.10.2026) — POST /api/v1/orbit/events. Anonym: nur
+ * Sitzungs-ID (Zufallswert pro Browser-Tab), Schritt und Zeitpunkt, keine
+ * personenbezogenen Daten. Grundlage fuer "wo springen Nutzer ab?" im
+ * Dashboard. Strikt fire-and-forget: Fehler (auch 404, solange die Edge
+ * Function den Endpunkt noch nicht kennt) werden geschluckt, keepalive
+ * sorgt dafuer, dass das Event auch beim Schliessen des Tabs noch rausgeht.
+ */
+export type JourneyEventType = "step_view" | "result_view" | "lead_submit" | "frame_change";
+export interface JourneyEventPayload {
+  session_id: string;
+  event: JourneyEventType;
+  step_key: string;
+  step_index: number;
+  journey_version: "v1" | "v2";
+  /** Kleine, nicht-personenbezogene Zusatzinfos (z. B. Anzahl Empfehlungen). */
+  meta?: Record<string, string | number | boolean | null>;
+}
+const journeyEventsDisabled = new Set<string>();
+export function trackJourneyEvent(apiBase: string, apiKey: string, payload: JourneyEventPayload): void {
+  if (!apiBase || !apiKey || journeyEventsDisabled.has(apiBase)) return;
+  try {
+    void fetch(`${apiBase.replace(/\/$/, "")}/api/v1/orbit/events`, {
+      method: "POST",
+      keepalive: true,
+      headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
+      body: JSON.stringify({ ...payload, occurred_at: new Date().toISOString() }),
+    })
+      .then((res) => {
+        // Endpunkt (noch) nicht deployt: fuer diese Sitzung nicht weiter versuchen.
+        if (res.status === 404) journeyEventsDisabled.add(apiBase);
+      })
+      .catch(() => undefined);
+  } catch {
+    /* Tracking darf die Journey nie stoeren. */
+  }
+}
+
 /** Ruft POST /api/v1/orbit/tests/:id/recommendation auf — trägt die Kursempfehlung an einem bereits geloggten Test nach. */
 export function attachTestRecommendation(
   apiBase: string,

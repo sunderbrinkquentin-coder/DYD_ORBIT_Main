@@ -1,0 +1,3 @@
+# Functions
+[functions.feedback-ticket]
+verify_jwt = false

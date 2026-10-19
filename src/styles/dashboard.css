@@ -724,6 +724,42 @@
   opacity: 0.5;
 }
 
+/* ---------- Feedback-Ticket (17.10.2026) ----------
+   Drei Auswahl-Chips fuer die Ticket-Art (Idee/Fehler/Verbesserung) im
+   Feedback-Modal — bewusst als klickbare Chips statt Dropdown: ein Klick
+   weniger und die drei Kategorien sind immer sichtbar. */
+.feedback-type-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.feedback-type-chip {
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  background: #fbfcfe;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+.feedback-type-chip:hover {
+  transform: translateY(-1px);
+  border-color: var(--dyd-blue);
+}
+.feedback-type-chip.active {
+  border-color: var(--dyd-blue);
+  background: var(--blue-bg);
+  color: var(--dyd-blue-dark);
+  box-shadow: 0 0 0 3px rgba(47, 143, 214, 0.14);
+}
+.feedback-type-chip:focus-visible {
+  outline: 2px solid var(--dyd-blue);
+  outline-offset: 2px;
+}
+
 /* ---------- Lead form ---------- */
 .lead-form {
   display: grid;

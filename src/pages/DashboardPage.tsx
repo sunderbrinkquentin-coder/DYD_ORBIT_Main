@@ -81,6 +81,10 @@ import { listBereiche } from "../data/gapAnalysis";
 import { ROLES_CATALOG, SKILLS_CATALOG } from "../data/rolesCatalog";
 import { analyzeDemandGaps, findUnmappedCourses, type DemandGapRow, type UnmappedCourseRow } from "../data/offerGaps";
 import { BrandingModal } from "../components/BrandingModal";
+import {
+  submitFeedbackTicket,
+  type FeedbackTicketType,
+} from "../api/feedbackTicket";
 import { classifyCourse, splitLearningGoals, suggestBereiche, type Confidence as SuggestionConfidence } from "../data/courseClassifier";
 import { BereichBadges, CourseBadgeRow } from "../data/courseBadges";
 import { AnimatedNumber } from "../components/AnimatedNumber";
@@ -1292,39 +1296,67 @@ export function DashboardPage({
   const [fetchedTenantName, setFetchedTenantName] = useState<string | null>(null);
   const effectiveTenantName = fetchedTenantName ?? tenantName;
   // ---------- Feedback/Ticket an DYD (Version 41, 17.09.) ----------
+  // 17.10.2026 umgebaut: statt nur einen mailto-Link zu oeffnen, wird jedes
+  // Feedback jetzt als TICKET gesendet — ueber die Serverfunktion
+  // "feedback-ticket" in der Datenbank gespeichert und per Resend als Mail
+  // an DYD gemeldet. Jedes Ticket ist automatisch mit dem angemeldeten
+  // Konto verbunden und mit dem Seitenkontext (Seite + Bereich, in dem die
+  // Person gerade ist) versehen — das Zaehlen und Zuordnen entfaellt.
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
-  const [feedbackName, setFeedbackName] = useState("");
+  const [feedbackType, setFeedbackType] = useState<FeedbackTicketType>("idee");
   const [feedbackContact, setFeedbackContact] = useState("");
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [feedbackStatus, setFeedbackStatus] = useState<{ msg: string; kind: StatusKind }>({ msg: "", kind: "" });
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
   const FEEDBACK_TARGET_EMAIL = "quentin@decideyourdream.de";
   function resetFeedbackForm() {
-    setFeedbackName("");
+    setFeedbackType("idee");
     setFeedbackContact("");
     setFeedbackMessage("");
     setFeedbackStatus({ msg: "", kind: "" });
   }
-  // Bewusst KEIN echter Server-Versand (siehe Projekt-Prinzip "keine
-  // erfundenen Fakten") — ein mailto-Link oeffnet nur das Mail-Programm der
-  // Person mit vorausgefuellter Nachricht; sie muss dort noch selbst auf
-  // "Senden" klicken. Kein Backend/Account noetig, daher sofort einsatzbereit.
-  function handleSendFeedback() {
-    const name = feedbackName.trim();
-    const contact = feedbackContact.trim();
+  async function handleSendFeedback() {
     const message = feedbackMessage.trim();
-    if (!name || !contact || !message) {
-      setFeedbackStatus({ msg: "Bitte Name, Kontakt und Anliegen ausfüllen.", kind: "err" });
+    if (!message) {
+      setFeedbackStatus({ msg: "Bitte beschreibe dein Anliegen.", kind: "err" });
       return;
     }
-    const subject = `DYD ORBIT Feedback — ${effectiveTenantName}`;
-    const body = [`Name: ${name}`, `Kontakt: ${contact}`, `Mandant: ${effectiveTenantName}`, "", "Anliegen:", message].join("\n");
-    const mailtoUrl = `mailto:${FEEDBACK_TARGET_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.location.href = mailtoUrl;
-    setFeedbackStatus({
-      msg: `Deine Mail-App sollte sich jetzt mit einer vorausgefüllten Nachricht geöffnet haben — bitte dort auf „Senden" klicken. Falls sich nichts öffnet, schreib direkt an ${FEEDBACK_TARGET_EMAIL}.`,
-      kind: "ok",
-    });
+    setFeedbackBusy(true);
+    setFeedbackStatus({ msg: "", kind: "" });
+    try {
+      await submitFeedbackTicket({
+        ticket_type: feedbackType,
+        message,
+        contact: feedbackContact.trim(),
+        account_name: effectiveTenantName,
+        tenant_name: effectiveTenantName,
+        // Seitenkontext: wo in der App steht die Person gerade? Der aktive
+        // Sidebar-Tab ist die grobste sinnvolle Einheit; das Detailfeld
+        // (welches Formular/Modal offen war) kennt das Feedback-Fenster
+        // selbst nicht — dafuer ist das Freitextfeld da.
+        page: `Dashboard — ${tab}`,
+        section: FEEDBACK_PAGE_SECTION,
+        app_url: typeof window !== "undefined" ? window.location.href : null,
+      });
+      setFeedbackStatus({
+        msg: "✓ Ticket erstellt! DYD wurde per E-Mail benachrichtigt und meldet sich bei dir.",
+        kind: "ok",
+      });
+      setFeedbackMessage("");
+      setFeedbackContact("");
+    } catch (err) {
+      setFeedbackStatus({
+        msg: err instanceof Error ? err.message : String(err),
+        kind: "err",
+      });
+    } finally {
+      setFeedbackBusy(false);
+    }
   }
+  /** Bereich, aus dem heraus das Feedback-Fenster geoeffnet wurde (sichtbar
+   *  im Ticket als "Bereich"). Der Feedback-Button sitzt im Sidebar-Footer;
+   *  wo die Person inhaltlich war, verrät der aktive Tab oben (page). */
+  const FEEDBACK_PAGE_SECTION = "Sidebar / Feedback-Button";
   function handleSendApiRequest() {
     const contact = apiRequestContact.trim();
     if (!contact) {
@@ -8686,28 +8718,54 @@ export function DashboardPage({
               <div className="lead-modal-header-info">
                 <div className="lead-modal-name">✉️ Feedback / Support</div>
                 <div className="hint">
-                  Anliegen, Fehler oder Wünsche direkt an DYD melden — öffnet eine vorausgefüllte Mail an{" "}
-                  {FEEDBACK_TARGET_EMAIL}.
+                  Deine Meldung kommt als Ticket direkt bei DYD an (E-Mail an {FEEDBACK_TARGET_EMAIL}) und ist
+                  automatisch mit deinem Konto und der aktuellen Seite verknüpft.
                 </div>
               </div>
             </div>
             <div className="lf-field">
-              <label htmlFor="feedback-name">Name *</label>
-              <input id="feedback-name" value={feedbackName} onChange={(e) => setFeedbackName(e.target.value)} />
+              <label>Worum geht es? *</label>
+              <div className="feedback-type-row" role="radiogroup" aria-label="Ticket-Art">
+                {(
+                  [
+                    { value: "idee", label: "💡 Idee", hint: "Etwas Neues wünschen" },
+                    { value: "fehler", label: "🐞 Fehler", hint: "Etwas funktioniert nicht" },
+                    { value: "verbesserung", label: "🧭 Verbesserung", hint: "Etwas besser machen" },
+                  ] as { value: FeedbackTicketType; label: string; hint: string }[]
+                ).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`feedback-type-chip ${feedbackType === option.value ? "active" : ""}`}
+                    role="radio"
+                    aria-checked={feedbackType === option.value}
+                    title={option.hint}
+                    onClick={() => setFeedbackType(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="lf-field">
-              <label htmlFor="feedback-contact">Kontakt (E-Mail oder Telefon) *</label>
-              <input id="feedback-contact" value={feedbackContact} onChange={(e) => setFeedbackContact(e.target.value)} />
+              <label htmlFor="feedback-contact">Wie dürfen wir dich erreichen? (optional)</label>
+              <input
+                id="feedback-contact"
+                value={feedbackContact}
+                placeholder="E-Mail oder Telefon — leer = dein Konto-E-Mail"
+                onChange={(e) => setFeedbackContact(e.target.value)}
+              />
             </div>
             <div className="lf-field">
               <label htmlFor="feedback-message">Anliegen *</label>
               <textarea
                 id="feedback-message"
                 rows={4}
-                placeholder="Was können wir für dich tun?"
+                placeholder={`Was können wir für dich tun? (Ticket zu: ${tab})`}
                 value={feedbackMessage}
                 onChange={(e) => setFeedbackMessage(e.target.value)}
               />
+              <div className="hint">Ticket zu: Dashboard — {tab}</div>
             </div>
             {feedbackStatus.msg && (
               <div className={feedbackStatus.kind === "err" ? "hint warn" : "hint"} role="status">
@@ -8715,11 +8773,11 @@ export function DashboardPage({
               </div>
             )}
             <div className="course-form-actions">
-              <button className="btn-primary" type="button" onClick={handleSendFeedback}>
-                Mail vorbereiten →
+              <button className="btn-primary" type="button" disabled={feedbackBusy} onClick={() => void handleSendFeedback()}>
+                {feedbackBusy ? "Wird gesendet…" : "Ticket senden →"}
               </button>
               <button type="button" className="btn-ghost" onClick={() => setShowFeedbackModal(false)}>
-                Abbrechen
+                Schließen
               </button>
             </div>
           </div>

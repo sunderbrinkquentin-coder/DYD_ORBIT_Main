@@ -39,6 +39,8 @@ import {
   fetchTenantBranding,
   type TenantBranding,
   tenantBrandingBaseUrl,
+  trackJourneyEvent,
+  type JourneyEventType,
 } from "../api/orbit";
 import { brandThemeVars } from "../data/brandTheme";
 import {
@@ -500,6 +502,16 @@ const GOAL_OPTIONS: { key: string; label: string; icon: string }[] = [
  *  geht es um die GRUPPIERUNG der weiteren Kurse unten, nicht um den
  *  Badge-Text auf der Karte selbst. */
 const POPULAR_SOON_START_DAYS = 30;
+/** Gesamt-Passung der v2-Ergebniskarten (siehe fitValue in v2ResultCards):
+ *  ein Rahmen-Punkt (frameFitScore) wiegt so viel wie 8 % Lueckenabdeckung —
+ *  ein Kurs, der nicht in den Alltag passt, braucht also deutlich mehr
+ *  fachlichen Vorsprung, um trotzdem vorn zu stehen. */
+const V2_FRAME_POINT = 8;
+/** Vorsprung fuer Kurse, die direkt zum Zielberuf/Schwerpunkt fuehren. */
+const V2_TARGET_ROLE_BONUS = 15;
+/** Angenommene Abdeckung fuer Kurse, die zum Zielberuf fuehren, im Dashboard
+ *  aber noch keine Skills tragen (sonst 0 % trotz passendem Abschluss). */
+const V2_UNTAGGED_ROLE_COVERAGE = 50;
 /** Nach dieser Zeit wird der Kurskatalog vor dem Matching neu geladen. */
 const CATALOG_MAX_AGE_MS = 10 * 60 * 1000;
 
@@ -1685,6 +1697,31 @@ export function JourneyPage({
   function stepIndex(key: StepKey): number {
     return steps.findIndex((s) => s.key === key);
   }
+  // Funnel-Messung (19.10.2026): ein anonymes Event je angezeigtem Schritt,
+  // damit das Dashboard zeigen kann, wo Nutzer abspringen. Nie waehrend des
+  // Rundgangs oder einer Demo-Vorschau (sonst verfaelschte Zahlen).
+  const journeySessionIdRef = useRef<string>("");
+  if (!journeySessionIdRef.current) {
+    journeySessionIdRef.current =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+  function trackStep(event: JourneyEventType, meta?: Record<string, string | number | boolean | null>) {
+    if (tourOpen || demoDataActiveRef.current) return;
+    trackJourneyEvent(baseUrl, apiKey, {
+      session_id: journeySessionIdRef.current,
+      event,
+      step_key: stepKey ?? (current < 0 ? "intro" : "unknown"),
+      step_index: current,
+      journey_version: isV2 ? "v2" : "v1",
+      ...(meta ? { meta } : {}),
+    });
+  }
+  useEffect(() => {
+    trackStep("step_view");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepKey, current]);
   /** Navigations-Callback fuer JourneyTour: holt den Rundgang notfalls aus
    * der Einstiegsfrage heraus (steps/stepIndex geben bei knowsRole===null
    * schon BASE_STEPS zurück, siehe Definition von `steps` oben - nur die
@@ -2579,9 +2616,19 @@ async function runDemoAnalysis() {
     () => (targetRoleId ? effectiveRoles.find((r) => r.role_id === targetRoleId) ?? null : null),
     [targetRoleId, effectiveRoles]
   );
+  // Skill-Mengen der Kurse, die fuer die Richtung in Frage kommen (mind. ein
+  // Skill der Rolle) — damit der Kurz-Check die Fragen stellt, deren Antwort
+  // die Kurs-Reihenfolge tatsaechlich aendert (siehe planQuickCheck).
+  const v2CourseSkillSets = useMemo(() => {
+    if (!v2Role) return [] as Set<string>[];
+    const roleSkillIds = new Set(v2Role.skills.map((sk) => sk.skill_id));
+    return allCourses
+      .map((c) => new Set((c.covered_skill_uris ?? []).filter((id) => roleSkillIds.has(id))))
+      .filter((s) => s.size > 0);
+  }, [v2Role, allCourses]);
   const v2Plan = useMemo(() => {
     if (!v2Role) return { questions: [] as QuickCheckItem[], evidence: [] as ActivityEvidence[] };
-    const plan = planQuickCheck(v2Role, activityIds, 5, skillQuestionFor);
+    const plan = planQuickCheck(v2Role, activityIds, 5, skillQuestionFor, v2CourseSkillSets);
     // "Stimmt nicht" bei einem Taetigkeits-Beleg: der Skill wird dann ganz
     // normal im Kurz-Check gefragt (vorn angestellt), statt still zu zaehlen.
     const removed = plan.evidence.filter((e) => v2EvidenceRemoved.has(e.skill_id));
@@ -2600,7 +2647,7 @@ async function runDemoAnalysis() {
       questions: [...extra, ...plan.questions.filter((q) => !v2EvidenceRemoved.has(q.skill_id))],
       evidence: plan.evidence.filter((e) => !v2EvidenceRemoved.has(e.skill_id)),
     };
-  }, [v2Role, activityIds, v2EvidenceRemoved]);
+  }, [v2Role, activityIds, v2EvidenceRemoved, v2CourseSkillSets]);
   // Fallback: Rolle ohne lokales Skill-Profil -> bisheriger Fragebogen.
   useEffect(() => {
     if (isV2 && stepKey === "v2check" && !v2Role && method === null) setMethod("fragebogen");
@@ -3902,6 +3949,7 @@ async function runDemoAnalysis() {
           console.error("[JourneyPage] submitLead (Kurse verlinken):", err);
         }
       }
+      trackStep("lead_submit", { intent, courses: 1 + extraCourseIds.length });
       setDone(true);
     } catch (err) {
       setLeadError(reportError("submitLead", err));
@@ -4061,7 +4109,7 @@ async function runDemoAnalysis() {
   // als Einstieg (fit "bridge", siehe Baustein 3 unten). Keiner passt: leere Liste
   // -> Beratungsseite (bestehendes Verhalten von V2ErgebnisStep).
   const v2ResultCards = useMemo(() => {
-    type V2Card = { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean; fit: V2CardFit; bridgeSkills: string[]; foreign: boolean };
+    type V2Card = { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean; fit: V2CardFit; bridgeSkills: string[]; foreign: boolean; compare?: string | null };
     if (!isV2 || !courseResult) return [] as V2Card[];
     const byId = new Map(allCourses.map((c) => [c.course_id, c]));
     const ctx = {
@@ -4186,13 +4234,26 @@ async function runDemoAnalysis() {
       b.frameScore - a.frameScore ||
       Number(Boolean(b.course.is_featured)) - Number(Boolean(a.course.is_featured)) ||
       a.index - b.index;
-    // 1) Direkte Treffer (Stufe 2-3), wie bisher.
-    const direct = scored.filter((x) => x.level >= 2).sort((a, b) => b.level - a.level || byPriority(a, b));
+    // 1) Direkte Treffer (Stufe 2-3). Gesamt-Passung (19.10.2026): bisher
+    //    entschied innerhalb einer Stufe NUR der Rahmen — ob ein Kurs 10 % oder
+    //    80 % der eigenen Luecken schliesst, spielte keine Rolle. Jetzt ein
+    //    gemeinsamer Wert aus Lueckenabdeckung (0-100), Rahmen (je Punkt
+    //    V2_FRAME_POINT, inkl. -4 bei nicht erfuellten Voraussetzungen) und
+    //    Zielberuf. Ein Kurs, der direkt zum Zielberuf fuehrt, aber (noch)
+    //    keine Skills im Dashboard traegt, wird mit V2_UNTAGGED_ROLE_COVERAGE
+    //    angesetzt, statt mit 0 % gegen kleine Skill-Kurse zu verlieren.
+    const fitValue = (x: (typeof scored)[number]) => {
+      const untagged = (x.course.covered_skill_uris ?? []).length === 0;
+      const coverage = x.level === 3 && untagged ? Math.max(x.pitch.gapCoverage, V2_UNTAGGED_ROLE_COVERAGE) : x.pitch.gapCoverage;
+      return coverage + V2_FRAME_POINT * x.frameScore + (x.level === 3 ? V2_TARGET_ROLE_BONUS : 0) + (x.course.is_featured ? 3 : 0);
+    };
+    const direct = scored.filter((x) => x.level >= 2).sort((a, b) => fitValue(b) - fitValue(a) || byPriority(a, b));
     // 2) Einstiege: andere Berufe im Bereich (Stufe 1) oder Kurse mit
     //    Ziel-Skills - sortiert nach Ziel-Skill-Gewicht, dann Stufe.
     //    Ein Kurs aus einem fremden Bereich braucht mind. 2 Ziel-Skills
     //    bzw. 15 % Skill-Gewicht, sonst ist der Bezug zu duenn.
-    const bridgeScore = (x: (typeof scored)[number]) => x.bridgeWeight + (x.level === 1 || x.inBereich ? 10 : 0);
+    const bridgeScore = (x: (typeof scored)[number]) =>
+      x.bridgeWeight + (x.level === 1 || x.inBereich ? 10 : 0) + (V2_FRAME_POINT / 2) * x.frameScore;
     const bridges = scored
       .filter((x) => x.level < 2)
       .filter((x) => x.level === 1 || (x.inBereich && x.bridgeWeight > 0) || x.bridgeSkills.length >= 2 || x.bridgeWeight >= 15)
@@ -4215,6 +4276,27 @@ async function runDemoAnalysis() {
         : [];
 
     const picked = [...direct, ...bridges, ...bereichOnly].slice(0, 3);
+    // "Warum steht das hier und nicht oben?" (19.10.2026): ein ehrlicher Satz
+    // je Alternative im Vergleich zur Top-Empfehlung — nur aus echten Werten
+    // (Lueckenabdeckung, benannte Rahmen-Abweichungen, Voraussetzungen).
+    const mismatchOf = (c: OrbitCourse) =>
+      describePreferenceMismatches(c, employmentType, workLocation, desiredStart, fundingPreference, categoryPreference, desiredDuration);
+    const top = picked[0];
+    const topMism = top ? mismatchOf(top.course) : [];
+    const compareLine = (x: (typeof picked)[number]): string | null => {
+      if (!top || x === top || x.level < 2 || top.level < 2) return null;
+      const mism = mismatchOf(x.course);
+      const diff = x.pitch.gapCoverage - top.pitch.gapCoverage;
+      const fewerMism = mism.length < topMism.length;
+      if (diff >= 5 && mism.length > topMism.length) {
+        return `Schließt mehr deiner Lücken – passt aber bei ${mism.join(", ")} weniger zu deinem Rahmen.`;
+      }
+      if (diff <= -5 && fewerMism) return "Passt noch besser zu deinem Rahmen, schließt aber weniger deiner Lücken.";
+      if (diff <= -5) return "Gute Alternative – schließt etwas weniger deiner Lücken als deine Top-Empfehlung.";
+      if (mism.length > topMism.length) return `Fachlich ähnlich stark – weicht bei ${mism.join(", ")} von deinem Rahmen ab.`;
+      if (x.frameScore < top.frameScore - 2) return "Fachlich ähnlich stark – passt aber weniger zu deinen Angaben.";
+      return "Fachlich gleichwertige Alternative – vergleiche Start, Dauer und Kosten.";
+    };
     return picked.map(
       (x): V2Card => ({
         course: x.course,
@@ -4223,10 +4305,23 @@ async function runDemoAnalysis() {
         fit: x.level >= 2 ? "direct" : "bridge",
         bridgeSkills: x.bridgeSkills.slice(0, 3),
         foreign: !x.inBereich,
+        compare: compareLine(x),
       })
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isV2, courseResult, allCourses, careerGoal, v2Situation, employmentType, desiredStart, v2Direction, v2Plan, v2Answers, v2Role, activityIds, targetBereichLabel, rolesInPortfolio, bereichRole, v2SchwerpunktRoleIds, v2SchwerpunktText, workLocation, fundingPreference, categoryPreference, desiredDuration, v2Priority, v2Hurdles, qualificationLevel, experienceYears, germanLevel]);
+
+  // Funnel: Ergebnis einmal je Empfehlung protokollieren (wie viele Karten,
+  // direkter Treffer oder nur Einstieg, Lueckenabdeckung der Top-Karte).
+  useEffect(() => {
+    if (stepKey !== "v2ergebnis" || !courseResult) return;
+    trackStep("result_view", {
+      cards: v2ResultCards.length,
+      top_fit: v2ResultCards[0]?.fit ?? null,
+      top_gap_coverage: v2ResultCards[0]?.pitch.gapCoverage ?? null,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepKey, courseResult]);
 
   /**
    * Spotlight (29.09.2026, Rueckmeldung "vorher gab es ein dynamisches Feld
@@ -4628,6 +4723,25 @@ async function runDemoAnalysis() {
                     spotlight={v2Spotlight}
                     bereichLabel={v2SchwerpunktText || targetBereichLabel || null}
                     onAdjust={() => setCurrent(stepIndex("v2check"))}
+                    frame={{
+                      employmentType,
+                      desiredStart,
+                      workLocation,
+                      onEmployment: (v) => {
+                        setEmploymentType(v);
+                        trackStep("frame_change", { field: "employment", value: v });
+                      },
+                      onStart: (v) => {
+                        setDesiredStart(v);
+                        trackStep("frame_change", { field: "start", value: v });
+                      },
+                      onLocation: (v) => {
+                        setWorkLocation(v);
+                        trackStep("frame_change", { field: "location", value: v });
+                      },
+                      showTime: v2RahmenVisibility.showTime,
+                      showLocation: v2RahmenVisibility.showLocation,
+                    }}
                     forceView={v2TourView?.ergebnis}
                     forceNonce={v2TourView?.n ?? 0}
                     onBack={() => setCurrent(stepIndex("v2rahmen"))}
@@ -6099,6 +6213,7 @@ function V2ErgebnisStep({
   forceView,
   forceNonce = 0,
   spotlight = [],
+  frame,
 }: {
   /** Hervorgehobene Kurse des Bildungstraegers (Top-Kurs, Banner, startet bald). */
   spotlight?: V2SpotlightItem[];
@@ -6106,7 +6221,7 @@ function V2ErgebnisStep({
    *  "bridge": Einstieg - vermittelt Ziel-Skills (bridgeSkills) oder fuehrt
    *  zu einem Nachbarberuf im Bereich. */
   /** foreign: Kurs liegt ausserhalb des gewaehlten Bereichs. */
-  cards: { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean; fit: V2CardFit; bridgeSkills: string[]; foreign: boolean }[];
+  cards: { course: OrbitCourse; pitch: CoursePitch; fromDirection: boolean; fit: V2CardFit; bridgeSkills: string[]; foreign: boolean; compare?: string | null }[];
   /** Rundgang: Ansicht von aussen setzen (Empfehlungen/Abschlussseite). */
   forceView?: "results" | "contact";
   forceNonce?: number;
@@ -6137,6 +6252,17 @@ function V2ErgebnisStep({
   bereichLabel: string | null;
   onAdjust: () => void;
   onBack: () => void;
+  /** Rahmen direkt auf der Ergebnisseite aendern (19.10.2026). */
+  frame?: {
+    employmentType: string | null;
+    desiredStart: string | null;
+    workLocation: string | null;
+    onEmployment: (v: string | null) => void;
+    onStart: (v: string | null) => void;
+    onLocation: (v: string | null) => void;
+    showTime: boolean;
+    showLocation: boolean;
+  };
 }) {
   // Eine einzige Abschlussseite (25.09.2026): Kurs waehlen -> "Deine Anfrage"
   // mit Kontaktdaten und einem Haken fuer die persoenliche Beratung
@@ -6371,6 +6497,7 @@ function V2ErgebnisStep({
         </div>
         <h3 className="v2-course-name">{course.course_name}</h3>
         {course.provider && <div className="v2-course-provider">{course.provider}</div>}
+        {!first && meta?.compare && <div className="v2-compare">↕ {meta.compare}</div>}
         <CourseDescription course={course} />
         {ladder.reach && !bridgeForeign && (
           <div className="v2-ladder">
@@ -6583,6 +6710,54 @@ function V2ErgebnisStep({
             Stimmt etwas nicht? Anpassen
           </button>
         </div>
+      )}
+      {frame && cards.length > 0 && (
+        // Rahmen direkt hier aendern (19.10.2026): die Empfehlungen sortieren
+        // sich sofort neu, ohne zurueck zu "Dein Rahmen" zu muessen.
+        <details className="v2-frame-bar">
+          <summary>
+            <span>⚙️ Dein Rahmen</span>
+            <span className="v2-frame-summary">
+              {[
+                EMPLOYMENT_OPTIONS.find((o) => o.key === frame.employmentType)?.label,
+                START_OPTIONS.find((o) => o.key === frame.desiredStart)?.label,
+                LOCATION_OPTIONS.find((o) => o.key === frame.workLocation)?.label,
+              ]
+                .filter(Boolean)
+                .join(" · ") || "Noch nichts angegeben"}
+            </span>
+            <span className="v2-frame-edit">ändern</span>
+          </summary>
+          <div className="v2-frame-rows">
+            {(
+              [
+                { label: "Zeitmodell", options: EMPLOYMENT_OPTIONS, value: frame.employmentType, set: frame.onEmployment, show: frame.showTime },
+                { label: "Start", options: START_OPTIONS, value: frame.desiredStart, set: frame.onStart, show: true },
+                { label: "Lernort", options: LOCATION_OPTIONS, value: frame.workLocation, set: frame.onLocation, show: frame.showLocation },
+              ] as const
+            )
+              .filter((row) => row.show)
+              .map((row) => (
+                <div key={row.label} className="v2-frame-row">
+                  <span className="v2-frame-label">{row.label}</span>
+                  <div className="v2-frame-chips">
+                    {row.options.map((o) => (
+                      <button
+                        key={o.key}
+                        type="button"
+                        className={`start-chip ${row.value === o.key ? "selected" : ""}`}
+                        aria-pressed={row.value === o.key}
+                        onClick={() => row.set(row.value === o.key ? null : o.key)}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            <div className="v2-frame-hint">Die Empfehlungen passen sich sofort an.</div>
+          </div>
+        </details>
       )}
       {cards.length > 0 && (
         <>

@@ -153,6 +153,13 @@ const START_PREFERENCE_MAX_DAYS: Record<string, number> = {
  *  START_PREFERENCE_MAX_DAYS — wird als "keine Praeferenz" behandelt, jeder
  *  Kurs zaehlt dann als Treffer. Siehe DURATION_OPTIONS in JourneyPage.tsx
  *  fuer die dazugehoerigen Antwortmoeglichkeiten. */
+/** Breite einer Abdeckungs-Stufe in Prozentpunkten des Luecken-Gewichts
+ *  (siehe rankCoursesForGap): Kurse, deren gewichtete Lueckenabdeckung in
+ *  dieselbe Stufe faellt, gelten als fachlich gleichwertig — dann entscheiden
+ *  Voraussetzungen und Rahmen. 10 = "bis zu 10 % mehr Abdeckung zaehlen nicht
+ *  mehr als ein passender Rahmen". */
+export const COVERAGE_BAND_SIZE = 10;
+
 const DURATION_PREFERENCE_MAX_WEEKS: Record<string, number> = {
   kurz: 8,
   mittel: 24,
@@ -686,10 +693,24 @@ export function rankCoursesForGap(
   );
 
   if (gapMatches.length > 0) {
+    // Abdeckungs-Stufen (19.10.2026): Bisher entschied schon 1 Gewichtspunkt
+    // mehr Lueckenabdeckung ueber die Reihenfolge — Voraussetzungen und
+    // Rahmen (Zeit/Ort/Start/Foerderung) griffen nur bei exakt gleicher
+    // Summe, also praktisch nie. Jetzt zaehlt die Abdeckung in Stufen von
+    // COVERAGE_BAND_SIZE Prozentpunkten des gesamten Luecken-Gewichts: fachlich
+    // klar bessere Kurse bleiben vorn, unter fachlich gleichwertigen
+    // entscheiden Voraussetzungen und Rahmen der Person.
+    const totalGapWeight = gapSkills.reduce((sum, s) => sum + s.weight, 0);
+    const band = (w: number) => (totalGapWeight > 0 ? Math.floor(((w / totalGapWeight) * 100) / COVERAGE_BAND_SIZE) : 0);
     return gapMatches
       .sort((a, b) => {
-        // FIX 1 — primaer nach gewichteter Gap-Abdeckung, nicht nach roher Anzahl.
-        if (b.coveredGapWeight !== a.coveredGapWeight) return b.coveredGapWeight - a.coveredGapWeight;
+        // FIX 1 — primaer nach gewichteter Gap-Abdeckung (in Stufen), nicht nach roher Anzahl.
+        // Nachgewiesen NICHT erfuellte Voraussetzungen kosten eine Stufe: so
+        // ein Kurs landet hinter gleich guten UND knapp schlechteren Kursen,
+        // die die Person tatsaechlich belegen kann (ausgeblendet wird er nie).
+        const effBand = (x: (typeof gapMatches)[number]) => band(x.coveredGapWeight) - (x.prereq?.status === "nicht_erfuellt" ? 1 : 0);
+        const bandDiff = effBand(b) - effBand(a);
+        if (bandDiff !== 0) return bandDiff;
         // "vor allem Qualifikationen" (Auftrag 22.09.) — bei gleicher
         // Gap-Abdeckung entscheidet zuerst, ob die Person die Voraussetzungen
         // des Kurses erfuellt, DANACH erst Ort/Zeit/Foerderung/etc.
@@ -703,6 +724,8 @@ export function rankCoursesForGap(
         // ein fachlich schlechterer Treffer wird dadurch nie bevorzugt, nur
         // unter Gleichstaenden hoeher einsortiert (siehe preferenceMatchScore).
         if (b.prefScore !== a.prefScore) return b.prefScore - a.prefScore;
+        // Innerhalb derselben Stufe: exakte gewichtete Abdeckung, dann Anzahl.
+        if (b.coveredGapWeight !== a.coveredGapWeight) return b.coveredGapWeight - a.coveredGapWeight;
         if (b.coveredGapUris.length !== a.coveredGapUris.length) return b.coveredGapUris.length - a.coveredGapUris.length;
         // FIX 2 — featured nur als letzter Tiebreak, nie davor.
         return Number(!!b.course.is_featured) - Number(!!a.course.is_featured);

@@ -121,7 +121,7 @@ export function AdminTenantListPage({ apiBase, adminEmail, onOpenTenant, onLogou
                   <div style={styles.rowName}>{t.tenant_name}</div>
                   <div style={styles.rowMeta}>
                     {t.plan ? t.plan : "Legacy"} · {t.status ? STATUS_LABELS[t.status] ?? t.status : "—"}
-                    {t.course_limit != null && <> · Kurslimit {t.course_limit}</>}
+                    {t.course_limit != null && <> · Kurslimit {t.course_limit >= 100000 ? "unbegrenzt" : t.course_limit}</>}
                   </div>
                 </div>
                 <button

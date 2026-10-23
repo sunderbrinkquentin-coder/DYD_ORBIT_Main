@@ -69,7 +69,7 @@ export function TrialLockedPage({
             <button style={styles.portalButton} disabled={portalLoading} onClick={onManageBilling}>
               {portalLoading ? "Wird geöffnet…" : "Zahlungsdaten aktualisieren"}
             </button>
-            {portalError && <div style={styles.portalError}>{portalError}</div>}
+            {portalError && <div style={styles.portalError}>{portalError.split(/(https:\/\/\S+)/).map((part, i) => (part.startsWith("https://") ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", fontWeight: 700, wordBreak: "break-all" }}>Hier klicken, um fortzufahren</a> : part))}</div>}
             <p style={styles.portalOr}>oder wähle unten einen neuen Plan:</p>
           </div>
         )}

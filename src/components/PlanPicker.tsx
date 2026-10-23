@@ -126,7 +126,11 @@ export function PlanPicker({ apiBase, apiKey, intro }: PlanPickerProps) {
                 <span style={styles.cardPriceUnit}>{billingInterval === "monthly" ? " / Monat" : " / Jahr"}</span>
               </div>
               <div style={styles.cardLimit}>
-                {info ? `bis zu ${info.course_limit.toLocaleString("de-DE")} Kurse` : " "}
+                {info
+                  ? info.course_limit >= 100000
+                    ? "Unbegrenzt viele Kurse"
+                    : `bis zu ${info.course_limit.toLocaleString("de-DE")} Kurse`
+                  : " "}
               </div>
               <button
                 style={{ ...styles.cta, ...(isLoading ? styles.ctaDisabled : {}) }}

@@ -290,6 +290,38 @@
   flex: 1;
 }
 
+/* Konto-Aktionen unten in der Sidebar (23.10.2026): Plan upgraden, Abo
+   verwalten, Abmelden. Die Buttons bringen Inline-Styles aus App.tsx mit,
+   deshalb hier gezielt mit !important an die dunkle Sidebar angepasst. */
+.sidebar-account {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 4px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.sidebar-account button {
+  width: 100% !important;
+  box-shadow: none !important;
+  text-align: center;
+}
+.sidebar-account button:last-child {
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.75) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+}
+.sidebar-account button:last-child:hover {
+  color: #fff !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
+}
+
+/* Gleiche Aktionen als kleine Leiste oben - nur, wenn die Sidebar
+   ausgeblendet ist (siehe @media max-width 820px weiter unten). */
+.account-actions-mobile {
+  display: none;
+}
+
 .conn-block {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -3166,6 +3198,9 @@
 }
 
 @media (max-width: 820px) {
+  .account-actions-mobile {
+    display: flex;
+  }
   .sidebar {
     display: none;
   }

@@ -5,7 +5,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { TrialLockedPage } from "./pages/TrialLockedPage";
 import { PlanPicker } from "./components/PlanPicker";
-import { createBillingPortalSession } from "./api/billing";
+import { createBillingPortalSession, redirectToStripe } from "./api/billing";
 import { OPENED_FROM_RECOVERY_LINK, supabase } from "./lib/supabaseClient";
 import { fetchTenantSession, type TenantSessionResponse } from "./api/session";
 import { fetchAdminSession } from "./api/admin";
@@ -245,7 +245,10 @@ export default function App() {
     try {
       const returnUrl = window.location.origin + window.location.pathname;
       const { portal_url } = await createBillingPortalSession(API_BASE, apiKey, returnUrl);
-      window.location.href = portal_url;
+      if (!redirectToStripe(portal_url)) {
+        setPortalLoading(false);
+        setPortalError(`Dein Browser hat das Kundenportal blockiert. ${portal_url}`);
+      }
     } catch (err) {
       setPortalLoading(false);
       setPortalError(err instanceof Error ? err.message : String(err));
@@ -359,6 +362,33 @@ export default function App() {
   // den onClick-Closures unten sauber durchreicht.
   const adminView = auth.adminView;
 
+  // Konto-Aktionen (23.10.2026): einmal definiert, an zwei Stellen genutzt -
+  // unten in der Dashboard-Sidebar (Desktop) und als kleine Leiste oben
+  // (Mobil, wo die Sidebar ausgeblendet ist).
+  const accountActions = (
+    <>
+      {/* API-Zugang und "Journey einbetten" liegen seit 06.10.2026 im
+       * Dashboard im eigenen Bereich "Entwickler" (Sidebar unter Reports). */}
+      {canManageBilling && (
+        <button
+          style={manageBillingButtonStyle}
+          disabled={portalLoading}
+          onClick={() => void handleManageBilling(auth.session.api_key)}
+        >
+          {portalLoading ? "Wird geöffnet…" : "Abo verwalten"}
+        </button>
+      )}
+      {canUpgrade && (
+        <button style={upgradeButtonStyle} onClick={() => setUpgradeOpen(true)}>
+          Plan upgraden
+        </button>
+      )}
+      <button style={logoutButtonStyle} onClick={handleLogout}>
+        {adminView ? "Admin abmelden" : "Abmelden"}
+      </button>
+    </>
+  );
+
   return (
     <div>
       {adminView && (
@@ -374,28 +404,14 @@ export default function App() {
           </button>
         </div>
       )}
-      <div style={headerActionsRowStyle}>
-        {/* API-Zugang und "Journey einbetten" liegen seit 06.10.2026 im
-         * Dashboard im eigenen Bereich "Entwickler" (Sidebar unter Reports). */}
-        {canManageBilling && (
-          <button
-            style={manageBillingButtonStyle}
-            disabled={portalLoading}
-            onClick={() => void handleManageBilling(auth.session.api_key)}
-          >
-            {portalLoading ? "Wird geöffnet…" : "Abo verwalten"}
-          </button>
-        )}
-        {canUpgrade && (
-          <button style={upgradeButtonStyle} onClick={() => setUpgradeOpen(true)}>
-            Plan upgraden
-          </button>
-        )}
-        <button style={logoutButtonStyle} onClick={handleLogout}>
-          {adminView ? "Admin abmelden" : "Abmelden"}
-        </button>
+      {/* Konto-Aktionen (23.10.2026): auf dem Desktop unten in der Sidebar
+       * (sidebarFooter, siehe accountActions), hier nur noch als Leiste fuer
+       * schmale Bildschirme, auf denen die Sidebar ausgeblendet ist
+       * (.account-actions-mobile in dashboard.css). */}
+      <div className="account-actions-mobile" style={headerActionsRowStyle}>
+        {accountActions}
       </div>
-      {portalError && <div style={portalErrorStyle}>{portalError}</div>}
+      {portalError && <div style={portalErrorStyle}>{portalError.split(/(https:\/\/\S+)/).map((part, i) => (part.startsWith("https://") ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", fontWeight: 700, wordBreak: "break-all" }}>Hier klicken, um fortzufahren</a> : part))}</div>}
       <DashboardPage
         tenantName={auth.session.tenant_name}
         defaultBaseUrl={API_BASE}
@@ -410,6 +426,7 @@ export default function App() {
         apiAccessUnlocked={false}
         developerEmbed={<EmbedBox journeyKey={auth.session.journey_key} />}
         developerApi={<ApiKeyBox tenantId={auth.session.tenant_id} apiKey={auth.session.api_key} apiBase={API_BASE} />}
+        sidebarFooter={accountActions}
       />
       {upgradeOpen && (
         <div style={overlayStyle} onClick={() => setUpgradeOpen(false)}>
@@ -637,7 +654,6 @@ const headerActionsRowStyle: CSSProperties = {
   top: 12,
   right: 12,
   zIndex: 50,
-  display: "flex",
   flexWrap: "wrap",
   justifyContent: "flex-end",
   gap: 8,

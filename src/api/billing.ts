@@ -142,3 +142,43 @@ export function formatPriceAmount(amount: number | null, currency: string): stri
     return `${(amount / 100).toFixed(2)} ${currency.toUpperCase()}`;
   }
 }
+
+/**
+ * Weiterleitung zu Stripe (Checkout/Kundenportal), 19.10.2026.
+ *
+ * Stripe-Seiten duerfen nicht in einem iframe angezeigt werden. Laeuft ORBIT
+ * selbst in einem iframe - Bolt-Vorschau, eingebettete Website -, landete
+ * window.location.href im iframe und Stripe verweigerte die Anzeige (leere
+ * Seite / "refused to connect"). Deshalb:
+ *  1. Nicht eingebettet: ganz normal im selben Tab weiterleiten.
+ *  2. Eingebettet: das oberste Fenster weiterleiten (klappt, wenn der
+ *     iframe das erlaubt).
+ *  3. Sonst: Stripe in einem neuen Tab oeffnen.
+ * Gibt false zurueck, wenn auch der neue Tab blockiert wurde (Popup-Blocker)
+ * - dann zeigt der Aufrufer den Link zum Anklicken an.
+ */
+export function redirectToStripe(url: string): boolean {
+  let embedded = false;
+  try {
+    embedded = window.self !== window.top;
+  } catch {
+    embedded = true; // Zugriff auf window.top verweigert = cross-origin iframe
+  }
+
+  if (!embedded) {
+    window.location.href = url;
+    return true;
+  }
+
+  try {
+    if (window.top) {
+      window.top.location.href = url;
+      return true;
+    }
+  } catch {
+    /* Navigation des obersten Fensters nicht erlaubt -> neuer Tab */
+  }
+
+  const opened = window.open(url, "_blank", "noopener");
+  return opened !== null;
+}

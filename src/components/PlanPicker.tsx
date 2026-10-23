@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import {
   createCheckoutSession,
+  redirectToStripe,
   fetchBillingPlans,
   formatPriceAmount,
   type BillingInterval,
@@ -83,7 +84,11 @@ export function PlanPicker({ apiBase, apiKey, intro }: PlanPickerProps) {
         `${redirectBase}?checkout=success`,
         `${redirectBase}?checkout=cancelled`
       );
-      window.location.href = checkout_url;
+      if (!redirectToStripe(checkout_url)) {
+        // Popup-Blocker: Link zum Anklicken anzeigen statt still zu scheitern.
+        setCheckoutError(`Dein Browser hat das Zahlungsfenster blockiert. ${checkout_url}`);
+        setCheckoutPlan(null);
+      }
     } catch (err) {
       setCheckoutError(err instanceof Error ? err.message : String(err));
       setCheckoutPlan(null);
@@ -104,7 +109,7 @@ export function PlanPicker({ apiBase, apiKey, intro }: PlanPickerProps) {
       </div>
 
       {loadError && <p style={styles.errorText}>{loadError}</p>}
-      {checkoutError && <p style={styles.errorText}>{checkoutError}</p>}
+      {checkoutError && <p style={styles.errorText}>{checkoutError.split(/(https:\/\/\S+)/).map((part, i) => (part.startsWith("https://") ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", fontWeight: 700, wordBreak: "break-all" }}>Hier klicken, um fortzufahren</a> : part))}</p>}
 
       <div style={styles.grid}>
         {PLAN_ORDER.map((plan) => {

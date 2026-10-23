@@ -1036,20 +1036,26 @@ function writeStoredDashboardConnection(baseUrl: string, apiKey: string) {
  * das Logo geraeteuebergreifend sichtbar sein oder auf der Endnutzer-Journey
  * erscheinen soll, ist das ein separater, spaeterer Ausbauschritt.
  */
+// 23.10.2026: Schluessel JE MANDANT (tenantId). Vorher galt EIN Schluessel
+// fuer alle Konten im selben Browser - ein neuer Bildungstraeger sah dadurch
+// das Logo eines anderen Kontos statt eines leeren Dashboards.
 const DASHBOARD_LOGO_STORAGE_KEY = "dyd-orbit-dashboard-logo";
-function readStoredDashboardLogo(): string | null {
+function dashboardLogoKey(tenantId?: string | null): string {
+  return tenantId ? `${DASHBOARD_LOGO_STORAGE_KEY}:${tenantId}` : DASHBOARD_LOGO_STORAGE_KEY;
+}
+function readStoredDashboardLogo(tenantId?: string | null): string | null {
   try {
-    return localStorage.getItem(DASHBOARD_LOGO_STORAGE_KEY);
+    return localStorage.getItem(dashboardLogoKey(tenantId));
   } catch {
     return null;
   }
 }
-function writeStoredDashboardLogo(dataUrl: string | null) {
+function writeStoredDashboardLogo(dataUrl: string | null, tenantId?: string | null) {
   try {
     if (dataUrl) {
-      localStorage.setItem(DASHBOARD_LOGO_STORAGE_KEY, dataUrl);
+      localStorage.setItem(dashboardLogoKey(tenantId), dataUrl);
     } else {
-      localStorage.removeItem(DASHBOARD_LOGO_STORAGE_KEY);
+      localStorage.removeItem(dashboardLogoKey(tenantId));
     }
   } catch {
     // Storage blockiert/voll — Logo bleibt fuer diese Sitzung im State erhalten,
@@ -1089,6 +1095,10 @@ interface DashboardPageProps {
    */
   developerEmbed?: ReactNode;
   developerApi?: ReactNode;
+  /** Konto-Aktionen (Plan upgraden, Abo verwalten, Abmelden) - werden unten
+   *  in der Sidebar angezeigt (23.10.2026, vorher oben rechts ueber dem
+   *  Rundgang-Button). Kommt aus App.tsx, weil dort Sitzung und Billing liegen. */
+  sidebarFooter?: ReactNode;
   apiAccessUnlocked?: boolean;
   /** Fuer die API-Anfrage-Mail (Zuordnung des Mandanten). */
   tenantId?: string;
@@ -1215,6 +1225,7 @@ export function DashboardPage({
   showConnectionPanel = Boolean(import.meta.env?.DEV ?? true) || !defaultApiKey,
   developerEmbed,
   developerApi,
+  sidebarFooter,
   apiAccessUnlocked = false,
   tenantId,
 }: DashboardPageProps = {}) {
@@ -1228,13 +1239,23 @@ export function DashboardPage({
   // Version 27: Startwert zuerst aus localStorage (siehe
   // readStoredDashboardConnection oben), erst wenn dort nichts hinterlegt
   // ist, aus defaultBaseUrl/defaultApiKey.
-  const [baseUrl, setBaseUrl] = useState(() => readStoredDashboardConnection().baseUrl ?? defaultBaseUrl);
-  const [apiKey, setApiKey] = useState(() => readStoredDashboardConnection().apiKey ?? defaultApiKey);
+  // 23.10.2026: Im eingeloggten Modus (showConnectionPanel=false) kommt der
+  // Schluessel IMMER aus der Sitzung des angemeldeten Kontos. Vorher konnte
+  // ein im Browser gespeicherter Schluessel eines ANDEREN Kontos (z. B. einer
+  // Demo) gewinnen - ein neuer Bildungstraeger sah dann fremde Kurse und das
+  // fremde Logo statt eines leeren Dashboards.
+  const [baseUrl, setBaseUrl] = useState(() =>
+    showConnectionPanel ? readStoredDashboardConnection().baseUrl ?? defaultBaseUrl : defaultBaseUrl
+  );
+  const [apiKey, setApiKey] = useState(() =>
+    showConnectionPanel ? readStoredDashboardConnection().apiKey ?? defaultApiKey : defaultApiKey
+  );
   // Haelt beide Werte bei jeder Aenderung in localStorage nach — so
-  // uebersteht ein einmal eingetragener Schluessel auch einen Reload.
+  // uebersteht ein einmal eingetragener Schluessel auch einen Reload. Nur im
+  // Entwickler-Modus mit Verbindungs-Panel.
   useEffect(() => {
-    writeStoredDashboardConnection(baseUrl, apiKey);
-  }, [baseUrl, apiKey]);
+    if (showConnectionPanel) writeStoredDashboardConnection(baseUrl, apiKey);
+  }, [baseUrl, apiKey, showConnectionPanel]);
   const [showApiKey, setShowApiKey] = useState(false);
   // ---------- Eigenes Mandanten-Logo (Version 41, 17.09.) ----------
   // Ein selbst hochgeladenes Logo ueberschreibt den per Prop mitgegebenen
@@ -1242,7 +1263,7 @@ export function DashboardPage({
   // der Bildungstraeger kann sein Logo selbst pflegen, ohne auf DYD warten
   // zu muessen. Siehe readStoredDashboardLogo/writeStoredDashboardLogo oben
   // fuer die (bewusst rein lokale) Persistenz.
-  const [customLogoDataUrl, setCustomLogoDataUrl] = useState<string | null>(() => readStoredDashboardLogo());
+  const [customLogoDataUrl, setCustomLogoDataUrl] = useState<string | null>(() => readStoredDashboardLogo(tenantId));
   const [logoStatus, setLogoStatus] = useState<{ msg: string; kind: StatusKind }>({ msg: "", kind: "" });
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB — reicht fuer ein Logo, haelt localStorage klein.
@@ -1266,7 +1287,7 @@ export function DashboardPage({
         return;
       }
       setCustomLogoDataUrl(result);
-      writeStoredDashboardLogo(result);
+      writeStoredDashboardLogo(result, tenantId);
       setLogoStatus({ msg: "✓ Logo gespeichert (nur in diesem Browser sichtbar).", kind: "ok" });
     };
     reader.onerror = () => setLogoStatus({ msg: "Logo konnte nicht gelesen werden — bitte erneut versuchen.", kind: "err" });
@@ -1274,7 +1295,7 @@ export function DashboardPage({
   }
   function handleRemoveLogo() {
     setCustomLogoDataUrl(null);
-    writeStoredDashboardLogo(null);
+    writeStoredDashboardLogo(null, tenantId);
     setLogoStatus({ msg: "", kind: "" });
   }
   // ---------- Branding je Bildungstraeger (28.09.2026) ----------
@@ -4714,6 +4735,7 @@ export function DashboardPage({
             )}
           </nav>
           <div className="sidebar-spacer" />
+          {sidebarFooter && <div className="sidebar-account">{sidebarFooter}</div>}
           {showConnectionPanel && (
             <div className="conn-block">
               <div className="conn-block-head">
